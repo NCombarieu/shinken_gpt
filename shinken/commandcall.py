@@ -97,7 +97,7 @@ class CommandCall(six.with_metaclass(AutoSlots, DummyCommandCall)):
                 self.priority = int(self.command.priority)
 
     def get_command_and_args(self):
-        """We want to get the command and the args with ! splitting.
+        r"""We want to get the command and the args with ! splitting.
         but don't forget to protect against the \! to do not split them
         """
 

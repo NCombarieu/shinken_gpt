@@ -98,7 +98,7 @@ class Triggers(Items):
         # Now walk for it
         for root, dirs, files in os.walk(path):
             for file in files:
-                if re.search("\.trig$", file):
+                if re.search(r"\.trig$", file):
                     p = os.path.join(root, file)
                     try:
                         fd = open(p, 'r')
