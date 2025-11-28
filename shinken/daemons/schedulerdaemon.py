@@ -217,7 +217,7 @@ class Injector(Interface):
         exec code
         try:
             return result
-        except NameError, exp:
+        except NameError as exp:
             return None
 '''
 
