@@ -443,11 +443,13 @@ setup(
 )
 
 # if root is set, it's for package, so NO chown
-if pwd and not root and is_install:
+# Skip permission changes when building wheels for pip (bdist_wheel) where
+# filesystem paths may not exist inside isolated build environments.
+if pwd and not root and is_install and not is_pip_real_install_step:
     # assume a posix system
     uid = get_uid(user)
     gid = get_gid(group)
-    
+
     if uid is not None and gid is not None:
         # recursivly changing permissions for etc/shinken and var/lib/shinken
         for c in ['etc', 'run', 'log', 'var', 'libexec']:
