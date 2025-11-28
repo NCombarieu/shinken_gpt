@@ -454,18 +454,25 @@ if pwd and not root and is_install and not is_pip_real_install_step:
         # recursivly changing permissions for etc/shinken and var/lib/shinken
         for c in ['etc', 'run', 'log', 'var', 'libexec']:
             p = default_paths[c]
-            recursive_chown(p, uid, gid, user, group)
+            if os.path.exists(p):
+                recursive_chown(p, uid, gid, user, group)
         # Also change the rights of the shinken- scripts
         for s in scripts:
             bs = os.path.basename(s)
-            recursive_chown(os.path.join(default_paths['bin'], bs), uid, gid, user, group)
-            _chmodplusx(os.path.join(default_paths['bin'], bs))
-        _chmodplusx(default_paths['libexec'])
+            target = os.path.join(default_paths['bin'], bs)
+            if os.path.exists(target):
+                recursive_chown(target, uid, gid, user, group)
+                _chmodplusx(target)
+        if os.path.exists(default_paths['libexec']):
+            _chmodplusx(default_paths['libexec'])
     
     # If not exists, won't raise an error there
-    _chmodplusx('/etc/init.d/shinken')
+    if os.path.exists('/etc/init.d/shinken'):
+        _chmodplusx('/etc/init.d/shinken')
     for d in ['scheduler', 'broker', 'receiver', 'reactionner', 'poller', 'arbiter']:
-        _chmodplusx('/etc/init.d/shinken-' + d)
+        init_path = '/etc/init.d/shinken-' + d
+        if os.path.exists(init_path):
+            _chmodplusx(init_path)
 
 try:
     import pycurl
