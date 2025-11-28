@@ -114,21 +114,21 @@ def recursive_chown(path, uid, gid, owner, group):
 def get_uid(user_name):
     try:
         return pwd.getpwnam(user_name)[2]
-    except KeyError, exp:
+    except KeyError:
         return None
 
 
 def get_gid(group_name):
     try:
         return grp.getgrnam(group_name)[2]
-    except KeyError, exp:
+    except KeyError:
         return None
 
 
 # Do a chmod -R +x
 def _chmodplusx(d):
     if not os.path.exists(d):
-        print "warn: _chmodplusx missing dir", d
+        print("warn: _chmodplusx missing dir", d)
         return
     if os.path.isdir(d):
         for item in os.listdir(d):
@@ -154,12 +154,13 @@ parser.add_option('--skip-build', dest="skip_build", action='store_true', help='
 parser.add_option('-O', type="int", dest="optimize", help='skipping build')
 parser.add_option('--record', dest="record", help='File to save writing files. Used by pip install only')
 parser.add_option('--single-version-externally-managed', dest="single_version", action='store_true', help='I really dont know, this option is for pip only')
+parser.add_option('--dist-info-dir', dest="dist_info_dir", help=optparse.SUPPRESS_HELP)
 
 old_error = parser.error
 
 
 def _error(msg):
-    print 'Parser error', msg
+    print('Parser error', msg)
 
 
 parser.error = _error
@@ -181,14 +182,14 @@ try:
     if '' in sys.path:
         sys.path.remove('')
     import shinken
-    
+
     is_update = True
-    print "Previous Shinken lib detected (%s)" % shinken.__file__
+    print("Previous Shinken lib detected (%s)" % shinken.__file__)
 except ImportError:
     pass
 
 if '--update' in args or opts.upgrade or '--upgrade' in args:
-    print "Shinken Lib Updating process only"
+    print("Shinken Lib Updating process only")
     if 'update' in args:
         sys.argv.remove('update')
         sys.argv.insert(1, 'install')
@@ -197,7 +198,7 @@ if '--update' in args or opts.upgrade or '--upgrade' in args:
     if '--upgrade' in args:
         sys.argv.remove('--upgrade')
     
-    print "Shinken Lib Updating process only"
+    print("Shinken Lib Updating process only")
     is_update = True
 
 is_install = False
@@ -217,12 +218,12 @@ user = opts.owner or 'shinken'
 group = opts.group or 'shinken'
 
 # Maybe the user is unknown, but we are in a "classic" install, if so, bail out
-if is_install and not root and not is_update and pwd and not opts.skip_build:
+if is_install and not root and not is_update and pwd and not opts.skip_build and not is_pip_real_install_step:
     uid = get_uid(user)
     gid = get_gid(group)
     
     if uid is None or gid is None:
-        print "Error: the user/group %s/%s is unknown. Please create it first 'useradd %s'" % (user, group, user)
+        print("Error: the user/group %s/%s is unknown. Please create it first 'useradd %s'" % (user, group, user))
         sys.exit(2)
 
 # setup() will warn about unknown parameter we already managed
@@ -234,7 +235,7 @@ for a in deleting_args:
     for av in sys.argv:
         if av.startswith(a):
             idx = sys.argv.index(av)
-            print "AV,", av, "IDX", idx
+            print("AV,", av, "IDX", idx)
             to_del.append(idx)
             # We can have --owner=shinken or --owner shinken, if so del also the
             # next one
@@ -360,7 +361,7 @@ if os.name != 'nt' and not is_update:
     for name in ['shinken.cfg']:
         inname = os.path.join('etc', name)
         outname = os.path.join('build', name)
-        print('updating path in %s', outname)
+        print(f"updating path in {outname}")
         
         ## but we HAVE to set the shinken_user & shinken_group to thoses requested:
         update_file_with_string(inname, outname,
@@ -432,9 +433,7 @@ setup(
         'Topic :: System :: Networking :: Monitoring',
     ],
     python_requires=">=3.8",
-    install_requires=[
-        required_pkgs
-    ],
+    install_requires=required_pkgs,
     
     extras_require={
         'setproctitle': ['setproctitle']
@@ -469,11 +468,11 @@ if pwd and not root and is_install:
 try:
     import pycurl
 except ImportError:
-    print "Warning: missing python-pycurl lib, you MUST install it before launch the shinken daemons"
+    print("Warning: missing python-pycurl lib, you MUST install it before launch the shinken daemons")
 
 try:
     import cherrypy
 except ImportError:
-    print "Notice: for better performances for the daemons communication, you should install the python-cherrypy3 lib"
+    print("Notice: for better performances for the daemons communication, you should install the python-cherrypy3 lib")
 
-print "Shinken setup done"
+print("Shinken setup done")
