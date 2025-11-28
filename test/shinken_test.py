@@ -19,6 +19,11 @@ import random
 import copy
 import locale
 
+import collections
+if not hasattr(collections, 'MutableMapping'):
+    from collections.abc import MutableMapping
+    collections.MutableMapping = MutableMapping
+
 import unittest2 as unittest
 
 # import the shinken library from the parent directory
@@ -186,6 +191,11 @@ class Pluginconf(object):
 
 
 class ShinkenTest(unittest.TestCase):
+    def runTest(self):
+        # unittest2 on Python 3.13 expects a default test method
+        # even when explicit test_* methods are provided.
+        return None
+
     def setUp(self):
         self.setup_with_file('etc/shinken_1r_1h_1s.cfg')
     
@@ -198,7 +208,9 @@ class ShinkenTest(unittest.TestCase):
         self.me = None
         self.log = logger
         self.log.load_obj(self)
-        self.config_files = [path]
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        cfg_path = os.path.join(base_dir, path)
+        self.config_files = [cfg_path]
         self.conf = Config()
         buf = self.conf.read_config(self.config_files)
         raw_objects = self.conf.read_config_buf(buf)

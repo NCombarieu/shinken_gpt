@@ -26,7 +26,7 @@
 # THE SOFTWARE.
 
 from bisect import bisect_left, insort
-from itertools import izip, repeat
+from itertools import repeat
 
 
 def dictdoc(method):
@@ -54,7 +54,7 @@ class SortedDict(dict):
         '''Like with the ordinary dict: from a mapping, from an iterable
         of (key, value) pairs, or from keyword arguments.'''
         dict.__init__(self, *args, **kwargs)
-        self._sorted_keys = sorted(dict.iterkeys(self))
+        self._sorted_keys = sorted(dict.keys(self))
 
     @dictdoc
     def __repr__(self):
@@ -110,7 +110,7 @@ class SortedDict(dict):
     def items(self, reverse=False):
         '''D.items() -> a list of (key, value) pairs sorted by keys
         (add reverse=True for reverse ordering).'''
-        return list(self.items(reverse))
+        return list(self.iteritems(reverse))
 
     @dictdoc
     def clear(self):
@@ -124,7 +124,7 @@ class SortedDict(dict):
     @classmethod
     @dictdoc
     def fromkeys(cls, seq, value=None):
-        return cls(izip(seq, repeat(value)))
+        return cls(zip(seq, repeat(value)))
 
     @dictdoc
     def pop(self, key, *args, **kwargs):

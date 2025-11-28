@@ -877,7 +877,7 @@ class Config(Item):
                 logger.info("[config] opening '%s' configuration file", file)
             try:
                 # Open in Universal way for Windows, Mac, Linux
-                fd = io.open(file, mode='rU', encoding='utf8')
+                fd = io.open(file, mode='r', encoding='utf8')
                 buf = fd.readlines()
                 fd.close()
                 self.config_base_dir = os.path.dirname(file)
@@ -901,7 +901,7 @@ class Config(Item):
                         cfg_file_name = os.path.join(self.config_base_dir, elts[1])
                     cfg_file_name = cfg_file_name.strip()
                     try:
-                        fd = io.open(cfg_file_name, mode='rU', encoding='utf8')
+                        fd = io.open(cfg_file_name, mode='r', encoding='utf8')
                         if self.read_config_silent == 0:
                             logger.info("Processing object config file '%s'", cfg_file_name)
                         res.write(os.linesep + '# IMPORTEDFROM=%s' % (cfg_file_name) + os.linesep)
@@ -939,7 +939,7 @@ class Config(Item):
                                 try:
                                     res.write(os.linesep + '# IMPORTEDFROM=%s' %
                                               (os.path.join(root, file)) + os.linesep)
-                                    fd = io.open(os.path.join(root, file), mode='rU', encoding='utf8')
+                                    fd = io.open(os.path.join(root, file), mode='r', encoding='utf8')
                                     res.write(fd.read())
                                     # Be sure to separate files data
                                     res.write(os.linesep)

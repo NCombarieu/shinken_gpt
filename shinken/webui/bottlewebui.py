@@ -23,7 +23,8 @@ import cgi
 import email.utils
 import functools
 import hmac
-import httplib
+import six
+from six.moves import http_client as httplib
 import imp
 import itertools
 import mimetypes
@@ -32,26 +33,20 @@ import re
 import subprocess
 import sys
 import tempfile
-import thread
+from six.moves import _thread as thread
 import threading
 import time
 import warnings
 
-from Cookie import SimpleCookie
+from six.moves.http_cookies import SimpleCookie
 from tempfile import TemporaryFile
 from traceback import format_exc
-from urllib import urlencode, quote as urlquote
-from urlparse import urljoin, SplitResult as UrlSplitResult
+from six.moves.urllib.parse import urlencode, quote as urlquote
+from six.moves.urllib.parse import urljoin, SplitResult as UrlSplitResult
 
-try:
-    from collections import MutableMapping as DictMixin
-except ImportError:  # pragma: no cover
-    from UserDict import DictMixin
+from collections.abc import MutableMapping as DictMixin
 
-try:
-    from urlparse import parse_qs
-except ImportError:  # pragma: no cover
-    from cgi import parse_qs
+from six.moves.urllib.parse import parse_qs
 
 try:
     import cPickle as pickle
@@ -73,6 +68,12 @@ except ImportError:  # pragma: no cover
 
 py3k = sys.version_info >= (3, 0, 0)
 NCTextIOWrapper = None
+
+if py3k:
+    unicode = str
+    basestring = (str, bytes)
+else:
+    basestring = basestring
 
 if py3k:  # pragma: no cover
     json_loads = lambda s: json_lds(touni(s))
@@ -863,7 +864,7 @@ class BaseRequest(DictMixin):
             :class:`Router`. '''
         data = parse_qs(self.query_string, keep_blank_values=True)
         get = self.environ['bottle.get'] = MultiDict()
-        for key, values in data.iteritems():
+        for key, values in data.items():
             for value in values:
                 get[key] = value
         return get
@@ -1243,7 +1244,7 @@ class BaseResponse(object):
     def iter_headers(self):
         ''' Yield (header, value) tuples, skipping headers that are not
             allowed with the current response status code. '''
-        headers = self._headers.iteritems()
+        headers = self._headers.items()
         bad_headers = self.bad_headers.get(self.status_code)
         if bad_headers:
             headers = (h for h in headers if h[0] not in bad_headers)
@@ -1321,7 +1322,7 @@ class BaseResponse(object):
             raise TypeError('Secret key missing for non-string Cookie.')
 
         self._cookies[key] = value
-        for k, v in options.iteritems():
+        for k, v in options.items():
             self._cookies[key][k.replace('_', '-')] = v
 
     def delete_cookie(self, key, **kwargs):
@@ -1500,7 +1501,7 @@ class MultiDict(DictMixin):
     """
 
     def __init__(self, *a, **k):
-        self.dict = dict((k, [v]) for k, v in dict(*a, **k).iteritems())
+        self.dict = dict((k, [v]) for k, v in dict(*a, **k).items())
 
     def __len__(self):
         return len(self.dict)
@@ -1519,10 +1520,10 @@ class MultiDict(DictMixin):
     def itervalues(self):
         return (v[-1] for v in self.dict.itervalues())
     def iteritems(self):
-        return ((k, v[-1]) for (k, v) in self.dict.iteritems())
+        return ((k, v[-1]) for (k, v) in self.dict.items())
 
     def iterallitems(self):
-        for key, values in self.dict.iteritems():
+        for key, values in self.dict.items():
             for value in values:
                 yield key, value
 
@@ -1856,7 +1857,7 @@ def validate(**vkargs):
 
     def decorator(func):
         def wrapper(**kargs):
-            for key, value in vkargs.iteritems():
+            for key, value in vkargs.items():
                 if key not in kargs:
                     abort(403, 'Missing parameter: %s' % key)
                 try:
@@ -2287,7 +2288,7 @@ class FileCheckerThread(threading.Thread):
             if path and exists(path):
                 files[path] = mtime(path)
         while not self.status:
-            for path, lmtime in files.iteritems():
+            for path, lmtime in files.items():
                 if not exists(path) or mtime(path) > lmtime:
                     self.status = 3
             if not exists(self.lockfile):
@@ -2766,7 +2767,7 @@ DEBUG = False
 #: A dict to map HTTP status codes (e.g. 404) to phrases (e.g. 'Not Found')
 HTTP_CODES = httplib.responses
 HTTP_CODES[418] = "I'm a teapot"  # RFC 2324
-_HTTP_STATUS_LINES = dict((k, '%d %s' % (k, v)) for (k, v) in HTTP_CODES.iteritems())
+_HTTP_STATUS_LINES = dict((k, '%d %s' % (k, v)) for (k, v) in HTTP_CODES.items())
 
 #: The default template used for error pages. Override with @error()
 # SHINKEN MOD: change from bottle import DEBUG to from shinken.webui.bottle import DEBUG,...

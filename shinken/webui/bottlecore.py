@@ -35,13 +35,38 @@ if __name__ == '__main__':
     if _cmd_options.server and _cmd_options.server.startswith('gevent'):
         import gevent.monkey; gevent.monkey.patch_all()
 
-import base64, cgi, email.utils, functools, hmac, imp, itertools, mimetypes,\
-        os, re, subprocess, sys, tempfile, threading, time, warnings
+import base64
+import email.utils
+import functools
+import hmac
+try:
+    import imp
+    new_module = imp.new_module
+except ImportError:  # Python >=3.13
+    import types
+    new_module = types.ModuleType
+import itertools
+import mimetypes
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import warnings
+try:  # Python 3.13 removes the stdlib cgi module
+    import cgi
+except ImportError:  # pragma: no cover
+    import legacy_cgi as cgi
 
 from datetime import date as datedate, datetime, timedelta
 from tempfile import TemporaryFile
 from traceback import format_exc, print_exc
-from inspect import getargspec
+try:
+    from inspect import getfullargspec as getargspec
+except ImportError:  # pragma: no cover - kept for historical compatibility
+    from inspect import getargspec
 from unicodedata import normalize
 
 
@@ -87,7 +112,7 @@ if py3k:
     from urllib.parse import urlencode, quote as urlquote, unquote as urlunquote
     urlunquote = functools.partial(urlunquote, encoding='latin1')
     from http.cookies import SimpleCookie
-    from collections import MutableMapping as DictMixin
+    from collections.abc import MutableMapping as DictMixin
     import pickle
     from io import BytesIO
     from configparser import ConfigParser
@@ -1771,7 +1796,7 @@ class _ImportRedirect(object):
         ''' Create a virtual package that redirects imports (see PEP 302). '''
         self.name = name
         self.impmask = impmask
-        self.module = sys.modules.setdefault(name, imp.new_module(name))
+        self.module = sys.modules.setdefault(name, new_module(name))
         self.module.__dict__.update({'__file__': __file__, '__path__': [],
                                     '__all__': [], '__loader__': self})
         sys.meta_path.append(self)
