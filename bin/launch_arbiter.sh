@@ -23,7 +23,7 @@
 
 
 DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+BIN="$DIR"
 ETC="$DIR"/../etc
 
 # Need to change directory to .../var because arbiter doesn't have a
@@ -31,4 +31,4 @@ ETC="$DIR"/../etc
 cd "$DIR/../var"
 
 echo "Launching Arbiter (which reads configuration and dispatches it)"
-"$BIN"/shinken_arbiter.py -d -c "$ETC"/shinken.cfg
+"$BIN"/shinken-arbiter.py -d -c "$ETC"/shinken.cfg
