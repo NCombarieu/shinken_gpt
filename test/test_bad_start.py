@@ -144,7 +144,7 @@ class template_Daemon_Bad_Start():
         os.unlink(os.path.join(new_dir, d1.pidfile))  ## so that second poller will not see first started poller
         d2 = self.get_daemon()
         d2.workdir = d1.workdir
-        # TODO: find a way in Pyro4 to get the port
+        # TODO: find a way in Pyro5 to get the port
         if hasattr(d1.http_daemon, 'port'):
             d2.port = d1.http_daemon.port
             self.assertRaises(PortNotFree, d2.do_daemon_init_and_start, fake=True)

@@ -41,7 +41,7 @@ from shinken.bin import VERSION
 try:
     import shinken.pyro_wrapper as pyro
 except ImportError:
-    sys.exit("Shinken require the Python Pyro module. Please install it.")
+    sys.exit("Shinken requires the Pyro5 module (pip package Pyro5). Please install it.")
 from shinken.objects.arbiterlink import ArbiterLink
 Pyro = pyro.Pyro
 
