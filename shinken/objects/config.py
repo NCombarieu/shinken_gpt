@@ -902,7 +902,7 @@ class Config(Item):
                 if line.endswith('\n'):
                     line = line[:-1]
                 line = line.strip()
-                if re.search("^cfg_file", line) or re.search("^resource_file", line):
+                if re.search(r"^cfg_file", line) or re.search(r"^resource_file", line):
                     elts = line.split('=', 1)
                     if os.path.isabs(elts[1]):
                         cfg_file_name = elts[1]
@@ -926,7 +926,7 @@ class Config(Item):
                                      cfg_file_name, exp)
                         # The configuration is invalid because we have a bad file!
                         self.conf_is_correct = False
-                elif re.search("^cfg_dir", line):
+                elif re.search(r"^cfg_dir", line):
                     elts = line.split('=', 1)
                     if os.path.isabs(elts[1]):
                         cfg_dir_name = elts[1]
@@ -943,7 +943,7 @@ class Config(Item):
                     # Now walk for it.
                     for root, dirs, files in os.walk(cfg_dir_name, followlinks=True):
                         for file in files:
-                            if re.search("\.cfg$", file):
+                            if re.search(r"\.cfg$", file):
                                 if self.read_config_silent == 0:
                                     logger.info("Processing object config file '%s'",
                                                 os.path.join(root, file))
@@ -961,7 +961,7 @@ class Config(Item):
                                     # The configuration is invalid
                                     # because we have a bad file!
                                     self.conf_is_correct = False
-                elif re.search("^triggers_dir", line):
+                elif re.search(r"^triggers_dir", line):
                     elts = line.split('=', 1)
                     if os.path.isabs(elts[1]):
                         trig_dir_name = elts[1]
@@ -976,7 +976,7 @@ class Config(Item):
                     self.triggers_dirs.append(trig_dir_name)
                 # Early read conflict_policy because it's necessary when
                 # parsing configuration files
-                elif re.search("^conflict_policy", line):
+                elif re.search(r"^conflict_policy", line):
                     elts = line.split('=', 1)
                     self.conflict_policy = elts[1]
 
@@ -1038,8 +1038,8 @@ class Config(Item):
                 pass
             # A define must be catch and the type save
             # The old entry must be save before
-            elif re.search("^define", line) is not None:
-                if re.search(".*\{.*$", line) is not None:
+            elif re.search(r"^define", line) is not None:
+                if re.search(r".*\{.*$", line) is not None:
                     in_define = True
                 else:
                     almost_in_define = True
@@ -1050,7 +1050,7 @@ class Config(Item):
                 tmp = []
                 tmp.append("imported_from " + filefrom + ':%d' % line_nb)
                 # Get new type
-                elts = re.split('\s', line)
+                elts = re.split(r'\s', line)
                 # Maybe there was space before and after the type
                 # so we must get all and strip it
                 tmp_type = ' '.join(elts[1:]).strip()

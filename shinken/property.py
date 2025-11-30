@@ -256,7 +256,7 @@ class DictProp(Property):
 
 
         def split(kv):
-            m = re.match("^\s*([^\s]+)\s*=\s*([^\s]+)\s*$", kv)
+            m = re.match(r"^\s*([^\s]+)\s*=\s*([^\s]+)\s*$", kv)
             if m is None:
                 raise ValueError
 
@@ -288,7 +288,7 @@ class AddrProp(Property):
             NOTE: port is optional
         """
         val = unique_value(val)
-        m = re.match("^([^:]*)(?::(\d+))?$", val)
+        m = re.match(r"^([^:]*)(?::(\d+))?$", val)
         if m is None:
             raise ValueError
 

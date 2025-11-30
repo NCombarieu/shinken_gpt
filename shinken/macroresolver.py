@@ -279,22 +279,22 @@ class MacroResolver(Borg):
     def _get_type_of_macro(self, macros, clss):
         for macro in macros:
             # ARGN Macros
-            if re.match('ARG\d', macro):
+            if re.match(r'ARG\d', macro):
                 macros[macro]['type'] = 'ARGN'
                 continue
             # USERN macros
             # are managed in the Config class, so no
             # need to look that here
-            elif re.match('_HOST\w', macro):
+            elif re.match(r'_HOST\w', macro):
                 macros[macro]['type'] = 'CUSTOM'
                 macros[macro]['class'] = 'HOST'
                 continue
-            elif re.match('_SERVICE\w', macro):
+            elif re.match(r'_SERVICE\w', macro):
                 macros[macro]['type'] = 'CUSTOM'
                 macros[macro]['class'] = 'SERVICE'
                 # value of macro: re.split('_HOST', '_HOSTMAC_ADDRESS')[1]
                 continue
-            elif re.match('_CONTACT\w', macro):
+            elif re.match(r'_CONTACT\w', macro):
                 macros[macro]['type'] = 'CUSTOM'
                 macros[macro]['class'] = 'CONTACT'
                 continue
@@ -313,7 +313,7 @@ class MacroResolver(Borg):
     def _resolve_argn(self, macro, args):
         # first, get the number of args
         id = None
-        r = re.search('ARG(?P<id>\d+)', macro)
+        r = re.search(r'ARG(?P<id>\d+)', macro)
         if r is not None:
             id = int(r.group('id')) - 1
             try:

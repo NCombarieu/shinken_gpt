@@ -556,9 +556,9 @@ def get_key_value_sequence(entry, default_value=None):
     # match a whole sequence of key$(value1..n)$
     all_keyval_pattern = re.compile('(?x)^(' + keyval_pattern_txt + ')+$')
     # match a single value
-    value_pattern = re.compile('(?:\s*\$\((?P<val>.*?)\)\$\s*)')
+    value_pattern = re.compile(r'(?:\s*\$\((?P<val>.*?)\)\$\s*)')
     # match a sequence of values
-    all_value_pattern = re.compile('^(?:\s*\$\(.*?\)\$\s*)+$')
+    all_value_pattern = re.compile(r'^(?:\s*\$\(.*?\)\$\s*)+$')
 
     if all_keyval_pattern.match(conf_entry):
         for mat in re.finditer(keyval_pattern, conf_entry):
@@ -598,7 +598,7 @@ def get_key_value_sequence(entry, default_value=None):
 
     if NodeSet is None:
         # The pattern that will say if we have a [X-Y] key.
-        pat = re.compile('\[(\d*)-(\d*)\]')
+        pat = re.compile(r'\[(\d*)-(\d*)\]')
 
     for r in array1:
 

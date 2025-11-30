@@ -416,7 +416,7 @@ class Router(object):
                 combined = '%s|(%s)' % (self.dynamic[-1][0].pattern, fpat)
                 self.dynamic[-1] = (re.compile(combined), self.dynamic[-1][1])
                 self.dynamic[-1][1].append((gpat, target))
-            except (AssertionError, IndexError), e:  # AssertionError: Too many groups
+            except (AssertionError, IndexError) as e:  # AssertionError: Too many groups
                 self.dynamic.append((re.compile('(^%s$)' % fpat),
                                     [(gpat, target)]))
             except re.error as e:
