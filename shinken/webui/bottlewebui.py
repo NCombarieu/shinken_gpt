@@ -23,7 +23,8 @@ import cgi
 import email.utils
 import functools
 import hmac
-import httplib
+import six
+from six.moves import http_client as httplib
 import imp
 import itertools
 import mimetypes
@@ -32,26 +33,20 @@ import re
 import subprocess
 import sys
 import tempfile
-import thread
+from six.moves import _thread as thread
 import threading
 import time
 import warnings
 
-from Cookie import SimpleCookie
+from six.moves.http_cookies import SimpleCookie
 from tempfile import TemporaryFile
 from traceback import format_exc
-from urllib import urlencode, quote as urlquote
-from urlparse import urljoin, SplitResult as UrlSplitResult
+from six.moves.urllib.parse import urlencode, quote as urlquote
+from six.moves.urllib.parse import urljoin, SplitResult as UrlSplitResult
 
-try:
-    from collections import MutableMapping as DictMixin
-except ImportError:  # pragma: no cover
-    from UserDict import DictMixin
+from collections.abc import MutableMapping as DictMixin
 
-try:
-    from urlparse import parse_qs
-except ImportError:  # pragma: no cover
-    from cgi import parse_qs
+from six.moves.urllib.parse import parse_qs
 
 try:
     import cPickle as pickle
@@ -73,6 +68,12 @@ except ImportError:  # pragma: no cover
 
 py3k = sys.version_info >= (3, 0, 0)
 NCTextIOWrapper = None
+
+if py3k:
+    unicode = str
+    basestring = (str, bytes)
+else:
+    basestring = basestring
 
 if py3k:  # pragma: no cover
     json_loads = lambda s: json_lds(touni(s))
@@ -335,7 +336,7 @@ class Router(object):
         except IndexError:
             msg = "Not enough arguments to fill out anonymous wildcards."
             raise RouteBuildError(msg)
-        except KeyError, e:
+        except KeyError as e:
             raise RouteBuildError(*e.args)
 
         if args:
@@ -416,10 +417,10 @@ class Router(object):
                 combined = '%s|(%s)' % (self.dynamic[-1][0].pattern, fpat)
                 self.dynamic[-1] = (re.compile(combined), self.dynamic[-1][1])
                 self.dynamic[-1][1].append((gpat, target))
-            except (AssertionError, IndexError), e:  # AssertionError: Too many groups
+            except (AssertionError, IndexError) as e:  # AssertionError: Too many groups
                 self.dynamic.append((re.compile('(^%s$)' % fpat),
                                     [(gpat, target)]))
-            except re.error, e:
+            except re.error as e:
                 raise RouteSyntaxError("Could not add Route: %s (%s)" % (rule, e))
 
     def _compile_pattern(self, rule):
@@ -684,14 +685,14 @@ class Bottle(object):
         try:
             callback, args = self._match(environ)
             return callback(**args)
-        except HTTPResponse, r:
+        except HTTPResponse as r:
             return r
         except RouteReset:  # Route reset requested by the callback or a plugin.
             del self.ccache[environ['route.handle']]
             return self._handle(environ)  # Try again.
         except (KeyboardInterrupt, SystemExit, MemoryError):
             raise
-        except Exception, e:
+        except Exception as e:
             if not self.catchall:
                 raise
             stacktrace = format_exc(10)
@@ -747,9 +748,9 @@ class Bottle(object):
                 first = out.next()
         except StopIteration:
             return self._cast('', request, response)
-        except HTTPResponse, e:
+        except HTTPResponse as e:
             first = e
-        except Exception, e:
+        except Exception as e:
             first = HTTPError(500, 'Unhandled exception', e, format_exc(10))
             if isinstance(e, (KeyboardInterrupt, SystemExit, MemoryError))\
                or not self.catchall:
@@ -784,7 +785,7 @@ class Bottle(object):
             return out
         except (KeyboardInterrupt, SystemExit, MemoryError):
             raise
-        except Exception, e:
+        except Exception as e:
             if not self.catchall:
                 raise
             err = '<h1>Critical error while processing request: %s</h1>' \
@@ -863,7 +864,7 @@ class BaseRequest(DictMixin):
             :class:`Router`. '''
         data = parse_qs(self.query_string, keep_blank_values=True)
         get = self.environ['bottle.get'] = MultiDict()
-        for key, values in data.iteritems():
+        for key, values in data.items():
             for value in values:
                 get[key] = value
         return get
@@ -1243,7 +1244,7 @@ class BaseResponse(object):
     def iter_headers(self):
         ''' Yield (header, value) tuples, skipping headers that are not
             allowed with the current response status code. '''
-        headers = self._headers.iteritems()
+        headers = self._headers.items()
         bad_headers = self.bad_headers.get(self.status_code)
         if bad_headers:
             headers = (h for h in headers if h[0] not in bad_headers)
@@ -1321,7 +1322,7 @@ class BaseResponse(object):
             raise TypeError('Secret key missing for non-string Cookie.')
 
         self._cookies[key] = value
-        for k, v in options.iteritems():
+        for k, v in options.items():
             self._cookies[key][k.replace('_', '-')] = v
 
     def delete_cookie(self, key, **kwargs):
@@ -1500,7 +1501,7 @@ class MultiDict(DictMixin):
     """
 
     def __init__(self, *a, **k):
-        self.dict = dict((k, [v]) for k, v in dict(*a, **k).iteritems())
+        self.dict = dict((k, [v]) for k, v in dict(*a, **k).items())
 
     def __len__(self):
         return len(self.dict)
@@ -1519,10 +1520,10 @@ class MultiDict(DictMixin):
     def itervalues(self):
         return (v[-1] for v in self.dict.itervalues())
     def iteritems(self):
-        return ((k, v[-1]) for (k, v) in self.dict.iteritems())
+        return ((k, v[-1]) for (k, v) in self.dict.items())
 
     def iterallitems(self):
-        for key, values in self.dict.iteritems():
+        for key, values in self.dict.items():
             for value in values:
                 yield key, value
 
@@ -1856,7 +1857,7 @@ def validate(**vkargs):
 
     def decorator(func):
         def wrapper(**kargs):
-            for key, value in vkargs.iteritems():
+            for key, value in vkargs.items():
                 if key not in kargs:
                     abort(403, 'Missing parameter: %s' % key)
                 try:
@@ -1948,7 +1949,7 @@ class FlupSCGIServer(ServerAdapter):
 class WSGIRefServer(ServerAdapter):
     def run(self, handler):  # pragma: no cover
         from wsgiref.simple_server import make_server, WSGIRequestHandler
-        print "Launching Swsgi backend"
+        print("Launching Swsgi backend")
         if self.quiet:
             class QuietHandler(WSGIRequestHandler):
                 def log_request(*args, **kw):
@@ -1961,7 +1962,7 @@ class WSGIRefServer(ServerAdapter):
 # Shinken: add WSGIRefServerSelect
 class WSGIRefServerSelect(ServerAdapter):
     def run(self, handler):  # pragma: no cover
-        print "Call the Select version"
+        print("Call the Select version")
         from wsgiref.simple_server import make_server, WSGIRequestHandler
         if self.quiet:
             class QuietHandler(WSGIRequestHandler):
@@ -1976,7 +1977,7 @@ class WSGIRefServerSelect(ServerAdapter):
 class CherryPyServer(ServerAdapter):
     def run(self, handler):  # pragma: no cover
         from cherrypy import wsgiserver
-        print "Launching CherryPy backend"
+        print("Launching CherryPy backend")
         server = wsgiserver.CherryPyWSGIServer((self.host, self.port), handler)
         try:
             server.start()
@@ -1987,7 +1988,7 @@ class CherryPyServer(ServerAdapter):
 class PasteServer(ServerAdapter):
     def run(self, handler):  # pragma: no cover
         from paste import httpserver
-        print "Launching Paste backend"
+        print("Launching Paste backend")
         if not self.quiet:
             from paste.translogger import TransLogger
             handler = TransLogger(handler)
@@ -2015,8 +2016,8 @@ class FapwsServer(ServerAdapter):
         evwsgi.start(self.host, port)
         # fapws3 never releases the GIL. Complain upstream. I tried. No luck.
         if 'BOTTLE_CHILD' in os.environ and not self.quiet:
-            print "WARNING: Auto-reloading does not work with Fapws3."
-            print "         (Fapws3 breaks python thread support)"
+            print("WARNING: Auto-reloading does not work with Fapws3.")
+            print("         (Fapws3 breaks python thread support)")
         evwsgi.set_base_module(base)
 
         def app(environ, start_response):
@@ -2244,10 +2245,10 @@ def run(app=None, server='wsgiref', host='127.0.0.1', port=8080,
         raise RuntimeError("Server must be a subclass of ServerAdapter")
     server.quiet = server.quiet or quiet
     if not server.quiet and not os.environ.get('BOTTLE_CHILD'):
-        print "Bottle server starting up (using %s)..." % repr(server)
-        print "Listening on http://%s:%d/" % (server.host, server.port)
-        print "Use Ctrl-C to quit."
-        print
+        print("Bottle server starting up (using %s)..." % repr(server))
+        print("Listening on http://%s:%d/" % (server.host, server.port))
+        print("Use Ctrl-C to quit.")
+        print()
     try:
         if reloader:
             interval = min(interval, 1)
@@ -2261,7 +2262,7 @@ def run(app=None, server='wsgiref', host='127.0.0.1', port=8080,
     except KeyboardInterrupt:
         pass
     if not server.quiet and not os.environ.get('BOTTLE_CHILD'):
-        print "Shutting down..."
+        print("Shutting down...")
     # Shinken
     return res
 
@@ -2287,7 +2288,7 @@ class FileCheckerThread(threading.Thread):
             if path and exists(path):
                 files[path] = mtime(path)
         while not self.status:
-            for path, lmtime in files.iteritems():
+            for path, lmtime in files.items():
                 if not exists(path) or mtime(path) > lmtime:
                     self.status = 3
             if not exists(self.lockfile):
@@ -2343,7 +2344,7 @@ def _reloader_observer(server, app, interval):
                     os.unlink(lockfile)
                 sys.exit(p.poll())
             elif not server.quiet:
-                print "Reloading server..."
+                print("Reloading server...")
     except KeyboardInterrupt:
         pass
     if os.path.exists(lockfile):
@@ -2766,7 +2767,7 @@ DEBUG = False
 #: A dict to map HTTP status codes (e.g. 404) to phrases (e.g. 'Not Found')
 HTTP_CODES = httplib.responses
 HTTP_CODES[418] = "I'm a teapot"  # RFC 2324
-_HTTP_STATUS_LINES = dict((k, '%d %s' % (k, v)) for (k, v) in HTTP_CODES.iteritems())
+_HTTP_STATUS_LINES = dict((k, '%d %s' % (k, v)) for (k, v) in HTTP_CODES.items())
 
 #: The default template used for error pages. Override with @error()
 # SHINKEN MOD: change from bottle import DEBUG to from shinken.webui.bottle import DEBUG,...

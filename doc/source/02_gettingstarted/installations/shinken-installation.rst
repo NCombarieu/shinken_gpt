@@ -28,16 +28,15 @@ Requirements
 Mandatory Requirements
 ----------------------
 
-* `Python`_ 2.6 or higher (2.7 will get higher performance)
+* `Python`_ 3.8 or higher (tested with Python 3.13)
 * `python-pycurl`_ Python package for Shinken daemon communication
-* `setuptools`_ or `distribute` Python package for installation
+* `CherryPy`_ for the embedded web server
+* `setuptools`_ and `pip` Python packages for installation
 
 
 Conditional Requirements
 ------------------------
 
-* `Python`_ 2.7 is required for developers to run the test suite, shinken/test/
-* `python-cherrypy3`_ (recommended) enhanceddaemons communications, especially in HTTPS mode
 * `Monitoring Plugins`_ (recommended) provides a set of plugins to monitor host (Shinken uses check_icmp by default install).
   Monitoring plugins are available on most linux distributions (nagios-plugins package)
 
@@ -59,9 +58,33 @@ You can download the tarball and execute the setup.py or just use the pip comman
 
 ::
 
-  apt-get install python-pip python-pycurl
+  apt-get install python3-pip python3-pycurl
   adduser shinken
   pip install shinken
+
+
+Fedora 42 (Python 3.13)
+-----------------------
+
+On Fedora 42, Shinken can be installed in an isolated Python 3.13 virtual environment while keeping
+system tools untouched. The following commands install compiler dependencies required by ``pycurl``,
+set up a virtual environment and install Shinken with the Python 3 packages declared in this
+repository:
+
+.. code-block:: bash
+
+  sudo dnf install python3.13 python3.13-pip python3.13-devel libcurl-devel libffi-devel \
+       openssl-devel gcc make
+  sudo useradd --system --create-home --shell /sbin/nologin shinken
+  python3.13 -m venv /opt/shinken
+  source /opt/shinken/bin/activate
+  pip install --upgrade pip
+  pip install -r requirements.txt
+  pip install .
+
+If you plan to manage Shinken as a service, copy the generated scripts from ``/opt/shinken/bin``
+into a directory on the global ``PATH`` (for example ``/usr/local/bin``) and create a systemd unit
+that activates the virtual environment before launching ``shinken --validate``.
 
 
 .. notice:: Depending on your distribution, you may need to explicitly tell pip where to install the executables. For example on Ubuntu you should use ``pip install shinken --install-option="--install-scripts=/usr/local/bin"``.
@@ -108,6 +131,7 @@ Steps are basically the same as on Linux (Python install etc.) but in windows en
 
 .. _Python: http://www.python.org/download/
 .. _python-cherrypy3: http://www.cherrypy.org/
+.. _CherryPy: https://cherrypy.dev/
 .. _Monitoring Plugins: https://www.monitoring-plugins.org/
 .. _python-pycurl: http://pycurl.sourceforge.net/
 .. _setuptools: http://pypi.python.org/pypi/setuptools/
