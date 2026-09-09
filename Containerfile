@@ -25,8 +25,8 @@ RUN apt-get update \
     && useradd --uid 10001 --gid shinken --home-dir /var/lib/shinken --create-home shinken \
     && install -d -o shinken -g shinken /etc/shinken /var/lib/shinken /var/log/shinken /run/shinken
 
-COPY --from=builder /dist/*.whl /tmp/shinken.whl
-RUN python -m pip install /tmp/shinken.whl && rm /tmp/shinken.whl
+COPY --from=builder /dist/ /tmp/dist/
+RUN python -m pip install /tmp/dist/*.whl && rm -rf /tmp/dist
 COPY --chown=shinken:shinken etc/ /usr/local/share/shinken/etc/
 COPY --chmod=755 containers/entrypoint.sh /usr/local/bin/shinken-entrypoint
 
