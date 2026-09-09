@@ -1,0 +1,51 @@
+name: shinken
+
+x-shinken: &shinken
+  build:
+    context: .
+    dockerfile: Containerfile
+  image: localhost/shinken:dev
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  volumes:
+    - ./etc:/etc/shinken:ro,Z
+    - shinken-data:/var/lib/shinken:Z
+    - shinken-logs:/var/log/shinken:Z
+
+services:
+  arbiter:
+    <<: *shinken
+    command: ["arbiter"]
+    depends_on:
+      - scheduler
+      - poller
+      - reactionner
+      - broker
+      - receiver
+
+  scheduler:
+    <<: *shinken
+    command: ["scheduler"]
+
+  poller:
+    <<: *shinken
+    command: ["poller"]
+
+  reactionner:
+    <<: *shinken
+    command: ["reactionner"]
+
+  broker:
+    <<: *shinken
+    command: ["broker"]
+
+  receiver:
+    <<: *shinken
+    command: ["receiver"]
+
+volumes:
+  shinken-data:
+  shinken-logs:
