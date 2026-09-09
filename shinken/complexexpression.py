@@ -105,7 +105,7 @@ class ComplexExpressionNode(object):
             valid = False
         else:
             for s in self.sons:
-                if isinstance(s, DependencyNode) and not s.is_valid():
+                if isinstance(s, ComplexExpressionNode) and not s.is_valid():
                     self.configuration_errors.extend(s.configuration_errors)
                     valid = False
         return valid
