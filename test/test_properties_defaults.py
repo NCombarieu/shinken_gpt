@@ -23,8 +23,9 @@
 Test default values for item types.
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
+from __future__ import print_function
+from __future__ import absolute_import
 import __import_shinken
 from shinken.property import UnusedProp, none_object
 import shinken.daemon
@@ -32,6 +33,7 @@ import shinken.daemon
 # TODO: clean import *
 from shinken_test import *
 from shinken.property import *
+import six
 
 class PropertiesTester(object):
 
@@ -56,7 +58,7 @@ class PropertiesTester(object):
 
     def test_default_values(self):
         item = self.item # shortcut
-        for name, value in self.properties.items():
+        for name, value in six.iteritems(self.properties):
             self.assertIn(name, item.properties,
                           msg='property %r not found in %s' % (name, self.item.my_type))
             if hasattr(item.properties[name], 'default'):
@@ -200,7 +202,6 @@ class TestConfig(PropertiesTester, ShinkenTest):
         ('daemon_enabled', True),
         ('graceful_enabled', False),
         ('aggressive_memory_management', False),
-        ('conflict_policy', 'loose'),
 
         # Shinken specific
         ('idontcareaboutsecurity', False),
@@ -210,7 +211,6 @@ class TestConfig(PropertiesTester, ShinkenTest):
         ('cleaning_queues_interval', 900),
         ('disable_old_nagios_parameters_whining', False),
         ('enable_problem_impacts_states_change', False),
-        ('enable_problem_impacts_states_reprocessing', False),
         ('resource_macros_names', []),
 
         # SSL part
@@ -579,6 +579,7 @@ class TestHost(PropertiesTester, ShinkenTest):
         ('resultmodulations', []),
         ('business_impact_modulations', []),
         ('escalations', []),
+        ('maintenance_period', ''),
         ('business_impact', 2),
         ('trigger', ''),
         ('trigger_name', ''),
@@ -602,12 +603,6 @@ class TestHost(PropertiesTester, ShinkenTest):
         ('snapshot_criteria', ['d','u']),
         ('business_rule_host_notification_options', []),
         ('business_rule_service_notification_options', []),
-        ('maintenance_period', ''),
-        ('maintenance_checks_enabled', False),
-        ('maintenance_check_command', ''),
-        ('maintenance_check_period', ''),
-        ('maintenance_check_interval', 0),
-        ('maintenance_retry_interval', 0),
         ('priority', 100),
         ])
 
@@ -887,6 +882,7 @@ class TestService(PropertiesTester, ShinkenTest):
         ('resultmodulations', []),
         ('business_impact_modulations', []),
         ('escalations', []),
+        ('maintenance_period', ''),
         ('duplicate_foreach', ''),
         ('default_value', ''),
         ('business_impact', 2),
@@ -913,12 +909,6 @@ class TestService(PropertiesTester, ShinkenTest):
         ('business_rule_host_notification_options', []),
         ('business_rule_service_notification_options', []),
         ('host_dependency_enabled', True),
-        ('maintenance_period', ''),
-        ('maintenance_checks_enabled', False),
-        ('maintenance_check_command', ''),
-        ('maintenance_check_period', ''),
-        ('maintenance_check_interval', 0),
-        ('maintenance_retry_interval', 0),
         ('priority', 100),
         ])
 

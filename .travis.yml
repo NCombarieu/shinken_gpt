@@ -7,48 +7,32 @@ services:
 # Allow cache of downloads
 cache: pip
 
-jobs:
-  include:
-    # Test suite with different python versions
-    - python: "2.7"
-      env: TEST_SUITE=UNIT-TEST
-    - python: "3.4"
-      env: TEST_SUITE=UNIT-TEST
-    - python: "3.5"
-      env: TEST_SUITE=UNIT-TEST
-    - python: "3.6"
-      env: TEST_SUITE=UNIT-TEST
-    - python: "3.7"
-      env: TEST_SUITE=UNIT-TEST
-    - python: "3.8"
-      env: TEST_SUITE=UNIT-TEST
-    - python: "3.9"
-      env: TEST_SUITE=UNIT-TEST
-    # Installation tests with various distributions
-    - python: "3.9"
-      env:
-        - TEST_SUITE=CENTOS
-        - TEST_SUITE=DEBIAN
-        - TEST_SUITE=FEDORA
-        - TEST_SUITE=OTHER
-        - TEST_SUITE=UBUNTU
-
+python:
+  - "2.6"
+  - "2.7"
+  
 # command to install dependencies
 # some are only used for travis/coveralls so we are installing them here only
 #install:
 #  - ./test/setup_test.sh
 # command to run tests
 
-before_install:
-  - sudo apt-get install debianutils
 
-addons:
-  apt:
-    update: true
+env:
+  # Python:
+  - TEST_SUITE=PYTHON
+  # Then installations on various distro
+  - TEST_SUITE=CENTOS
+  - TEST_SUITE=DEBIAN
+  - TEST_SUITE=FEDORA
+  - TEST_SUITE=OTHER
+  - TEST_SUITE=UBUNTU
+  - TEST_SUITE=CODE
 
 script:
-  - chmod a+x test/*sh test/*py
-  - test/test_suite.sh
+  - cd test
+  - chmod a+x *sh *py
+  - ./test_suite.sh
 
 # specific call to launch coverage data into coveralls.io
 #after_success:

@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,9 +22,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import six
 import time
 import re
 
@@ -41,12 +37,13 @@ class declared(object):
     """
     def __init__(self, f):
         self.f = f
-        n = f.__name__
+        global functions
+        n = getattr(f, 'func_name', 'no name')
         # logger.debug("Initializing function %s %s" % (n, f))
         trigger_functions[n] = f
 
     def __call__(self, *args):
-        logger.debug("Calling %s with arguments %s", self.f.__name__, args)
+        logger.debug("Calling %s with arguments %s", self.f.func_name, args)
         return self.f(*args)
 
 @declared
@@ -185,7 +182,7 @@ def get_object(ref):
     """ Retrive object (service/host) from name
     """
     # Maybe it's already a real object, if so, return it :)
-    if not isinstance(ref, six.string_types):
+    if not isinstance(ref, basestring):
         return ref
 
     # Ok it's a string
@@ -203,7 +200,7 @@ def get_objects(ref):
         Retrive objects (service/host) from names
     """
     # Maybe it's already a real object, if so, return it :)
-    if not isinstance(ref, six.string_types):
+    if not isinstance(ref, basestring):
         return ref
 
     name = ref

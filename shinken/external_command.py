@@ -23,13 +23,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import os
 import time
 import re
+import sys
 
-from shinken.util import to_int, to_bool, split_semicolon
+PY3 = sys.version_info >= (3,)
+if PY3:
+    long = int
+
+from shinken.util import to_int, to_bool, split_semicolon, bytes_to_unicode
 from shinken.downtime import Downtime
 from shinken.contactdowntime import ContactDowntime
 from shinken.comment import Comment
@@ -42,7 +45,7 @@ from shinken.misc.common import DICT_MODATTR
 
 
 """ TODO: Add some comment about this class for the doc"""
-class ExternalCommand(object):
+class ExternalCommand:
     my_type = 'externalcommand'
 
     def __init__(self, cmd_line):
@@ -50,7 +53,7 @@ class ExternalCommand(object):
 
 
 """ TODO: Add some comment about this class for the doc"""
-class ExternalCommandManager(object):
+class ExternalCommandManager:
 
     commands = {
         'CHANGE_CONTACT_MODSATTR':
@@ -448,10 +451,10 @@ class ExternalCommandManager(object):
             if not os.path.exists(self.pipe_path):
                 os.umask(0)
                 try:
-                    os.mkfifo(self.pipe_path, 0o660)
+                    os.mkfifo(self.pipe_path, 660)
                     open(self.pipe_path, 'w+', os.O_NONBLOCK)
                 except OSError as exp:
-                    self.error("Pipe creation failed (%s): %s" % (self.pipe_path, exp))
+                    self.error("Pipe creation failed (%s): %s" % (self.pipe_path, str(exp)))
                     return None
         self.fifo = os.open(self.pipe_path, os.O_NONBLOCK)
         return self.fifo
@@ -506,9 +509,9 @@ class ExternalCommandManager(object):
             if not is_global:
                 c_name = r['c_name']
                 args = r['args']
-                logger.debug("Got commands %s %s", c_name, args)
+                logger.debug("Got commands %s %s", c_name, str(args))
                 f = getattr(self, c_name)
-                f(*args)
+                f(* args)
             else:
                 command = r['cmd']
                 self.dispatch_global_command(command)
@@ -559,12 +562,12 @@ class ExternalCommandManager(object):
     def get_unknown_check_result_brok(cmd_line):
 
         match = re.match(
-            r'^\[([0-9]{10})] PROCESS_(SERVICE)_CHECK_RESULT;'
-            r'([^\;]*);([^\;]*);([^\;]*);([^\|]*)(?:\|(.*))?', cmd_line)
+            '^\[([0-9]{10})] PROCESS_(SERVICE)_CHECK_RESULT;'
+            '([^\;]*);([^\;]*);([^\;]*);([^\|]*)(?:\|(.*))?', cmd_line)
         if not match:
             match = re.match(
-                r'^\[([0-9]{10})] PROCESS_(HOST)_CHECK_RESULT;'
-                r'([^\;]*);([^\;]*);([^\|]*)(?:\|(.*))?', cmd_line)
+                '^\[([0-9]{10})] PROCESS_(HOST)_CHECK_RESULT;'
+                '([^\;]*);([^\;]*);([^\|]*)(?:\|(.*))?', cmd_line)
 
         if not match:
             return None
@@ -605,7 +608,7 @@ class ExternalCommandManager(object):
         part1 = elts[0]
 
         elts2 = part1.split(' ')
-        # print("Elts2:", elts2)
+        # print "Elts2:", elts2
         if len(elts2) != 2:
             logger.debug("Malformed command '%s'", command)
             return None
@@ -645,15 +648,15 @@ class ExternalCommandManager(object):
             numargs += 1
         elts = split_semicolon(command, numargs)
 
-        logger.debug("mode= %s, global= %s", self.mode, entry['global'])
+        logger.debug("mode= %s, global= %s", self.mode, str(entry['global']))
         if self.mode == 'dispatcher' and entry['global']:
             if not internal:
                 logger.debug("Command '%s' is a global one, we resent it to all schedulers", c_name)
                 return {'global': True, 'cmd': command}
 
-        # print("Is global?", c_name, entry['global'])
-        # print("Mode:", self.mode)
-        # print("This command have arguments:", entry['args'], len(entry['args']))
+        # print "Is global?", c_name, entry['global']
+        # print "Mode:", self.mode
+        # print "This command have arguments:", entry['args'], len(entry['args'])
 
         args = []
         i = 1
@@ -770,20 +773,20 @@ class ExternalCommandManager(object):
             # f = getattr(self, c_name)
             # apply(f, args)
         else:
-            logger.debug("Sorry, the arguments are not corrects (%s)", args)
+            logger.debug("Sorry, the arguments are not corrects (%s)", str(args))
             return None
 
     # CHANGE_CONTACT_MODSATTR;<contact_name>;<value>
     def CHANGE_CONTACT_MODSATTR(self, contact, value):  # TODO
-        contact.modified_service_attributes = int(value)
+        contact.modified_service_attributes = long(value)
 
     # CHANGE_CONTACT_MODHATTR;<contact_name>;<value>
     def CHANGE_CONTACT_MODHATTR(self, contact, value):  # TODO
-        contact.modified_host_attributes = int(value)
+        contact.modified_host_attributes = long(value)
 
     # CHANGE_CONTACT_MODATTR;<contact_name>;<value>
     def CHANGE_CONTACT_MODATTR(self, contact, value):
-        contact.modified_attributes = int(value)
+        contact.modified_attributes = long(value)
 
     # CHANGE_CONTACT_HOST_NOTIFICATION_TIMEPERIOD;<contact_name>;<notification_timeperiod>
     def CHANGE_CONTACT_HOST_NOTIFICATION_TIMEPERIOD(self, contact, notification_timeperiod):
@@ -879,7 +882,7 @@ class ExternalCommandManager(object):
 
     # CHANGE_HOST_MODATTR;<host_name>;<value>
     def CHANGE_HOST_MODATTR(self, host, value):
-        host.modified_attributes = int(value)
+        host.modified_attributes = long(value)
 
     # CHANGE_MAX_HOST_CHECK_ATTEMPTS;<host_name>;<check_attempts>
     def CHANGE_MAX_HOST_CHECK_ATTEMPTS(self, host, check_attempts):
@@ -955,7 +958,7 @@ class ExternalCommandManager(object):
         # This is not enough.
         # We need to also change each of the needed attributes.
         previous_value = service.modified_attributes
-        future_value = int(value)
+        future_value = long(value)
         changes = future_value ^ previous_value
 
         for modattr in [
@@ -1540,9 +1543,11 @@ class ExternalCommandManager(object):
     def PROCESS_HOST_CHECK_RESULT(self, host, status_code, plugin_output):
         # raise a PASSIVE check only if needed
         if self.conf.log_passive_checks:
-            naglog_result('info', 'PASSIVE HOST CHECK: %s;%d;%s' % (
-                host.get_name(), status_code, plugin_output
-            ))
+            naglog_result(
+                'info', 'PASSIVE HOST CHECK: %s;%d;%s'
+                % (bytes_to_unicode(host.get_name()),
+                   status_code, bytes_to_unicode(plugin_output))
+            )
         now = time.time()
         cls = host.__class__
         # If globally disable OR locally, do not launch
@@ -1553,7 +1558,7 @@ class ExternalCommandManager(object):
 
             i = host.launch_check(now, force=True)
             c = None
-            for chk in host.get_checks_in_progress():
+            for chk in host.checks_in_progress:
                 if chk.id == i:
                     c = chk
             # Should not be possible to not find the check, but if so, don't crash
@@ -1579,10 +1584,10 @@ class ExternalCommandManager(object):
     def PROCESS_SERVICE_CHECK_RESULT(self, service, return_code, plugin_output):
         # raise a PASSIVE check only if needed
         if self.conf.log_passive_checks:
-            naglog_result('info', 'PASSIVE SERVICE CHECK: %s;%s;%d;%s' % (
-                service.host.get_name(), service.get_name(), return_code,
-                plugin_output
-                ))
+            naglog_result('info', 'PASSIVE SERVICE CHECK: %s;%s;%d;%s'
+                          % (bytes_to_unicode(service.host.get_name()),
+                             bytes_to_unicode(service.get_name()),
+                             return_code, bytes_to_unicode(plugin_output)))
         now = time.time()
         cls = service.__class__
         # If globally disable OR locally, do not launch
@@ -1593,7 +1598,7 @@ class ExternalCommandManager(object):
 
             c = None
             i = service.launch_check(now, force=True)
-            for chk in service.get_checks_in_progress():
+            for chk in service.checks_in_progress:
                 if chk.id == i:
                     c = chk
             # Should not be possible to not find the check, but if so, don't crash
@@ -1650,7 +1655,7 @@ class ExternalCommandManager(object):
                          " the error code '%d' and the text '%s'.", e.exit_status, e.output)
             return
         # Ok here the command succeed, we can now wait our death
-        naglog_result('info', e.output)
+        naglog_result('info', "%s" % (e.output))
 
     # RELOAD_CONFIG
     def RELOAD_CONFIG(self):
@@ -1674,7 +1679,7 @@ class ExternalCommandManager(object):
                          " with the error code '%d' and the text '%s'." % (e.exit_status, e.output))
             return
         # Ok here the command succeed, we can now wait our death
-        naglog_result('info', e.output)
+        naglog_result('info', "%s" % (e.output))
 
     # SAVE_STATE_INFORMATION
     def SAVE_STATE_INFORMATION(self):
@@ -1747,11 +1752,11 @@ class ExternalCommandManager(object):
         self.sched.get_and_register_status_brok(host)
         if trigger_id != 0 and trigger_id in self.sched.downtimes:
             self.sched.downtimes[trigger_id].trigger_me(dt)
-
+            
         data = {
             'host_name': host.get_name(),
             'start_time': start_time,
-            'end_time': end_time,
+            'end_time': end_time, 
             'fixed': fixed,
             'trigger_id': trigger_id,
             'duration': duration,
@@ -1807,12 +1812,12 @@ class ExternalCommandManager(object):
         self.sched.get_and_register_status_brok(service)
         if trigger_id != 0 and trigger_id in self.sched.downtimes:
             self.sched.downtimes[trigger_id].trigger_me(dt)
-
+            
         data = {
             'host_name': service.host_name,
             'service_description': service.service_description,
             'start_time': start_time,
-            'end_time': end_time,
+            'end_time': end_time, 
             'fixed': fixed,
             'trigger_id': trigger_id,
             'duration': duration,
@@ -2014,7 +2019,7 @@ class ExternalCommandManager(object):
             logger.debug("Sorry, the realm %s is unknown", realm_name)
             return
 
-        logger.debug("We found the realm: %s", r)
+        logger.debug("We found the realm: %s", str(r))
         # TODO: backport this in the config class?
         # We create the PollerLink object
         t = {'poller_name': poller_name, 'address': address, 'port': port}
@@ -2030,7 +2035,7 @@ class ExternalCommandManager(object):
         r.count_pollers()
         r.fill_potential_satellites_by_type('pollers')
         logger.debug("Poller %s added", poller_name)
-        logger.debug("Potential %s", r.get_potential_satellites_by_type('poller'))
+        logger.debug("Potential %s", str(r.get_potential_satellites_by_type('poller')))
 
 
 if __name__ == '__main__':
@@ -2042,7 +2047,7 @@ if __name__ == '__main__':
 
     if not os.path.exists(FIFO_PATH):
         os.umask(0)
-        os.mkfifo(FIFO_PATH, 0o660)
+        os.mkfifo(FIFO_PATH, 660)
         my_fifo = open(FIFO_PATH, 'w+')
         logger.debug("my_fifo: %s", my_fifo)
 

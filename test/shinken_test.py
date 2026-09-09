@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 #
 # This file is used to test host- and service-downtimes.
 #
 
-import six
+from __future__ import print_function
+from __future__ import absolute_import
 import sys
 from sys import __stdout__
 from functools import partial
@@ -14,25 +13,32 @@ from functools import partial
 import time
 import datetime
 import os
+import string
 import re
 import random
 import copy
 import locale
 
-import unittest
+import collections
+if not hasattr(collections, 'MutableMapping'):
+    from collections.abc import MutableMapping
+    collections.MutableMapping = MutableMapping
 
+import unittest2 as unittest
 
 # import the shinken library from the parent directory
-import __import_shinken ; del __import_shinken
+import __import_shinken;
+
+del __import_shinken
 
 import shinken
 from shinken.objects.config import Config
 from shinken.objects.command import Command
 from shinken.objects.module import Module
-from shinken.objects.schedulingitem import SchedulingItem
 
 from shinken.dispatcher import Dispatcher
-from shinken.log import logger
+from shinken.log import logger, cprint
+from shinken.util import safe_print
 from shinken.modulesctx import modulesctx
 from shinken.scheduler import Scheduler
 from shinken.macroresolver import MacroResolver
@@ -56,7 +62,9 @@ from shinken.daemons.schedulerdaemon import Shinken
 from shinken.daemons.brokerdaemon import Broker
 from shinken.daemons.arbiterdaemon import Arbiter
 from shinken.daemons.receiverdaemon import Receiver
-from logging import ERROR
+from logging import ERROR, DEBUG
+import six
+from six.moves import range
 
 # Modules are by default on the ../modules
 myself = os.path.abspath(__file__)
@@ -69,24 +77,25 @@ class __DUMMY:
     def add(self, obj):
         pass
 
+
 logger.load_obj(__DUMMY())
 logger.setLevel(ERROR)
+
 
 #############################################################################
 
 def guess_sys_stdout_encoding():
     ''' Return the best guessed encoding to be used for printing on sys.stdout. '''
     return (
-           getattr(sys.stdout, 'encoding', None)
-        or getattr(__stdout__, 'encoding', None)
-        or locale.getpreferredencoding()
-        or sys.getdefaultencoding()
-        or 'ascii'
+            getattr(sys.stdout, 'encoding', None)
+            or getattr(__stdout__, 'encoding', None)
+            or locale.getpreferredencoding()
+            or sys.getdefaultencoding()
+            or 'ascii'
     )
 
 
-
-def safe_print(*args, **kw):
+def safe_print_old(*args, **kw):
     """" "print" args to sys.stdout,
     If some of the args aren't unicode then convert them first to unicode,
         using keyword argument 'in_encoding' if provided (else default to UTF8)
@@ -94,25 +103,25 @@ def safe_print(*args, **kw):
     Write to stdout using 'out_encoding' if provided else best guessed encoding,
         doing xmlcharrefreplace on errors.
     """
+    
     in_bytes_encoding = kw.pop('in_encoding', 'UTF-8')
     out_encoding = kw.pop('out_encoding', guess_sys_stdout_encoding())
     if kw:
         raise ValueError('unhandled named/keyword argument(s): %r' % kw)
     #
-    make_in_data_gen = lambda: (
-            a if isinstance(a, six.string_types)
-            else ("%s" % a).encode(in_bytes_encoding, 'replace')
-            for a in args
-        )
-
-    possible_codings = ( out_encoding, )
+    make_in_data_gen = lambda: (a if isinstance(a, six.text_type)
+                                else
+                                six.text_type(str(a), in_bytes_encoding, 'replace')
+                                for a in args)
+    
+    possible_codings = (out_encoding,)
     if out_encoding != 'ascii':
-        possible_codings += ( 'ascii', )
-
+        possible_codings += ('ascii',)
+    
     for coding in possible_codings:
-        data = ' '.join(make_in_data_gen()).encode(coding, 'xmlcharrefreplace')
+        data = u' '.join(make_in_data_gen()).encode(coding, 'xmlcharrefreplace')
         try:
-            sys.stdout.write(data.decode("utf-8"))
+            sys.stdout.write(data)
             break
         except UnicodeError as err:
             # there might still have some problem with the underlying sys.stdout.
@@ -123,8 +132,7 @@ def safe_print(*args, **kw):
                 raise
             sys.stderr.write('Error on write to sys.stdout with %s encoding: err=%s\nTrying with ascii' % (
                 coding, err))
-    sys.stdout.write('\n')
-
+    sys.stdout.write(b'\n')
 
 
 #############################################################################
@@ -134,7 +142,7 @@ def safe_print(*args, **kw):
 # for a following time() it looks like thee was actually a delay.
 # This massively speeds up the tests.
 class TimeHacker(object):
-
+    
     def __init__(self):
         self.my_offset = 0
         self.my_starttime = time.time()
@@ -142,25 +150,30 @@ class TimeHacker(object):
         self.original_time_time = time.time
         self.original_time_sleep = time.sleep
         self.in_real_time = True
-
+    
+    
     def my_time_time(self):
         return self.my_oldtime() + self.my_offset
-
+    
+    
     def my_time_sleep(self, delay):
         self.my_offset += delay
-
+    
+    
     def time_warp(self, duration):
         self.my_offset += duration
-
+    
+    
     def set_my_time(self):
         if self.in_real_time:
             time.time = self.my_time_time
             time.sleep = self.my_time_sleep
             self.in_real_time = False
-
-# If external processes or time stamps for files are involved, we must
-# revert the fake timing routines, because these externals cannot be fooled.
-# They get their times from the operating system.
+    
+    
+    # If external processes or time stamps for files are involved, we must
+    # revert the fake timing routines, because these externals cannot be fooled.
+    # They get their times from the operating system.
     def set_real_time(self):
         if not self.in_real_time:
             time.time = self.original_time_time
@@ -168,7 +181,7 @@ class TimeHacker(object):
             self.in_real_time = True
 
 
-#Time hacking for every test!
+# Time hacking for every test!
 time_hacker = TimeHacker()
 time_hacker.set_my_time()
 
@@ -177,11 +190,16 @@ class Pluginconf(object):
     pass
 
 
-
 class ShinkenTest(unittest.TestCase):
+    def runTest(self):
+        # unittest2 on Python 3.13 expects a default test method
+        # even when explicit test_* methods are provided.
+        return None
+
     def setUp(self):
         self.setup_with_file('etc/shinken_1r_1h_1s.cfg')
-
+    
+    
     def setup_with_file(self, path):
         time_hacker.set_my_time()
         self.print_header()
@@ -190,47 +208,50 @@ class ShinkenTest(unittest.TestCase):
         self.me = None
         self.log = logger
         self.log.load_obj(self)
-        self.config_files = [path]
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        cfg_path = os.path.join(base_dir, path)
+        self.config_files = [cfg_path]
         self.conf = Config()
         buf = self.conf.read_config(self.config_files)
         raw_objects = self.conf.read_config_buf(buf)
         self.conf.create_objects_for_type(raw_objects, 'arbiter')
         self.conf.create_objects_for_type(raw_objects, 'module')
         self.conf.early_arbiter_linking()
-
+        
         # If we got one arbiter defined here (before default) we should be in a case where
         # the tester want to load/test a module, so we simulate an arbiter daemon
         # and the modules loading phase. As it has its own modulesmanager, should
         # not impact scheduler modules ones, especially we are asking for arbiter type :)
         if len(self.conf.arbiters) == 1:
-            arbdaemon = Arbiter([''],[''], False, False, None, None)
+            arbdaemon = Arbiter([''], [''], False, False, None, None)
             # only load if the module_dir is reallyexisting, so was set explicitly
             # in the test configuration
             if os.path.exists(getattr(self.conf, 'modules_dir', '')):
                 arbdaemon.modules_dir = self.conf.modules_dir
                 arbdaemon.load_modules_manager()
-
+                
                 # we request the instances without them being *started*
                 # (for those that are concerned ("external" modules):
                 # we will *start* these instances after we have been daemonized (if requested)
+                me = None
                 for arb in self.conf.arbiters:
+                    me = arb
                     arbdaemon.modules_manager.set_modules(arb.modules)
                     arbdaemon.do_load_modules()
                     arbdaemon.load_modules_configuration_objects(raw_objects)
-
+        
         self.conf.create_objects(raw_objects)
         self.conf.instance_id = 0
         self.conf.instance_name = 'test'
         # Hack push_flavor, that is set by the dispatcher
         self.conf.push_flavor = 0
         self.conf.load_triggers()
-        #import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
         self.conf.linkify_templates()
-        #import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
         self.conf.apply_inheritance()
-        #import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
         self.conf.explode()
-        #print("Aconf.services has %d elements" % len(self.conf.services))
         self.conf.apply_implicit_inheritance()
         self.conf.fill_default()
         self.conf.remove_templates()
@@ -248,12 +269,12 @@ class ShinkenTest(unittest.TestCase):
             self.conf.dump()
             return
         self.conf.clean()
-
+        
         self.confs = self.conf.cut_into_parts()
         self.conf.prepare_for_sending()
         self.conf.show_errors()
         self.dispatcher = Dispatcher(self.conf, self.me)
-
+        
         scheddaemon = Shinken(None, False, False, False, None, None)
         self.scheddaemon = scheddaemon
         self.sched = scheddaemon.sched
@@ -271,106 +292,82 @@ class ShinkenTest(unittest.TestCase):
         e2.load_arbiter(self)
         self.external_command_dispatcher = e2
         self.sched.conf.accept_passive_unknown_check_results = False
-
+        
         self.sched.schedule()
-
+    
+    
     def add(self, b):
         if isinstance(b, Brok):
             self.broks.append(b)
             return
         if isinstance(b, ExternalCommand):
             self.sched.run_external_command(b.cmd_line)
-
-    def fake_check(self, ref, exit_status, output="OK",
-                   check_variant=SchedulingItem.default_check_variant,
-                   fake_timeout=False):
-        #print("fake", ref)
+    
+    
+    def fake_check(self, ref, exit_status, output="OK"):
         now = time.time()
         ref.schedule(force=True)
         # now checks are schedule and we get them in
         # the action queue
-        #check = ref.actions.pop()
-        check = ref.get_checks_in_progress(check_variant)[0]
+        # check = ref.actions.pop()
+        check = ref.checks_in_progress[0]
         self.sched.add(check)  # check is now in sched.checks[]
-
+        
         # Allows to force check scheduling without setting its status nor
         # output. Useful for manual business rules rescheduling, for instance.
         if exit_status is None:
             return
-
+        
         # fake execution
         check.check_time = now
-
+        
         # and lie about when we will launch it because
         # if not, the schedule call for ref
         # will not really reschedule it because there
         # is a valid value in the future
         ref.next_chk = now - 0.5
-
+        
         check.get_outputs(output, 9000)
         check.exit_status = exit_status
         check.execution_time = 0.001
-        if fake_timeout is True:
-            check.status = "timeout"
-        else:
-            check.status = 'waitconsume'
+        check.status = 'waitconsume'
         self.sched.waiting_results.append(check)
-
-
-    def scheduler_loop(self, count, reflist, do_sleep=False, sleep_time=61,
-                       verbose=True):
+    
+    
+    def scheduler_loop(self, count, reflist, do_sleep=False, sleep_time=61, verbose=True):
         for ref in reflist:
-            if isinstance(ref, dict):
-                obj = ref["item"]
-            else:
-                obj = ref[0]
+            (obj, exit_status, output) = ref
             obj.checks_in_progress = []
         for loop in range(1, count + 1):
             if verbose is True:
-                print("processing check", loop)
+                print(("processing check %s" % loop))
             for ref in reflist:
-                ext = {}
-                if isinstance(ref, dict):
-                    obj = ref["item"]
-                    exit_status = ref["exit_status"]
-                    output = ref["output"]
-                    if "check_variant" in ref:
-                        ext["check_variant"] = ref["check_variant"]
-                    if "timeout" in ref:
-                        ext["fake_timeout"] = ref["timeout"]
-                else:
-                    (obj, exit_status, output) = ref
-                self.fake_check(obj, exit_status, output, **ext)
+                (obj, exit_status, output) = ref
+                obj.update_in_checking()
+                self.fake_check(obj, exit_status, output)
             self.sched.manage_internal_checks()
-
+            
             self.sched.consume_results()
             self.sched.get_new_actions()
             self.sched.get_new_broks()
             self.sched.scatter_master_notifications()
             self.worker_loop(verbose)
             for ref in reflist:
-                if isinstance(ref, dict):
-                    obj = ref["item"]
-                else:
-                    obj = ref[0]
+                (obj, exit_status, output) = ref
                 obj.checks_in_progress = []
             self.sched.update_downtimes_and_comments()
-            #time.sleep(ref.retry_interval * 60 + 1)
+            # time.sleep(ref.retry_interval * 60 + 1)
             if do_sleep:
                 time.sleep(sleep_time)
-
-
+    
+    
     def worker_loop(self, verbose=True):
         self.sched.delete_zombie_checks()
         self.sched.delete_zombie_actions()
         checks = self.sched.get_to_run_checks(True, False, worker_name='tester')
         actions = self.sched.get_to_run_checks(False, True, worker_name='tester')
-        #print("------------ worker loop checks ----------------")
-        #print(checks)
-        #print("------------ worker loop actions ----------------")
         if verbose is True:
             self.show_actions()
-        #print("------------ worker loop new ----------------")
         for a in actions:
             a.status = 'inpoller'
             a.check_time = time.time()
@@ -378,9 +375,8 @@ class ShinkenTest(unittest.TestCase):
             self.sched.put_results(a)
         if verbose is True:
             self.show_actions()
-        #print("------------ worker loop end ----------------")
-
-
+    
+    
     def show_logs(self):
         print("--- logs <<<----------------------------------")
         if hasattr(self, "sched"):
@@ -389,56 +385,56 @@ class ShinkenTest(unittest.TestCase):
             broks = self.broks
         for brok in broks:
             if brok.type == 'log':
-                #brok.prepare()
-                safe_print("LOG: ", brok.data['log'])
-
+                brok.prepare()
+                cprint("LOG: " + brok.data['log'])
+        
         print("--- logs >>>----------------------------------")
-
-
+    
+    
     def show_actions(self):
         print("--- actions <<<----------------------------------")
         if hasattr(self, "sched"):
             actions = self.sched.actions
         else:
             actions = self.actions
-        for a in sorted(actions.values(), key=lambda x: x.id):
+        for a in sorted(list(actions.values()), key=lambda x: x.id):
             if a.is_a == 'notification':
                 if a.ref.my_type == "host":
                     ref = "host: %s" % a.ref.get_name()
                 else:
                     ref = "host: %s svc: %s" % (a.ref.host.get_name(), a.ref.get_name())
-                print("NOTIFICATION %d %s %s %s %s" % (a.id, ref, a.type, time.asctime(time.localtime(a.t_to_go)), a.status))
+                print(("NOTIFICATION %d %s %s %s %s" % (a.id, ref, a.type, time.asctime(time.localtime(a.t_to_go)), a.status)))
             elif a.is_a == 'eventhandler':
-                print("EVENTHANDLER:", a)
+                print(("EVENTHANDLER: %s" % a))
         print("--- actions >>>----------------------------------")
-
-
+    
+    
     def show_and_clear_logs(self):
         self.show_logs()
         self.clear_logs()
-
-
+    
+    
     def show_and_clear_actions(self):
         self.show_actions()
         self.clear_actions()
-
-
+    
+    
     def count_logs(self):
         if hasattr(self, "sched"):
             broks = self.sched.broks
         else:
             broks = self.broks
         return len([b for b in broks if b.type == 'log'])
-
-
+    
+    
     def count_actions(self):
         if hasattr(self, "sched"):
             actions = self.sched.actions
         else:
             actions = self.actions
-        return len(actions.values())
-
-
+        return len(list(actions.values()))
+    
+    
     def clear_logs(self):
         if hasattr(self, "sched"):
             broks = self.sched.broks
@@ -450,15 +446,15 @@ class ShinkenTest(unittest.TestCase):
                 to_del.append(b)
         for b in to_del:
             broks.remove(b)
-
-
+    
+    
     def clear_actions(self):
         if hasattr(self, "sched"):
             self.sched.actions = {}
         else:
             self.actions = {}
-
-
+    
+    
     def assert_log_match(self, index, pattern, no_match=False):
         # log messages are counted 1...n, so index=1 for the first message
         if not no_match:
@@ -468,52 +464,53 @@ class ShinkenTest(unittest.TestCase):
         broks = sorted(self.sched.broks, key=lambda x: x.id)
         for brok in broks:
             if brok.type == 'log':
-                #brok.prepare()
-                print("%s (%s): %s" % (lognum, brok.id, brok.data['log']))
+                brok.prepare()
+                print(("%s (%s): %s" % (lognum, brok.id, brok.data['log'])))
                 if index == lognum:
-                    print(brok.data['log'])
+                    print((brok.data['log']))
                     if re.search(regex, brok.data['log']):
                         return
                 lognum += 1
-
-        #[b.prepare() for b in self.broks]
+        
+        [b.prepare() for b in self.broks]
         self.assertTrue(no_match, "%s found a matched log line in broks :\n"
-                            "index=%s pattern=%r\n"
-                            "broks_logs=[[[\n%s\n]]]" % (
-            '*HAVE*' if no_match else 'Not',
-            index, pattern, '\n'.join(
-                '\t%s=%s' % (idx, b.strip())
-                for idx, b in enumerate(
-                    (b.data['log'] for b in self.broks if b.type == 'log'),
-                    1)
-            )
-        ))
-
+                                  "index=%s pattern=%r\n"
+                                  "broks_logs=[[[\n%s\n]]]" % (
+                            '*HAVE*' if no_match else 'Not',
+                            index, pattern, '\n'.join(
+                                '\t%s=%s' % (idx, b.strip())
+                                for idx, b in enumerate(
+                                    (b.data['log'] for b in self.broks if b.type == 'log'),
+                                    1)
+                            )
+                        ))
+    
+    
     def _any_log_match(self, pattern, assert_not):
         regex = re.compile(pattern)
         broks = getattr(self, 'sched', self).broks
         broks = sorted(broks, key=lambda x: x.id)
         for brok in broks:
             if brok.type == 'log':
-                #brok.prepare()
+                brok.prepare()
+
                 if re.search(regex, brok.data['log']):
                     self.assertTrue(not assert_not,
                                     "Found matching log line:\n"
                                     "pattern = %r\nbrok log = %r" % (pattern, brok.data['log'])
-                    )
+                                    )
                     return
-        self.assertTrue(assert_not,
-            "No matching log line found:\n"
-            "pattern = %r\n" "broks = %r" % (pattern, broks)
-        )
-
+        self.assertTrue(assert_not, "No matching log line found:\npattern = %r\n" % (pattern))
+    
+    
     def assert_any_log_match(self, pattern):
         self._any_log_match(pattern, assert_not=False)
-
+    
+    
     def assert_no_log_match(self, pattern):
         self._any_log_match(pattern, assert_not=True)
-
-
+    
+    
     def get_log_match(self, pattern):
         regex = re.compile(pattern)
         res = []
@@ -522,18 +519,17 @@ class ShinkenTest(unittest.TestCase):
                 if re.search(regex, brok.data['log']):
                     res.append(brok.data['log'])
         return res
-
+    
+    
     def print_header(self):
-        print("\n" + "#" * 80 + "\n" + "#" + " " * 78 + "#")
-        print("#" + str.center(self.id(), 78) + "#")
-        print("#" + " " * 78 + "#\n" + "#" * 80 + "\n")
-
+        print(("\n" + "#" * 80 + "\n" + "#" + " " * 78 + "#"))
+        print(("#" + ('%s' % self.id()).center(78) + "#"))
+        print(("#" + " " * 78 + "#\n" + "#" * 80 + "\n"))
+    
+    
     def xtest_conf_is_correct(self):
         self.print_header()
         self.assertTrue(self.conf.conf_is_correct)
-
-
-
 
 
 if __name__ == '__main__':

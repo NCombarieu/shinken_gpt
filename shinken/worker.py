@@ -22,34 +22,27 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
+from shinken.imports import Empty
 
 # In android, we should use threads, not process
-
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+is_android = True
 try:
     import android
-    is_android = True
 except ImportError:
     is_android = False
 
-if is_android:
-    from threading import Thread as Process
+if not is_android:
+    from multiprocessing import Process, Queue
 else:
-    from multiprocessing import Process
+    from Queue import Queue
+    from threading import Thread as Process
 
-import six
 import os
-import io
 import time
 import sys
 import signal
 import traceback
-import multiprocessing
-if six.PY2:
-    from Queue import Queue, Empty
-else:
-    from queue import Queue, Empty
+from shinken.imports import StringIO as cStringIO
 
 
 from shinken.log import logger, BrokHandler
@@ -82,10 +75,7 @@ class Worker(object):
         self._timeout = timeout
         self.s = None
         self.processes_by_worker = processes_by_worker
-        if is_android:
-            self._c = Queue()  # Private Control queue for the Worker
-        else:
-            self._c = multiprocessing.Queue()  # Private Control queue for the Worker
+        self._c = Queue()  # Private Control queue for the Worker
         # By default, take our own code
         if target is None:
             target = self.work
@@ -97,7 +87,7 @@ class Worker(object):
         self.loaded_into = loaded_into
         if os.name != 'nt':
             self.http_daemon = http_daemon
-        else:  # windows forker do not like serialize http/lock
+        else:  # windows forker do not like pickle http/lock
             self.http_daemon = None
 
     def _prework(self, real_work, *args):
@@ -160,18 +150,18 @@ class Worker(object):
     def get_new_checks(self):
         try:
             while(len(self.checks) < self.processes_by_worker):
-                # print("I", self.id, "wait for a message")
+                # print "I", self.id, "wait for a message"
                 msg = self.s.get(block=False)
                 if msg is not None:
                     self.checks.append(msg.get_data())
-                # print("I", self.id, "I've got a message!")
-        except Empty as exp:
+                # print "I", self.id, "I've got a message!"
+        except Empty:
             if len(self.checks) == 0:
                 self._idletime = self._idletime + 1
                 time.sleep(1)
         # Maybe the Queue() is not available, if so, just return
         # get back to work :)
-        except IOError as exp:
+        except IOError:
             return
 
 
@@ -242,9 +232,9 @@ class Worker(object):
     def work(self, s, returns_queue, c):
         try:
             self.do_work(s, returns_queue, c)
-        # Catch any exception, try to print(it and exit anyway)
+        # Catch any exception, try to print it and exit anyway
         except Exception as exp:
-            output = io.StringIO()
+            output = cStringIO.StringIO()
             traceback.print_exc(file=output)
             logger.error("Worker '%d' exit with an unmanaged exception : %s",
                          self.id, output.getvalue())
@@ -266,7 +256,6 @@ class Worker(object):
 
         self.set_proctitle()
 
-        print("I STOP THE http_daemon", self.http_daemon)
         if self.http_daemon:
             self.http_daemon.shutdown()
 

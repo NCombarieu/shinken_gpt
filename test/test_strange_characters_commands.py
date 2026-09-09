@@ -23,17 +23,18 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
-
+import six
 
 
 class TestStrangeCaracterInCommands(ShinkenTest):
     def setUp(self):
         self.setup_with_file('etc/shinken_strange_characters_commands.cfg')
         time_hacker.set_real_time()
-
+    
+    
     # Try to call check dummy with very strange caracters and co, see if it run or
     # failed badly
     def test_strange_characters_commands(self):
@@ -54,27 +55,25 @@ class TestStrangeCaracterInCommands(ShinkenTest):
         svc = self.sched.services.find_srv_by_name_and_hostname("test_host_0", "test_ok_0")
         svc.checks_in_progress = []
         svc.act_depend_of = []  # no hostchecks on critical checkresults
-        #self.scheduler_loop(2, [[host, 0, 'UP | value1=1 value2=2'], [router, 0, 'UP | rtt=10'], [svc, 2, 'BAD | value1=0 value2=0']])
-        #self.assertEqual('UP', host.state)
-        #self.assertEqual('HARD', host.state_type)
-        print(svc.check_command.command.command_line)
-        self.assertEqual(0, len(svc.get_checks_in_progress()))
+        # self.scheduler_loop(2, [[host, 0, 'UP | value1=1 value2=2'], [router, 0, 'UP | rtt=10'], [svc, 2, 'BAD | value1=0 value2=0']])
+        # self.assertEqual('UP', host.state)
+        # self.assertEqual('HARD', host.state_type)
+        print(svc.check_command)
+        self.assertEqual(0, len(svc.checks_in_progress))
         svc.launch_check(time.time())
         print(svc.checks_in_progress)
-        self.assertEqual(1, len(svc.get_checks_in_progress()))
-        c = svc.get_checks_in_progress().pop()
-        #print(c)
+        self.assertEqual(1, len(svc.checks_in_progress))
+        c = svc.checks_in_progress.pop()
+        # print c
         c.execute()
         time.sleep(0.5)
         c.check_finished(8000)
         print(c.status)
         self.assertEqual('done', c.status)
-        print(c.output)
-        self.assertEqual('£°é§', c.output)
+        self.assertEqual(u'£°é§', c.output)
         print("Done with good output, that's great")
         svc.consume_result(c)
-        self.assertEqual('£°é§', svc.output)
-
+        self.assertEqual(six.text_type('£°é§'.decode('utf8')), svc.output)
 
 
 if __name__ == '__main__':

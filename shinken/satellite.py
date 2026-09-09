@@ -34,39 +34,37 @@ If Arbiter wants it to have a new conf, the satellite forgets the previous
  Schedulers (and actions into) and takes the new ones.
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
-import six
-import sys
+
 # Try to see if we are in an android device or not
+is_android = True
 try:
     import android
-    is_android = True
 except ImportError:
     is_android = False
 
+if not is_android:
+    from multiprocessing import Queue, active_children, cpu_count
+else:
+    from Queue import Queue
+
 import os
-import copy
 import time
+from shinken.imports import cpickle as cPickle
 import traceback
 import zlib
 import base64
 import threading
-import multiprocessing
 
-from shinken.http_client import HTTPClient, HTTPException
+from shinken.http_client import HTTPClient, HTTPExceptions
+
 from shinken.message import Message
 from shinken.worker import Worker
 from shinken.load import Load
 from shinken.daemon import Daemon, Interface
 from shinken.log import logger
 from shinken.util import get_memory, parse_memory_expr, free_memory
-from shinken.serializer import serialize, deserialize, SerializeError
 from shinken.stats import statsmgr
-if six.PY2:
-    from Queue import Empty, Queue
-else:
-    from queue import Empty, Queue
 
 
 # Class to tell that we are facing a non worker module
@@ -95,7 +93,7 @@ class IForArbiter(Interface):
     # It will ask me to remove one or more sched_id
     def what_i_managed(self):
         logger.debug("The arbiter asked me what I manage. It's %s", self.app.what_i_managed())
-        return serialize(self.app.what_i_managed())
+        return self.app.what_i_managed()
     what_i_managed.need_lock = False
     what_i_managed.doc = doc
 
@@ -120,7 +118,7 @@ class IForArbiter(Interface):
     def push_broks(self, broks):
         with self.app.arbiter_broks_lock:
             self.app.arbiter_broks.extend(broks)
-    push_broks.method = 'PUT'
+    push_broks.method = 'post'
     # We are using a Lock just for NOT lock this call from the arbiter :)
     push_broks.need_lock = False
     push_broks.doc = doc
@@ -132,27 +130,25 @@ class IForArbiter(Interface):
     def get_external_commands(self):
         with self.app.external_commands_lock:
             cmds = self.app.get_external_commands()
-        return serialize(cmds)
+            raw = cPickle.dumps(cmds)
+        return raw
     get_external_commands.need_lock = False
-    get_external_commands.encode = 'raw'
     get_external_commands.doc = doc
 
 
     doc = 'Does the daemon got configuration (receiver)'
     # NB: only useful for receiver
     def got_conf(self):
-        return serialize(self.app.cur_conf is not None)
+        return self.app.cur_conf is not None
     got_conf.need_lock = False
     got_conf.doc = doc
 
 
     doc = 'Push hostname/scheduler links (receiver in direct routing)'
     # Use by the receivers to got the host names managed by the schedulers
-    def push_host_names(self, data):
-        sched_id = data["sched_id"]
-        hnames = data["hnames"]
-        self.app.push_host_names({'sched_id': sched_id, 'hnames': hnames})
-    push_host_names.method = 'PUT'
+    def push_host_names(self, sched_id, hnames):
+        self.app.push_host_names(sched_id, hnames)
+    push_host_names.method = 'post'
     push_host_names.doc = doc
 
 
@@ -166,16 +162,16 @@ class ISchedulers(Interface):
     # A Scheduler send me actions to do
     def push_actions(self, actions, sched_id):
         self.app.add_actions(actions, int(sched_id))
-    push_actions.method = 'PUT'
+    push_actions.method = 'post'
     push_actions.doc = doc
 
     doc = 'Get the returns of the actions (internal)'
     # A scheduler ask us the action return value
     def get_returns(self, sched_id):
-        # print("A scheduler ask me the returns", sched_id)
+        # print "A scheduler ask me the returns", sched_id
         ret = self.app.get_return_for_passive(int(sched_id))
-        # print("Send mack", len(ret), "returns")
-        return serialize(ret)
+        # print "Send mack", len(ret), "returns"
+        return cPickle.dumps(ret)
     get_returns.doc = doc
 
 
@@ -190,8 +186,7 @@ class IBroks(Interface):
     # poller or reactionner ask us actions
     def get_broks(self, bname, broks_batch=0):
         res = self.app.get_broks(broks_batch)
-        return serialize(res)
-    get_broks.encode = 'raw'
+        return base64.b64encode(zlib.compress(cPickle.dumps(res), 2))
     get_broks.doc = doc
 
 
@@ -244,7 +239,7 @@ class BaseSatellite(Daemon):
         self.external_commands_lock = threading.RLock()
 
 
-    # The arbiter can resent us new conf in the http_daemon port.
+    # The arbiter can resent us new conf in the pyro_daemon port.
     # We do not want to loose time about it, so it's not a blocking
     # wait, timeout = 0s
     # If it send us a new conf, we reinit the connections of all schedulers
@@ -304,6 +299,7 @@ class Satellite(BaseSatellite):
         self.returns_queue = None
         self.q_by_mod = {}
 
+
     # Wrapper function for the true con init
     def pynag_con_init(self, id):
         _t = time.time()
@@ -333,11 +329,9 @@ class Satellite(BaseSatellite):
             sch_con = sched['con'] = HTTPClient(
                 uri=uri, strong_ssl=sched['hard_ssl_name_check'],
                 timeout=timeout, data_timeout=data_timeout)
-        except HTTPException as exp:
-            logger.warning(
-                "[%s] Scheduler %s is not initialized or has network problem: %s",
-                self.name, sname, exp
-            )
+        except HTTPExceptions as exp:
+            logger.warning("[%s] Scheduler %s is not initialized or has network problem: %s",
+                           self.name, sname, str(exp))
             sched['con'] = None
             return
 
@@ -346,11 +340,9 @@ class Satellite(BaseSatellite):
         try:
             new_run_id = sch_con.get('get_running_id')
             new_run_id = float(new_run_id)
-        except (HTTPException, SerializeError, KeyError) as exp:
-            logger.warning(
-                "[%s] Scheduler %s is not initialized or has network problem: %s",
-                self.name, sname, exp
-            )
+        except (HTTPExceptions, cPickle.PicklingError, KeyError) as exp:
+            logger.warning("[%s] Scheduler %s is not initialized or has network problem: %s",
+                           self.name, sname, str(exp))
             sched['con'] = None
             return
 
@@ -435,16 +427,14 @@ class Satellite(BaseSatellite):
                 try:
                     con = sched['con']
                     if con is not None:  # None = not initialized
-                        send_ok = deserialize(
-                            con.put('put_results', serialize(ret))
-                        )
+                        send_ok = con.post('put_results', {'results': ret})
                         # Not connected or sched is gone
-                except (HTTPException, KeyError) as exp:
-                    logger.error('manage_returns exception:: %s,%s ', type(exp), exp)
+                except (HTTPExceptions, KeyError) as exp:
+                    logger.error('manage_returns exception:: %s,%s ', type(exp), str(exp))
                     self.pynag_con_init(sched_id)
                     return
                 except AttributeError as exp:  # the scheduler must  not be initialized
-                    logger.error('manage_returns exception:: %s,%s ', type(exp), exp)
+                    logger.error('manage_returns exception:: %s,%s ', type(exp), str(exp))
                 except Exception as exp:
                     logger.error("A satellite raised an unknown exception: %s (%s)", exp, type(exp))
                     raise
@@ -469,7 +459,7 @@ class Satellite(BaseSatellite):
             return []
 
         sched = self.schedulers[sched_id]
-        logger.debug("Preparing to return %s", sched['wait_homerun'])
+        logger.debug("Preparing to return %s", str(sched['wait_homerun']))
 
         # prepare our return
         if self.results_batch > 0:
@@ -497,11 +487,9 @@ class Satellite(BaseSatellite):
         except OSError as exp:
             # We look for the "Function not implemented" under Linux
             if exp.errno == 38 and os.name == 'posix':
-                logger.critical(
-                    "Got an exception (%s). If you are under Linux, please "
-                    "check that your /dev/shm directory exists and  is read-write.",
-                    exp
-                )
+                logger.critical("Got an exception (%s). If you are under Linux, "
+                                "please check that your /dev/shm directory exists and"
+                                " is read-write.", str(exp))
             raise
 
         # If we are in the fork module, we do not specify a target
@@ -566,22 +554,15 @@ class Satellite(BaseSatellite):
             self.broks.append(elt)
             return
         elif cls_type == 'externalcommand':
-            logger.debug("Enqueuing an external command '%s'", elt.__dict__)
+            logger.debug("Enqueuing an external command '%s'", str(elt.__dict__))
             with self.external_commands_lock:
                 self.external_commands.append(elt)
 
 
     # Someone ask us our broks. We send them, and clean the queue
     def get_broks(self, broks_batch=0):
-        if broks_batch:
-            try:
-                broks_batch = int(broks_batch)
-            except ValueError:
-                logger.error("Invalid broks_batch in get_broks, should be an "
-                             "integer. Igored.")
-                broks_batch = 0
         _type = self.__class__.my_type
-        if broks_batch == 0:
+        if broks_batch > 0:
             count = len(self.broks)
         else:
             count = min(broks_batch, len(self.broks))
@@ -602,7 +583,7 @@ class Satellite(BaseSatellite):
         # In android, we are using threads, so there is not active_children call
         if not is_android:
             # Active children make a join with everyone, useful :)
-            multiprocessing.active_children()
+            active_children()
 
         w_to_del = []
         for w in self.workers.values():
@@ -683,10 +664,10 @@ class Satellite(BaseSatellite):
     def _got_queue_from_action(self, a):
         # get the module name, if not, take fork
         mod = getattr(a, 'module_type', 'fork')
-        queues = list(self.q_by_mod[mod].items())
+        queues = self.q_by_mod[mod].items()
 
         # Maybe there is no more queue, it's very bad!
-        if not queues:
+        if len(queues) == 0:
             return (0, None)
 
         # if not get a round robin index to get a queue based
@@ -758,34 +739,36 @@ class Satellite(BaseSatellite):
                     # Before ask a call that can be long, do a simple ping to be sure it is alive
                     con.get('ping')
                     args = {
-                        'do_checks': do_checks,
-                        'do_actions': do_actions,
-                        'poller_tags': ",".join(self.poller_tags),
-                        'reactionner_tags': ",".join(self.reactionner_tags),
+                        'do_checks': do_checks, 'do_actions': do_actions,
+                        'poller_tags': self.poller_tags,
+                        'reactionner_tags': self.reactionner_tags,
                         'worker_name': self.name,
-                        'module_types': ",".join(self.q_by_mod.keys()),
+                        'module_types': self.q_by_mod.keys(),
                     }
                     slots = self.get_available_slots()
                     if slots is not None:
                         args['max_actions'] = slots
-                    raw = con.get('get_checks', args, wait='long')
-                    actions = deserialize(raw)
-                    logger.debug("Ask actions to %d, got %d", sched_id, len(actions))
+                    tmp = con.get('get_checks', args, wait='long')
+                    # Explicit pickle load
+                    tmp = base64.b64decode(tmp)
+                    tmp = zlib.decompress(tmp)
+                    tmp = cPickle.loads(str(tmp))
+                    logger.debug("Ask actions to %d, got %d", sched_id, len(tmp))
                     # We 'tag' them with sched_id and put into queue for workers
                     # REF: doc/shinken-action-queues.png (2)
-                    self.add_actions(actions, sched_id)
-                    count += len(actions)
+                    self.add_actions(tmp, sched_id)
+                    count += len(tmp)
                 else:  # no con? make the connection
                     self.pynag_con_init(sched_id)
             # Ok, con is unknown, so we create it
             # Or maybe is the connection lost, we recreate it
-            except (HTTPException, KeyError) as exp:
-                logger.debug('get_new_actions exception:: %s,%s ', type(exp), exp)
+            except (HTTPExceptions, KeyError) as exp:
+                logger.debug('get_new_actions exception:: %s,%s ', type(exp), str(exp))
                 self.pynag_con_init(sched_id)
             # scheduler must not be initialized
             # or scheduler must not have checks
             except AttributeError as exp:
-                logger.debug('get_new_actions exception:: %s,%s ', type(exp), exp)
+                logger.debug('get_new_actions exception:: %s,%s ', type(exp), str(exp))
             # What the F**k? We do not know what happened,
             # log the error message if possible.
             except Exception as exp:
@@ -866,7 +849,7 @@ class Satellite(BaseSatellite):
                 return
             self.setup_new_conf()
 
-        # Now we check if arbiter speak to us in the http_daemon.
+        # Now we check if arbiter speak to us in the pyro_daemon.
         # If so, we listen to it
         # When it push a conf, we reinit connections
         # Sleep in waiting a new conf :)
@@ -1106,14 +1089,14 @@ class Satellite(BaseSatellite):
         self.max_workers = g_conf['max_workers']
         if self.max_workers == 0 and not is_android:
             try:
-                self.max_workers = multiprocessing.cpu_count()
+                self.max_workers = cpu_count()
             except NotImplementedError:
                 self.max_workers = 4
         logger.info("[%s] Using max workers: %s", self.name, self.max_workers)
         self.min_workers = g_conf['min_workers']
         if self.min_workers == 0 and not is_android:
             try:
-                self.min_workers = multiprocessing.cpu_count()
+                self.min_workers = cpu_count()
             except NotImplementedError:
                 self.min_workers = 4
         logger.info("[%s] Using min workers: %s", self.name, self.min_workers)
@@ -1138,7 +1121,7 @@ class Satellite(BaseSatellite):
             os.environ['TZ'] = use_timezone
             time.tzset()
 
-        logger.info("We have our schedulers: %s", self.schedulers)
+        logger.info("We have our schedulers: %s", str(self.schedulers))
 
         # Now manage modules
         # TODO: check how to better handle this with modules_manager..
@@ -1146,7 +1129,7 @@ class Satellite(BaseSatellite):
         for module in mods:
             # If we already got it, bypass
             if module.module_type not in self.q_by_mod:
-                logger.debug("Add module object %s", module)
+                logger.debug("Add module object %s", str(module))
                 self.modules_manager.modules.append(module)
                 logger.info("[%s] Got module: %s ", self.name, module.module_type)
                 self.q_by_mod[module.module_type] = {}
@@ -1192,6 +1175,9 @@ class Satellite(BaseSatellite):
 
     def main(self):
         try:
+            for line in self.get_header():
+                logger.info(line)
+
             self.load_config_file()
 
             # Setting log level
@@ -1199,9 +1185,6 @@ class Satellite(BaseSatellite):
             # Force the debug level if the daemon is said to start with such level
             if self.debug:
                 logger.setLevel('DEBUG')
-
-            for line in self.get_header():
-                logger.info(line)
 
             # Look if we are enabled or not. If ok, start the daemon mode
             self.look_for_early_exit()

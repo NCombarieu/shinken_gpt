@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,11 +22,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
+from six import add_metaclass
 
-import six
-from shinken.objects.item import Item, Items
-from shinken.brok import Brok
+from .item import Item, Items
 from shinken.property import StringProp, IntegerProp, BoolProp
 from shinken.autoslots import AutoSlots
 
@@ -38,9 +35,10 @@ from shinken.autoslots import AutoSlots
 class DummyCommand(object):
     pass
 
-
-class Command(six.with_metaclass(AutoSlots, Item)):
-
+# AutoSlots create the __slots__ with properties and
+# running_properties names
+@add_metaclass(AutoSlots)
+class Command(Item):
     id = 0
     my_type = "command"
 
@@ -115,6 +113,8 @@ class Command(six.with_metaclass(AutoSlots, Item)):
                 #    data[prop] = entry.default
 
 
+    # Call by pickle to dataify the comment
+    # because we DO NOT WANT REF in this pickleisation!
     def __getstate__(self):
         cls = self.__class__
         # id is not in *_properties
@@ -141,8 +141,8 @@ class Command(six.with_metaclass(AutoSlots, Item)):
     # In 1.0 we move to a dict save. Before, it was
     # a tuple save, like
     # ({'id': 11}, {'poller_tag': 'None', 'reactionner_tag': 'None',
-    # 'command_line': '/usr/local/nagios/bin/rss-multiuser',
-    # 'module_type': 'fork', 'command_name': 'notify-by-rss'})
+    # 'command_line': u'/usr/local/nagios/bin/rss-multiuser',
+    # 'module_type': 'fork', 'command_name': u'notify-by-rss'})
     def __setstate_pre_1_0__(self, state):
         for d in state:
             for k, v in d.items():

@@ -23,8 +23,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import re
 
 from shinken.util import to_float, to_split, to_char, to_int, unique_value, list_split
@@ -140,7 +138,7 @@ class UnusedProp(Property):
 
     # Since this property is not used, there is no use for other
     # parameters than 'text'.
-    # 'text' a some usage text if present, will print(it to explain)
+    # 'text' a some usage text if present, will print it to explain
     # why it's no more useful
     def __init__(self, text=None):
 
@@ -152,7 +150,6 @@ class UnusedProp(Property):
         self.class_inherit = []
         self.unused = True
         self.managed = True
-
 
 _boolean_states = {'1': True, 'yes': True, 'true': True, 'on': True,
                    '0': False, 'no': False, 'false': False, 'off': False}
@@ -250,13 +247,10 @@ class DictProp(Property):
         if elts_prop is not None:
             self.elts_prop = elts_prop()
 
-
     def pythonize(self, val):
         val = unique_value(val)
-
-
         def split(kv):
-            m = re.match(r"^\s*([^\s]+)\s*=\s*([^\s]+)\s*$", kv)
+            m = re.match("^\s*([^\s]+)\s*=\s*([^\s]+)\s*$", kv)
             if m is None:
                 raise ValueError
 
@@ -267,15 +261,13 @@ class DictProp(Property):
                 (self.elts_prop.pythonize(m.group(2)), m.group(2))[self.elts_prop is None]
             )
 
-
         if val is None:
-            return (dict())
+            return(dict())
 
         if self.elts_prop is None:
             return val
 
         # val is in the form "key1=addr:[port],key2=addr:[port],..."
-        print(">>>", dict([split(kv) for kv in to_split(val)]))
         return dict([split(kv) for kv in to_split(val)])
 
 
@@ -288,7 +280,7 @@ class AddrProp(Property):
             NOTE: port is optional
         """
         val = unique_value(val)
-        m = re.match(r"^([^:]*)(?::(\d+))?$", val)
+        m = re.match("^([^:]*)(?::(\d+))?$", val)
         if m is None:
             raise ValueError
 

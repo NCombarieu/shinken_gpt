@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,19 +22,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import six
 import time
+from six import add_metaclass
 
-#from .action import Action
-from shinken.action import Action
+from .action import Action
 from shinken.property import IntegerProp, StringProp, FloatProp, BoolProp
 from shinken.autoslots import AutoSlots
 
-""" TODO: Add some comment about this class for the doc"""
-class EventHandler(six.with_metaclass(AutoSlots, Action)):
 
+# AutoSlots create the __slots__ with properties and
+# running_properties names
+@add_metaclass(AutoSlots)
+class EventHandler(Action):
     my_type = 'eventhandler'
 
     properties = {
@@ -127,6 +125,8 @@ class EventHandler(six.with_metaclass(AutoSlots, Action)):
         return self.id
 
 
+    # Call by pickle to dataify the comment
+    # because we DO NOT WANT REF in this pickleisation!
     def __getstate__(self):
         cls = self.__class__
         # id is not in *_properties

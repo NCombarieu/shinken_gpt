@@ -22,12 +22,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import six
 import os
 import re
-import sys
 import traceback
 
 from shinken.objects.item import Item, Items
@@ -70,12 +66,12 @@ class Trigger(Item):
             locals()[n] = f
 
         code = myself.code_bin  # Comment? => compile(myself.code_bin, "<irc>", "exec")
-        try:
-            six.exec_(code)
-        except Exception as err:
-            set_value(self, "UNKNOWN: Trigger error: %s" % err, "", 3)
-            logger.error('%s Trigger %s failed: %s ; '
-                         '%s' % (self.host_name, myself.trigger_name, err, traceback.format_exc()))
+        #try:
+        #    exec code in dict(locals())
+        #except Exception as err:
+        #    set_value(self, "UNKNOWN: Trigger error: %s" % err, "", 3)
+        #    logger.error('%s Trigger %s failed: %s ; '
+        #                 '%s' % (self.host_name, myself.trigger_name, err, traceback.format_exc()))
 
 
     def __getstate__(self):
@@ -98,10 +94,10 @@ class Triggers(Items):
         # Now walk for it
         for root, dirs, files in os.walk(path):
             for file in files:
-                if re.search(r"\.trig$", file):
+                if re.search("\.trig$", file):
                     p = os.path.join(root, file)
                     try:
-                        fd = open(p, 'r')
+                        fd = open(p, 'rU')
                         buf = fd.read()
                         fd.close()
                     except IOError as exp:

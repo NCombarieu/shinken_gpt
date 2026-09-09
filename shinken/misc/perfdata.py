@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,18 +22,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import re
 from shinken.util import to_best_int_float
 
-perfdata_split_pattern = re.compile(r'([^=]+=\S+)')
+perfdata_split_pattern = re.compile('([^=]+=\S+)')
 # TODO: Improve this regex to not match strings like this:
 # 'metric=45+e-456.56unit;50;80;0;45+-e45e-'
 metric_pattern = \
     re.compile(
-        r'^([^=]+)=([\d\.\-\+eE]+)([\w\/%]*)'
-        r';?([\d\.\-\+eE:~@]+)?;?([\d\.\-\+eE:~@]+)?;?([\d\.\-\+eE]+)?;?([\d\.\-\+eE]+)?;?\s*'
+        '^([^=]+)=([\d\.\-\+eE]+)([\w\/%]*)'
+        ';?([\d\.\-\+eE:~@]+)?;?([\d\.\-\+eE:~@]+)?;?([\d\.\-\+eE]+)?;?([\d\.\-\+eE]+)?;?\s*'
     )
 
 
@@ -43,17 +40,17 @@ metric_pattern = \
 def guess_int_or_float(val):
     try:
         return to_best_int_float(val)
-    except Exception as exp:
+    except Exception:
         return None
 
 
 # Class for one metric of a perf_data
-class Metric(object):
+class Metric:
     def __init__(self, s):
         self.name = self.value = self.uom = \
             self.warning = self.critical = self.min = self.max = None
         s = s.strip()
-        # print("Analysis string", s)
+        # print "Analysis string", s
         r = metric_pattern.match(s)
         if r:
             # Get the name but remove all ' in it
@@ -64,10 +61,10 @@ class Metric(object):
             self.critical = guess_int_or_float(r.group(5))
             self.min = guess_int_or_float(r.group(6))
             self.max = guess_int_or_float(r.group(7))
-            # print('Name', self.name)
-            # print("Value", self.value)
-            # print("Res", r)
-            # print(r.groups())
+            # print 'Name', self.name
+            # print "Value", self.value
+            # print "Res", r
+            # print r.groups()
             if self.uom == '%':
                 self.min = 0
                 self.max = 100
@@ -81,7 +78,7 @@ class Metric(object):
         return s
 
 
-class PerfDatas(object):
+class PerfDatas:
     def __init__(self, s):
         s = s or ''
         elts = perfdata_split_pattern.findall(s)

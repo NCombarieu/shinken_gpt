@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,9 +22,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-from shinken.objects.item import Item, Items
+from .item import Item, Items
 
 from shinken.util import strip_and_uniq
 from shinken.property import BoolProp, IntegerProp, StringProp, ListProp
@@ -222,25 +219,25 @@ class Escalations(Items):
                     for sname in strip_and_uniq(sdesc.split(',')):
                         s = services.find_srv_by_name_and_hostname(hname, sname)
                         if s is not None:
-                            # print("Linking service", s.get_name(), 'with me', es.get_name())
+                            # print "Linking service", s.get_name(), 'with me', es.get_name()
                             s.escalations.append(es)
-                            # print("Now service", s.get_name(), 'have', s.escalations)
+                            # print "Now service", s.get_name(), 'have', s.escalations
 
     # Will register escalations into host.escalations
     def linkify_es_by_h(self, hosts):
         for es in self:
             # If no host, no hope of having a service
-            if (not hasattr(es, 'host_name') or es.host_name.strip() == '' or
-                    (hasattr(es, 'service_description') and
-                        es.service_description.strip() != '')):
+            if (not hasattr(es, 'host_name') or es.host_name.strip() == ''
+                    or (hasattr(es, 'service_description')
+                        and es.service_description.strip() != '')):
                 continue
             # I must be NOT a escalation on for service
             for hname in strip_and_uniq(es.host_name.split(',')):
                 h = hosts.find_by_name(hname)
                 if h is not None:
-                    # print("Linking host", h.get_name(), 'with me', es.get_name())
+                    # print "Linking host", h.get_name(), 'with me', es.get_name()
                     h.escalations.append(es)
-                    # print("Now host", h.get_name(), 'have', h.escalations)
+                    # print "Now host", h.get_name(), 'have', h.escalations
 
     # We look for contacts property in contacts and
     def explode(self, hosts, hostgroups, contactgroups):

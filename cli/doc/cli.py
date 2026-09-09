@@ -21,13 +21,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
+
 from shinken.log import logger
 
 # Will be populated by the shinken CLI command
 CONFIG = None
+
 
 
 ############# ********************        SERVE           ****************###########
@@ -45,7 +46,7 @@ def serve(port):
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
-    except Exception as exp:
+    except Exception, exp:
         logger.error(exp)
 
 def do_serve(port='8080'):
@@ -73,7 +74,7 @@ def _compile():
         s = 'sphinx-build -b html -d %s %s %s' % (doctrees_dir, source_dir, html_dir)
         args = s.split(' ')
         main(args)
-    except Exception as exp:
+    except Exception, exp:
         logger.error(exp)
     return
 

@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -27,9 +26,7 @@
 
 # And itemgroup is like a item, but it's a group of items :)
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-from shinken.objects.item import Item, Items
+from .item import Item, Items
 
 from shinken.brok import Brok
 from shinken.property import StringProp, ListProp, ToGuessProp
@@ -82,7 +79,7 @@ class Itemgroup(Item):
 
         # Copy all properties
         for prop in cls.properties:
-            if prop != 'members':
+            if prop is not 'members':
                 if self.has(prop):
                     val = getattr(self, prop)
                     setattr(new_i, prop, val)
@@ -114,7 +111,7 @@ class Itemgroup(Item):
         add_fun(self.unknown_members, member)
 
     def __str__(self):
-        return str(self.__dict__)
+        return str(self.__dict__) + '\n'
 
     def __iter__(self):
         return self.members.__iter__()

@@ -26,8 +26,6 @@
 that shinken modules will subclass
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import os
 import signal
 import time
@@ -67,7 +65,7 @@ properties = {
 }
 
 
-class ModulePhases(object):
+class ModulePhases:
     """TODO: Add some comment about this class for the doc"""
     # TODO: why not use simply integers instead of string
     # to represent the different phases??
@@ -250,7 +248,7 @@ class BaseModule(object):
         manage = getattr(self, 'manage_' + brok.type + '_brok', None)
         if manage:
             # Be sure the brok is prepared before call it
-            #brok.prepare()
+            brok.prepare()
             return manage(brok)
 
 

@@ -22,8 +22,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 import os
 import sys
 import time
@@ -42,12 +42,12 @@ class TestAction(ShinkenTest):
         while True:
             # Do the job
             if a.status == 'launched':
-                #print(a.process.poll())
+                #print a.process.poll()
                 a.check_finished(size)
                 time.sleep(0.01)
-            #print(a.status)
+            #print a.status
             if a.status != 'launched':
-                #print("Finish", a.status)
+                #print "Finish", a.status
                 return
             # 20s timeout
             if time.time() - start > 20:
@@ -88,7 +88,8 @@ class TestAction(ShinkenTest):
         self.assertNotIn('TITI', a.get_local_environnement())
         a.env = {'TITI': 'est en vacance'}
         self.assertIn('TITI', a.get_local_environnement())
-        self.assertEqual(a.get_local_environnement()['TITI'], 'est en vacance')
+        self.assertEqual(a.get_local_environnement()['TITI'],
+                         'est en vacance' )
         a.execute()
         self.wait_finished(a)
         self.assertEqual(a.output, 'est en vacance')
@@ -166,6 +167,7 @@ class TestAction(ShinkenTest):
 
         self.assertEqual('launched', a.status)
         self.wait_finished(a)
+        print("FUck", a.status, a.output)
         self.assertEqual(0, a.exit_status)
         self.assertEqual('done', a.status)
 
@@ -181,6 +183,7 @@ class TestAction(ShinkenTest):
 
         self.assertEqual('launched', a.status)
         self.wait_finished(a)
+        print("FUck", a.status, a.output)
         self.assertEqual(0, a.exit_status)
         self.assertEqual('done', a.status)
 
@@ -196,6 +199,7 @@ class TestAction(ShinkenTest):
 
         self.assertEqual('launched', a.status)
         self.wait_finished(a)
+        print("FUck", a.status, a.output)
         self.assertEqual(0, a.exit_status)
         self.assertEqual('done', a.status)
 
@@ -211,8 +215,15 @@ class TestAction(ShinkenTest):
 
         self.wait_finished(a)
         self.assertEqual('done', a.status)
-        self.assertEqual('Not a valid shell command: No closing quotation', a.output)
-        self.assertEqual(3, a.exit_status)
+        print('OUTPUT: %s' % a.output)
+        if sys.version_info < (2, 7):
+            # cygwin: /bin/sh: -c: line 0: unexpected EOF while looking for matching'
+            # ubuntu: /bin/sh: Syntax error: Unterminated quoted string
+            self.assertTrue(a.output.startswith("/bin/sh"))
+            self.assertEqual(3, a.exit_status)
+        else:
+            self.assertEqual('Not a valid shell command: No closing quotation', a.output)
+            self.assertEqual(3, a.exit_status)
 
     # We got problems on LARGE output, more than 64K in fact.
     # We try to solve it with the fcntl and non blocking read
@@ -224,17 +235,18 @@ class TestAction(ShinkenTest):
         a.env = {}
 
         if os.name == 'nt':
-            a.command = """python3 -c 'print("A"*1000000)'"""
+            a.command = r"""python -c 'print("A"*1000000)'"""
             # FROM NOW IT4S FAIL ON WINDOWS :(
             return
         else:
-            a.command = """python3 -u -c 'print("A"*100000)'"""
+            a.command = r"""python -u -c 'print("A"*100000)'"""
         print("EXECUTE")
         a.execute()
         print("EXECUTE FINISE")
         self.assertEqual('launched', a.status)
         # Give also the max output we want for the command
         self.wait_finished(a, 10000000000)
+        self.assertEqual("A" * 100000, a.output)
         print("Status?", a.exit_status)
         self.assertEqual(0, a.exit_status)
         print("Output", len(a.output))
@@ -251,11 +263,12 @@ class TestAction(ShinkenTest):
         a.timeout = 10
         a.env = {}  # :fixme: this sould be pre-set in Action.__init__()
 
-        a.command = "/bin/echo Wiadomo\u015b\u0107"
+        a.command = u"/bin/echo Wiadomo\u015b\u0107"
 
         a.execute()
         self.wait_finished(a)
-        self.assertEqual(a.output, "Wiadomo\u015b\u0107")
+        #print a.output
+        self.assertEqual(a.output, u"Wiadomo\u015b\u0107")
 
     def test_non_zero_exit_status_empty_output_but_non_empty_stderr(self):
         a = Action()

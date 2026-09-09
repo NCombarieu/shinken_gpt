@@ -32,7 +32,6 @@
  In case the arbiter has a new conf to send, the broker forget its old
  schedulers (and their associated broks) and take the new ones instead.
 '''
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import sys
@@ -76,11 +75,11 @@ def main():
                       dest="do_replace",
                       help="Replace previous running broker")
     parser.add_option('--debugfile', dest='debug_file',
-                      help=("Enable debug log and save it to a file. "
-                            "Default: not used"))
+                      help=("Debug file. Default: not used "
+                            "(why debug a bug free program? :) )"))
     parser.add_option("-p", "--profile",
                       dest="profile",
-                      help="Dump a profile file. Need the python cProfile library")
+                      help="Dump a profile file. Need the python cProfile librairy")
 
     opts, args = parser.parse_args()
     if args:
@@ -92,7 +91,7 @@ def main():
     else:
         # For perf tuning:
         import cProfile
-        cProfile.runctx('''daemon.main()''', globals(), locals(), opts.profile)
+        cProfile.run('''daemon.main()''', opts.profile)
 
 
 if __name__ == '__main__':

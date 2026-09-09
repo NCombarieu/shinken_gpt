@@ -22,8 +22,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import threading
 import time
 import json
@@ -174,7 +172,7 @@ class Stats(object):
     # Sends a metric to statsd daemon
     def send_metric(self, packet):
         try:
-            self.statsd_sock.sendto(packet.encode("utf-8"), self.statsd_addr)
+            self.statsd_sock.sendto(packet, self.statsd_addr)
         except (socket.error, socket.gaierror):
             # cannot send? ok not a huge problem here and cannot
             # log because it will be far too verbose :p
@@ -294,7 +292,7 @@ class Stats(object):
                     except HTTPException as exp:
                         logger.error('Stats REAPER cannot put to the metric server %s' % exp)
             except Exception as e:
-                logger.error("Reaper: %s", e)
+                logger.error("Reaper: %s", str(e))
                 logger.debug(traceback.format_exc())
             time.sleep(60)
 
@@ -319,7 +317,7 @@ class Stats(object):
                     name, val, _type = metric
                     self.gauge(name, val, _type)
             except Exception as e:
-                logger.error("Harvester: %s", e)
+                logger.error("Harvester: %s", str(e))
                 logger.debug(traceback.format_exc())
             time.sleep(self.statsd_interval)
 

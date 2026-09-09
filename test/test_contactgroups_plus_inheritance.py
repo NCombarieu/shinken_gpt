@@ -23,8 +23,8 @@
 # This file is used to test attribute inheritance and the right order
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 
@@ -38,7 +38,7 @@ class TestPlusInInheritance(ShinkenTest):
         print(h.contact_groups)
         for c in h.contacts:
             print("->",c.get_name())
-
+    
     def _dump_svc(self,s):
         print("Dumping Service", s.get_name())
         print("  contact_groups : %s " % s.contact_groups)
@@ -72,7 +72,7 @@ class TestPlusInInheritance(ShinkenTest):
         self.assertIn("test_contact_1", [c .get_name() for c in host5.contacts])
         self.assertIn("test_contact_2", [c .get_name() for c in host5.contacts])
 
-
+        
         host6 = self.sched.hosts.find_by_name("test_host_6")
         self._dump(host6)
         self.assertIn("test_contact_1", [c .get_name() for c in host6.contacts])
@@ -96,12 +96,12 @@ class TestPlusInInheritance(ShinkenTest):
         # Now Let's check multi level service inheritance
 
         svc4 = self.sched.services.find_srv_by_name_and_hostname("test_host_0", "TEST-DESC4")
-        self.assertIn("test_contact_1",  [c .get_name() for c in svc4.contacts])
-        self.assertIn("test_contact_2",  [c .get_name() for c in svc4.contacts])
+        self.assertIn("test_contact_1", [c.get_name() for c in svc4.contacts])
+        self.assertIn("test_contact_2", [c.get_name() for c in svc4.contacts])
         self._dump_svc(svc4)
 
         svc5 = self.sched.services.find_srv_by_name_and_hostname("test_host_0", "TEST-DESC4b")
-        self.assertIn("test_contact_2",  [c .get_name() for c in svc5.contacts])
+        self.assertIn("test_contact_2", [c.get_name() for c in svc5.contacts])
         self._dump_svc(svc5)
 
 

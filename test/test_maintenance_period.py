@@ -22,8 +22,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 #time.time = original_time_time
 #time.sleep = original_time_sleep
@@ -121,7 +121,7 @@ class TestMaintPeriod(ShinkenTest):
             print("looks like there is no downtime")
             pass
         self.assertEqual(1, len(svc3.downtimes))
-        self.assertIn(svc3.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(svc3.downtimes[0], list(self.sched.downtimes.values()))
         self.assertTrue(svc3.in_scheduled_downtime)
         self.assertTrue(svc3.downtimes[0].fixed)
         self.assertTrue(svc3.downtimes[0].is_in_effect)

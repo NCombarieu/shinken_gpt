@@ -22,8 +22,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 
@@ -70,7 +70,7 @@ class TestComplexHostgroups(ShinkenTest):
         print(self.sched.services.items)
         svc = self.get_svc()
         print("Service", svc)
-        #print(self.conf.hostgroups)
+        #print self.conf.hostgroups
 
         # All our hosts
         test_linux_web_prod_0 = self.find_host('test_linux_web_prod_0')

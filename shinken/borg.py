@@ -23,8 +23,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 
 class Borg(object):
     """ Here is the new-style Borg
@@ -33,5 +31,5 @@ class Borg(object):
     __shared_state = {}
 
     def __init__(self):
-        # print("Init Borg", self.__dict__, self.__class__.__shared_state)
+        # print "Init Borg", self.__dict__, self.__class__.__shared_state
         self.__dict__ = self.__class__.__shared_state

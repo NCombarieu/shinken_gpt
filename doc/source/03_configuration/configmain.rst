@@ -195,26 +195,6 @@ Default:
 This option is used to know if we apply or not the state change when a host or service is impacted by a root problem (like the service's host going down or a host's parent being down too). The state will be changed by UNKNONW for a service and UNREACHABLE for a host until their next schedule check. This state change do not count as a attempt, it's just for console so the users know that theses objects got problems and the previous states are not sure.
 
 
-.. _configuration/configmain#enable_problem_impacts_states_reprocessing:
-
-Enable problem/impacts states change
--------------------------------------
-
-Format:
-
-::
-
-  enable_problem_impacts_states_reprocessing=<0/1>
-
-Default:
-
-::
-
-  enable_problem_impacts_states_reprocessing=0
-
-This option is used to enforce the reprocessing of the problem/impact state after the retention data has been loaded in the scheduler. I's off by default, meaning that the problem/impact related attributes only get modified when a new state change is detected (a new active or passive check result has arrived with a different state). When enabled, this feature walks through the entire objects dependency tree to re-evaluate the object state after the basic objects state has been restored.
-
-
 .. _configuration/configmain#disable_old_nagios_parameters_whining:
 
 Disable Old Nagios Parameters Whining
@@ -687,19 +667,3 @@ Default:
 
 
 On some distributions, dealing with large configuration can result in memory leaks when the new configuration is sent, because of an inneficient memory cleanup in the python interpreter. This options enables a more aggressive memory routine that forces unused memory to be freed.
-
-Object name conflict policy
----------------------------
-
-::
-
-  conflict_policy=[loose/strict]
-
-Default:
-
-::
-
-  conflict_policy=loose
-
-
-When more than one object are created with the same name and no definition order has been specified, the default behavior is to raise a warning message, and keep the last definition. When enabling strict conflict naming policy, this results in an error that prevents the configuration from being loaded. This is typically used to enforce more precise  objects definition, and avoid silent collisions lading to unexpected behavior.
