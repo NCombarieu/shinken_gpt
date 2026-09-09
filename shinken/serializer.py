@@ -31,6 +31,7 @@ if six.PY2:
     import cPickle as pickle
 else:
     import pickle
+from shinken.log import logger
 from shinken.safepickle import SafeUnpickler
 
 
