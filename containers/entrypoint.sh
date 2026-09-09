@@ -8,9 +8,7 @@ config_root="${SHINKEN_CONFIG:-/etc/shinken}"
 case "$role" in
   arbiter)
     if [ "$#" -eq 0 ]; then
-      echo "arbiter requires one or more -c configuration files" >&2
-      echo "example: arbiter -c ${config_root}/shinken-specific.cfg" >&2
-      exit 64
+      set -- -c "${config_root}/shinken.cfg.in"
     fi
     exec shinken-arbiter "$@"
     ;;
