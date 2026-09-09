@@ -33,65 +33,42 @@ trigger_functions = {}
 
 
 class declared(object):
-    """ Decorator to add function in trigger environnement
-    """
+    """Decorator to add a function to the trigger environment."""
     def __init__(self, f):
         self.f = f
-        global functions
-        n = getattr(f, 'func_name', 'no name')
-        # logger.debug("Initializing function %s %s" % (n, f))
+        n = getattr(f, '__name__', 'no name')
         trigger_functions[n] = f
 
     def __call__(self, *args):
-        logger.debug("Calling %s with arguments %s", self.f.func_name, args)
+        logger.debug("Calling %s with arguments %s", self.f.__name__, args)
         return self.f(*args)
 
 @declared
 def up(obj, output):
-    """ Set a host in UP state
-    """
     set_value(obj, output, None, 0)
-
 
 @declared
 def down(obj, output):
-    """ Set a host in DOWN state
-    """
     set_value(obj, output, None, 1)
-
 
 @declared
 def ok(obj, output):
-    """ Set a service in OK state
-    """
     set_value(obj, output, None, 0)
-
 
 @declared
 def warning(obj, output):
-    """ Set a service in WARNING state
-    """
     set_value(obj, output, None, 1)
-
 
 @declared
 def critical(obj, output):
-    """ Set a service in CRITICAL state
-    """
     set_value(obj, output, None, 2)
-
 
 @declared
 def unknown(obj, output):
-    """ Set a service in UNKNOWN state
-    """
     set_value(obj, output, None, 3)
-
 
 @declared
 def set_value(obj_ref, output=None, perfdata=None, return_code=None):
-    """ Set output, state and perfdata to a service or host
-    """
     obj = get_object(obj_ref)
     if not obj:
         return
@@ -99,52 +76,29 @@ def set_value(obj_ref, output=None, perfdata=None, return_code=None):
     perfdata = perfdata or obj.perf_data
     if return_code is None:
         return_code = obj.state_id
-
-    logger.debug("[trigger] Setting %s %s %s for object %s",
-                 output,
-                 perfdata,
-                 return_code,
-                 obj.get_full_name())
-
+    logger.debug("[trigger] Setting %s %s %s for object %s", output, perfdata, return_code, obj.get_full_name())
     if perfdata:
         output = output + ' | ' + perfdata
-
     now = time.time()
-    cls = obj.__class__
-    i = obj.launch_check(now, force=True)
-    for chk in obj.checks_in_progress:
-        if chk.id == i:
-            logger.debug("[trigger] I found the check I want to change")
-            c = chk
-            # Now we 'transform the check into a result'
-            # So exit_status, output and status is eaten by the host
-            c.exit_status = return_code
-            c.get_outputs(output, obj.max_plugins_output_length)
-            c.status = 'waitconsume'
-            c.check_time = now
-            # IMPORTANT: tag this check as from a trigger, so we will not
-            # loop in an infinite way for triggers checks!
-            c.from_trigger = True
-            # Ok now this result will be read by scheduler the next loop
-
+    check_id = obj.launch_check(now, force=True)
+    for check in obj.checks_in_progress:
+        if check.id == check_id:
+            check.exit_status = return_code
+            check.get_outputs(output, obj.max_plugins_output_length)
+            check.status = 'waitconsume'
+            check.check_time = now
+            check.from_trigger = True
 
 @declared
 def perf(obj_ref, metric_name):
-    """ Get perf data from a service
-    """
     obj = get_object(obj_ref)
     p = PerfDatas(obj.perf_data)
     if metric_name in p:
-        logger.debug("[trigger] I found the perfdata")
         return p[metric_name].value
-    logger.debug("[trigger] I am in perf command")
     return None
-
 
 @declared
 def get_custom(obj_ref, cname, default=None):
-    """ Get custom varialbe from a service or a host
-    """
     obj = get_objects(obj_ref)
     if not obj:
         return default
@@ -153,104 +107,63 @@ def get_custom(obj_ref, cname, default=None):
         cname = '_' + cname
     return obj.customs.get(cname, default)
 
-
 @declared
 def perfs(objs_ref, metric_name):
-    """ TODO: check this description
-        Get perfdatas from multiple services/hosts
-    """
-    objs = get_objects(objs_ref)
-    r = []
-    for o in objs:
-        v = perf(o, metric_name)
-        r.append(v)
-    return r
-
+    return [perf(obj, metric_name) for obj in get_objects(objs_ref)]
 
 @declared
 def allperfs(obj_ref):
-    """ Get all perfdatas from a service or a host
-    """
     obj = get_object(obj_ref)
     p = PerfDatas(obj.perf_data)
-    logger.debug("[trigger] I get all perfdatas")
-    return dict([(metric.name, p[metric.name]) for metric in p])
-
+    return {metric.name: p[metric.name] for metric in p}
 
 @declared
 def get_object(ref):
-    """ Retrive object (service/host) from name
-    """
-    # Maybe it's already a real object, if so, return it :)
-    if not isinstance(ref, basestring):
+    if not isinstance(ref, str):
         return ref
-
-    # Ok it's a string
-    name = ref
-    if '/' not in name:
-        return objs['hosts'].find_by_name(name)
-    else:
-        elts = name.split('/', 1)
-        return objs['services'].find_srv_by_name_and_hostname(elts[0], elts[1])
-
+    if '/' not in ref:
+        return objs['hosts'].find_by_name(ref)
+    host_name, service_name = ref.split('/', 1)
+    return objs['services'].find_srv_by_name_and_hostname(host_name, service_name)
 
 @declared
 def get_objects(ref):
-    """ TODO: check this description
-        Retrive objects (service/host) from names
-    """
-    # Maybe it's already a real object, if so, return it :)
-    if not isinstance(ref, basestring):
+    if not isinstance(ref, str):
         return ref
+    if '*' not in ref:
+        return get_object(ref)
 
-    name = ref
-    # Maybe there is no '*'? if so, it's one element
-    if '*' not in name:
-        return get_object(name)
-
-    # Ok we look for spliting the host or service thing
     hname = ''
     sdesc = ''
-    if '/' not in name:
-        hname = name
+    if '/' not in ref:
+        hname = ref
     else:
-        elts = name.split('/', 1)
-        hname = elts[0]
-        sdesc = elts[1]
+        hname, sdesc = ref.split('/', 1)
     logger.debug("[trigger get_objects] Look for %s %s", hname, sdesc)
-    res = []
     hosts = []
     services = []
 
-    # Look for host, and if need, look for service
     if '*' not in hname:
-        h = objs['hosts'].find_by_name(hname)
-        if h:
-            hosts.append(h)
+        host = objs['hosts'].find_by_name(hname)
+        if host:
+            hosts.append(host)
     else:
-        hname = hname.replace('*', '.*')
-        p = re.compile(hname)
-        for h in objs['hosts']:
-            logger.debug("[trigger] Compare %s with %s", hname, h.get_name())
-            if p.search(h.get_name()):
-                hosts.append(h)
+        pattern = re.compile(hname.replace('*', '.*'))
+        for host in objs['hosts']:
+            if pattern.search(host.get_name()):
+                hosts.append(host)
 
-    # Maybe the user ask for justs hosts :)
     if not sdesc:
         return hosts
 
-    for h in hosts:
+    for host in hosts:
         if '*' not in sdesc:
-            s = h.find_service_by_name(sdesc)
-            if s:
-                services.append(s)
+            service = host.find_service_by_name(sdesc)
+            if service:
+                services.append(service)
         else:
-            sdesc = sdesc.replace('*', '.*')
-            p = re.compile(sdesc)
-            for s in h.services:
-                logger.debug("[trigger] Compare %s with %s", s.service_description, sdesc)
-                if p.search(s.service_description):
-                    services.append(s)
-
-    logger.debug("Found the following services: %s", services)
+            pattern = re.compile(sdesc.replace('*', '.*'))
+            for service in host.services:
+                if pattern.search(service.service_description):
+                    services.append(service)
     return services
