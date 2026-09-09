@@ -43,6 +43,7 @@ PYCURL_VERSION = pycurl.version_info()[1]
 
 from shinken.bin import VERSION
 from shinken.log import logger
+from shinken.serializer import serialize
 
 class HTTPException(Exception):
     pass
@@ -203,12 +204,7 @@ class HTTPClient(object):
             err = response.getvalue().decode("utf-8")
             logger.error("There was a critical error : %s", err)
             raise HTTPException('Connection error to %s : %s' % (self.uri, r))
-        # Manage special return of pycurl
-        # ret  = json.loads(response.getvalue().replace('\\/', '/'))
         return response.getvalue()
-
-        # Should return us pong string
-        return ret
 
 
     # Try to get an URI path
