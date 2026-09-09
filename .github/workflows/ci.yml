@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest pytest-cov ruff
+      - name: Compile all Python sources
+        run: python -m compileall -q shinken bin
+      - name: Lint fatal errors
+        run: ruff check shinken bin --select E9,F63,F7,F82
+      - name: Tests
+        run: pytest
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build rootless container
+        run: podman build --tag shinken:test --file Containerfile .
+      - name: Smoke test image
+        run: podman run --rm shinken:test shinken-arbiter --version
