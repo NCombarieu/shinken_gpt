@@ -3,8 +3,6 @@
 # Copyright (C) 2009-2014:
 #     Gabes Jean, naparuba@gmail.com
 #     Gerhard Lausser, Gerhard.Lausser@consol.de
-#     Gregory Starck, g.starck@gmail.com
-#     Hartmut Goebel, h.goebel@goebel-consult.de
 #
 # This file is part of Shinken.
 #
@@ -21,44 +19,66 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
+import io
 import sys
 
 try:
     import cPickle as cpickle
 except ImportError:
     import pickle as cpickle
-from .imports import StringIO
 
 
-# Unpickle but strip and remove all __reduce__ things
-# so we don't allow external code to be executed
-# Code from Graphite::carbon project
-class SafeUnpickler(object):
+# Unpickle while rejecting arbitrary globals so crafted payloads cannot execute
+# external code. Based on the historical Graphite/carbon implementation.
+class _RestrictedUnpickler(cpickle.Unpickler):
     PICKLE_SAFE = {
-        'copy_reg'   : set(['_reconstructor']),
-        '__builtin__': set(['object', 'set']),
+        'copy_reg': {'_reconstructor'},
+        'copyreg': {'_reconstructor'},
+        '__builtin__': {'object', 'set'},
+        'builtins': {'object', 'set'},
     }
-    
-    
-    @classmethod
-    def find_class(cls, module, name):
-        if module not in cls.PICKLE_SAFE and not module.startswith('shinken.'):
+
+    def find_class(self, module, name):
+        if module.startswith('shinken.'):
+            __import__(module)
+            return getattr(sys.modules[module], name)
+
+        allowed_names = self.PICKLE_SAFE.get(module)
+        if allowed_names is None:
             raise ValueError('Attempting to unpickle unsafe module %s' % module)
-        __import__(module)
-        mod = sys.modules[module]
-        if not module.startswith('shinken.') and name not in cls.PICKLE_SAFE[module]:
+        if name not in allowed_names:
             raise ValueError('Attempting to unpickle unsafe class %s/%s' %
                              (module, name))
-        return getattr(mod, name)
-    
-    
+
+        __import__(module)
+        return getattr(sys.modules[module], name)
+
+
+class SafeUnpickler(object):
+    PICKLE_SAFE = _RestrictedUnpickler.PICKLE_SAFE
+
+    @classmethod
+    def find_class(cls, module, name):
+        """Compatibility helper for callers using the historical API."""
+        if module.startswith('shinken.'):
+            __import__(module)
+            return getattr(sys.modules[module], name)
+
+        allowed_names = cls.PICKLE_SAFE.get(module)
+        if allowed_names is None:
+            raise ValueError('Attempting to unpickle unsafe module %s' % module)
+        if name not in allowed_names:
+            raise ValueError('Attempting to unpickle unsafe class %s/%s' %
+                             (module, name))
+
+        __import__(module)
+        return getattr(sys.modules[module], name)
+
     @classmethod
     def loads(cls, pickle_string):
-        # TODO: fix this
-        return cpickle.loads(pickle_string)
-        
-        from .util import bytes_to_unicode  # loop imports
-        pickle_string = bytes_to_unicode(pickle_string)
-        pickle_obj = cpickle.Unpickler(StringIO(pickle_string))
-        setattr(pickle_obj, 'find_global', cls.find_class)
-        return pickle_obj.load()
+        if isinstance(pickle_string, str):
+            # Protocol 0 payloads historically travelled through text streams.
+            # latin-1 is a one-to-one mapping for byte values and therefore does
+            # not alter the serialized payload.
+            pickle_string = pickle_string.encode('latin-1')
+        return _RestrictedUnpickler(io.BytesIO(pickle_string)).load()
