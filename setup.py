@@ -33,8 +33,8 @@ from glob import glob
 from distutils.dir_util import mkpath
 
 python_version = sys.version_info
-if python_version < (3, 8):
-    sys.exit("Shinken requires Python 3.8 or newer, sorry")
+if python_version < (3, 11):
+    sys.exit("Shinken requires Python 3.11 or newer, sorry")
 
 package_data = ['*.py', 'modules/*.py', 'modules/*/*.py']
 
@@ -404,7 +404,13 @@ for o in not_allowed_options:
     if o in sys.argv:
         sys.argv.remove(o)
 
-required_pkgs = ['CherryPy>=18.8.0', 'legacy-cgi>=2.6', 'pycurl>=7.45.2', 'six>=1.16.0']
+required_pkgs = [
+    'CherryPy>=18.8.0',
+    'legacy-cgi>=2.6',
+    'pycurl>=7.45.2',
+    'Pyro5>=5.15',
+    'six>=1.16.0',
+]
 setup(
     name="Shinken",
     version="2.4.3",
@@ -428,11 +434,13 @@ setup(
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3 :: Only',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3.13',
         'Topic :: System :: Monitoring',
         'Topic :: System :: Networking :: Monitoring',
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.11",
     install_requires=required_pkgs,
     
     extras_require={
