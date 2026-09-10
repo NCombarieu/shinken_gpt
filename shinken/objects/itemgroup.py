@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -79,7 +79,7 @@ class Itemgroup(Item):
 
         # Copy all properties
         for prop in cls.properties:
-            if prop is not 'members':
+            if prop != 'members':
                 if self.has(prop):
                     val = getattr(self, prop)
                     setattr(new_i, prop, val)
