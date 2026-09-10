@@ -5,6 +5,7 @@ build-backend = "setuptools.build_meta"
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["test"]
+pythonpath = ["test"]
 addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
 filterwarnings = [
   "default::DeprecationWarning",
