@@ -21,3 +21,11 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
+
+# Python 3.11 removed inspect.getargspec(). A few legacy Shinken call sites
+# still use the old API and only depend on the common ``args``/``defaults``
+# attributes. Keep those paths operational while they are migrated in place.
+import inspect
+
+if not hasattr(inspect, 'getargspec'):
+    inspect.getargspec = inspect.getfullargspec
