@@ -25,12 +25,18 @@
 
 from __future__ import print_function
 from __future__ import absolute_import
+
+import pytest
+
 from shinken_test import *
 from shinken.db import DB
-import sys
 
-# No more DB, to delete
-sys.exit(0)
+
+# This suite targets the retired DB layer. Keep it discoverable without
+# aborting pytest collection for the rest of the repository.
+pytest.skip("retired DB layer", allow_module_level=True)
+
+
 class TestConfig(ShinkenTest):
     # setUp is inherited from ShinkenTest
 
@@ -69,8 +75,6 @@ class TestConfig(ShinkenTest):
         #print "Q", q
         c = u"UPDATE test_instances set plop='£°é§'  WHERE is_master='1' and id='£°é§'"
         self.assertEqual(c.strip(), q.strip())
-
-
 
 
 if __name__ == '__main__':
