@@ -28,6 +28,8 @@ import os
 import subprocess
 from time import sleep
 
+import pytest
+
 from shinken_test import *
 
 import shinken.log as shinken_log
@@ -41,8 +43,11 @@ daemons_config = {
 }
 
 
-import sys
-sys.exit(0)  # TODO: get it back
+pytest.skip(
+    "scheduler process integration test still depends on the legacy daemon harness",
+    allow_module_level=True,
+)
+
 
 class testSchedulerInit(ShinkenTest):
     def setUp(self):
