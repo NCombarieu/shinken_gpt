@@ -1,6 +1,6 @@
-
-
 from os.path import abspath, dirname, join
+
+import pytest
 
 from shinken_test import unittest, ShinkenTest
 
@@ -8,11 +8,13 @@ from shinken.objects.module import Module
 from shinken.modulesmanager import ModulesManager
 
 
-# TODO: reenable
-import sys
-sys.exit(0)
+pytest.skip(
+    "legacy module-as-package test is disabled until its import isolation is modernized",
+    allow_module_level=True,
+)
 
 modules_dir = join(dirname(abspath(__file__)), 'test_module_as_package')
+
 
 class TestModuleManager_And_Packages(ShinkenTest):
     ''' Test to make sure that we correctly import shinken modules.
@@ -36,7 +38,5 @@ class TestModuleManager_And_Packages(ShinkenTest):
         self.assertNotEqual(mod1.helpers.X, mod2.helpers.X)
 
 
-
 if __name__ == '__main__':
     unittest.main()
-
