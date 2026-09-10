@@ -24,9 +24,11 @@
 
 from __future__ import absolute_import
 
-# No more db mist in core
-import sys
-sys.exit(0)
+import pytest
+
+# Database support was removed from the core; keep this historical test file
+# discoverable without terminating the entire pytest collection process.
+pytest.skip("DBMysql is no longer part of Shinken core", allow_module_level=True)
 
 from shinken_test import *
 try:
