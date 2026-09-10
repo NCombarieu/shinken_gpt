@@ -28,12 +28,13 @@ import time
 import subprocess
 import unittest
 from tempfile import NamedTemporaryFile
+
+import pytest
+
 from shinken_test import *
 
-import sys
 
-# DISABLED? tO reenable
-sys.exit(0)
+pytest.skip("external_mapping legacy tests are disabled", allow_module_level=True)
 
 try:
     import json
@@ -45,7 +46,7 @@ except ImportError:
     except ImportError:
         print("Error: you need the json or simplejson module")
         raise
-                                                
+
 external_mapping = os.path.join(os.path.dirname(__file__),
                                 '..', 'libexec', 'external_mapping.py')
 
