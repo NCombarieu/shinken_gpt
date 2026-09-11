@@ -74,7 +74,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e . pytest pytest-timeout requests
       - name: Run complete legacy suite
-        run: pytest -ra --timeout=60 --timeout-method=thread
+        run: pytest -ra --timeout=60 --timeout-method=thread --junitxml=legacy-results.xml
+      - name: Upload legacy test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-test-results
+          path: legacy-results.xml
+          if-no-files-found: warn
+          retention-days: 7
 
   container:
     runs-on: ubuntu-latest
