@@ -5,7 +5,7 @@
 #    Gabes Jean, naparuba@gmail.com
 #    Gerhard Lausser, Gerhard.Lausser@consol.de
 #    Gregory Starck, g.starck@gmail.com
-#    Hartmut Goebel, h.goebel@goebel-consult.de
+#    Hartmut Goebel, h.goebel-consult.de
 #
 # This file is part of Shinken.
 #
@@ -55,11 +55,20 @@ def no_block_read(output):
     fd = output.fileno()
     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-    try:
-        r = output.read()
-        return bytes_to_unicode(r) if r is not None else ''
-    except Exception:
-        return ''
+
+    chunks = []
+    while True:
+        try:
+            chunk = os.read(fd, 65536)
+        except BlockingIOError:
+            break
+        except OSError:
+            break
+        if not chunk:
+            break
+        chunks.append(chunk)
+
+    return bytes_to_unicode(b''.join(chunks)) if chunks else ''
 
 
 class __Action(object):
