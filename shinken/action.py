@@ -78,30 +78,45 @@ class __Action(object):
         return self.execute__()
 
     def _start_output_collector(self):
-        """Continuously drain child pipes without blocking the scheduler loop."""
-        self._communicate_result = (b'', b'')
+        """Continuously drain stdout and stderr without blocking the main loop."""
+        self._stdout_chunks = []
+        self._stderr_chunks = []
 
-        def collect():
+        def drain(pipe, chunks):
             try:
-                self._communicate_result = self.process.communicate()
+                while True:
+                    chunk = pipe.read(65536)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
             except (OSError, ValueError) as exp:
                 logger.debug("Failed while collecting command output: %s", exp)
 
-        self._output_collector = threading.Thread(
-            target=collect, name='shinken-action-output', daemon=True)
-        self._output_collector.start()
+        self._output_collectors = [
+            threading.Thread(
+                target=drain,
+                args=(self.process.stdout, self._stdout_chunks),
+                name='shinken-action-stdout',
+                daemon=True,
+            ),
+            threading.Thread(
+                target=drain,
+                args=(self.process.stderr, self._stderr_chunks),
+                name='shinken-action-stderr',
+                daemon=True,
+            ),
+        ]
+        for collector in self._output_collectors:
+            collector.start()
 
     def _finish_output_collector(self):
-        collector = getattr(self, '_output_collector', None)
-        if collector is not None:
+        for collector in getattr(self, '_output_collectors', ()):
             collector.join(timeout=1)
-        stdoutdata, stderrdata = getattr(self, '_communicate_result', (b'', b''))
-        self.stdoutdata += bytes_to_unicode(stdoutdata or b'')
-        self.stderrdata += bytes_to_unicode(stderrdata or b'')
-        if hasattr(self, '_output_collector'):
-            del self._output_collector
-        if hasattr(self, '_communicate_result'):
-            del self._communicate_result
+        self.stdoutdata += bytes_to_unicode(b''.join(getattr(self, '_stdout_chunks', ())))
+        self.stderrdata += bytes_to_unicode(b''.join(getattr(self, '_stderr_chunks', ())))
+        for attr in ('_output_collectors', '_stdout_chunks', '_stderr_chunks'):
+            if hasattr(self, attr):
+                delattr(self, attr)
 
     def get_outputs(self, out, max_plugins_output_length):
         out = out[:max_plugins_output_length]
