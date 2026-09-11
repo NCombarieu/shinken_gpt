@@ -67,6 +67,7 @@ class __Action(object):
     def execute(self):
         self.status = 'launched'
         self.check_time = time.time()
+        self._execution_start_monotonic = time.monotonic()
         self.wait_time = 0.0001
         self.last_poll = self.check_time
         self.local_env = self.get_local_environnement()
@@ -76,6 +77,12 @@ class __Action(object):
         self.long_output = ''
         self.perf_data = ''
         return self.execute__()
+
+    def _elapsed_execution_time(self):
+        start = getattr(self, '_execution_start_monotonic', None)
+        if start is not None:
+            return max(0.0, time.monotonic() - start)
+        return max(0.0, time.time() - self.check_time)
 
     def _start_output_collector(self):
         """Continuously drain stdout and stderr without blocking the main loop."""
@@ -93,18 +100,10 @@ class __Action(object):
                 logger.debug("Failed while collecting command output: %s", exp)
 
         self._output_collectors = [
-            threading.Thread(
-                target=drain,
-                args=(self.process.stdout, self._stdout_chunks),
-                name='shinken-action-stdout',
-                daemon=True,
-            ),
-            threading.Thread(
-                target=drain,
-                args=(self.process.stderr, self._stderr_chunks),
-                name='shinken-action-stderr',
-                daemon=True,
-            ),
+            threading.Thread(target=drain, args=(self.process.stdout, self._stdout_chunks),
+                             name='shinken-action-stdout', daemon=True),
+            threading.Thread(target=drain, args=(self.process.stderr, self._stderr_chunks),
+                             name='shinken-action-stderr', daemon=True),
         ]
         for collector in self._output_collectors:
             collector.start()
@@ -147,12 +146,11 @@ class __Action(object):
         if self.status != 'launched':
             return
         self.last_poll = time.time()
-
         _, _, child_utime, child_stime, _ = os.times()
         if self.process.poll() is None:
             self.wait_time = min(self.wait_time * 2, 0.1)
-            now = time.time()
-            if (now - self.check_time) > self.timeout:
+            elapsed = self._elapsed_execution_time()
+            if elapsed > self.timeout:
                 self.kill__()
                 try:
                     self.process.wait(timeout=1)
@@ -163,7 +161,7 @@ class __Action(object):
                     self.stdoutdata = self.stderrdata
                 self.get_outputs(self.stdoutdata, max_plugins_output_length)
                 self.status = 'timeout'
-                self.execution_time = now - self.check_time
+                self.execution_time = elapsed
                 self.exit_status = 3
                 for pipe in (self.process.stdout, self.process.stderr):
                     if pipe and not pipe.closed:
@@ -195,16 +193,14 @@ class __Action(object):
 
         if self.exit_status not in valid_exit_status:
             self.exit_status = 3
-
         if not self.stdoutdata.strip():
             self.stdoutdata = self.stderrdata
 
         self.get_outputs(self.stdoutdata, max_plugins_output_length)
         del self.stdoutdata
         del self.stderrdata
-
         self.status = 'done'
-        self.execution_time = time.time() - self.check_time
+        self.execution_time = self._elapsed_execution_time()
         _, _, n_child_utime, n_child_stime, _ = os.times()
         self.u_time = n_child_utime - child_utime
         self.s_time = n_child_stime - child_stime
@@ -215,7 +211,6 @@ class __Action(object):
         return new_i
 
     def got_shell_characters(self):
-        """Return whether the command needs a shell."""
         quote = None
         escaped = False
         for char in bytes_to_unicode(self.command):
@@ -240,9 +235,7 @@ class __Action(object):
 
 
 if os.name != 'nt':
-
     class Action(__Action):
-
         def execute__(self, force_shell=False):
             force_shell |= self.got_shell_characters()
             self.command = bytes_to_unicode(self.command)
@@ -255,14 +248,12 @@ if os.name != 'nt':
                     self.output = 'Not a valid shell command: %s' % exp
                     self.exit_status = 3
                     self.status = 'done'
-                    self.execution_time = time.time() - self.check_time
+                    self.execution_time = self._elapsed_execution_time()
                     return
-
             try:
-                self.process = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    close_fds=True, shell=force_shell, env=self.local_env,
-                    preexec_fn=os.setsid)
+                self.process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                close_fds=True, shell=force_shell, env=self.local_env,
+                                                preexec_fn=os.setsid)
                 self._start_output_collector()
             except OSError as exp:
                 logger.error("Fail launching command: %s %s %s", self.command, exp, force_shell)
@@ -271,22 +262,17 @@ if os.name != 'nt':
                 self.output = str(exp)
                 self.exit_status = 2
                 self.status = 'done'
-                self.execution_time = time.time() - self.check_time
+                self.execution_time = self._elapsed_execution_time()
                 if exp.errno == 24:
                     return 'toomanyopenfiles'
 
         def kill__(self):
             os.killpg(self.process.pid, signal.SIGKILL)
-
-
 else:
-
     import ctypes
-
     TerminateProcess = ctypes.windll.kernel32.TerminateProcess
 
     class Action(__Action):
-
         def execute__(self):
             self.command = bytes_to_unicode(self.command)
             try:
@@ -295,18 +281,16 @@ else:
                 self.output = 'Not a valid shell command: %s' % exp
                 self.exit_status = 3
                 self.status = 'done'
-                self.execution_time = time.time() - self.check_time
+                self.execution_time = self._elapsed_execution_time()
                 return
-
             try:
-                self.process = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    env=self.local_env, shell=True)
+                self.process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                env=self.local_env, shell=True)
                 self._start_output_collector()
             except OSError as exp:
                 logger.info("We kill the process: %s %s", exp, self.command)
                 self.status = 'timeout'
-                self.execution_time = time.time() - self.check_time
+                self.execution_time = self._elapsed_execution_time()
 
         def kill__(self):
             TerminateProcess(int(self.process._handle), -1)
