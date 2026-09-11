@@ -49,12 +49,12 @@ shellchars = ('!', '$', '^', '&', '*', '(', ')', '~', '[', ']',
 
 
 def no_block_read(output):
-    """Drain all currently available data from a subprocess pipe.
+    """Drain data currently available from a subprocess pipe.
 
-    Keep reads on the buffered file object returned by ``subprocess`` rather
-    than mixing ``os.read`` with that object's internal buffer.  Python 3 can
-    otherwise lose data when a later buffered read is performed on the same
-    pipe after raw descriptor reads.
+    ``BufferedReader.read()`` can discard bytes when the underlying descriptor
+    is non-blocking and the call eventually reaches EAGAIN.  ``read1()`` only
+    performs one raw read at a time, so successfully returned chunks are never
+    lost while a verbose child is still running.
     """
     if output is None or output.closed:
         return ''
@@ -62,12 +62,24 @@ def no_block_read(output):
         fd = output.fileno()
         fl = fcntl.fcntl(fd, fcntl.F_GETFL)
         fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-        data = output.read()
-    except (BlockingIOError, OSError, ValueError):
+    except (OSError, ValueError):
         return ''
-    if not data:
-        return ''
-    return bytes_to_unicode(data)
+
+    chunks = []
+    while True:
+        try:
+            if hasattr(output, 'read1'):
+                chunk = output.read1(65536)
+            else:
+                chunk = output.read(65536)
+        except (BlockingIOError, OSError, ValueError):
+            break
+        if not chunk:
+            break
+        chunks.append(chunk)
+        if len(chunk) < 65536:
+            break
+    return bytes_to_unicode(b''.join(chunks)) if chunks else ''
 
 
 class __Action(object):
