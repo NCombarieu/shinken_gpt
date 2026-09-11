@@ -1,11 +1,11 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
 #    Gabes Jean, naparuba@gmail.com
 #    Gerhard Lausser, Gerhard.Lausser@consol.de
 #    Gregory Starck, g.starck@gmail.com
-#    Hartmut Goebel, h.goebel@goebel-consult.de
+#    Hartmut Goebel, h.goebel-consult.de
 #
 # This file is part of Shinken.
 #
@@ -94,13 +94,12 @@ class Triggers(Items):
         # Now walk for it
         for root, dirs, files in os.walk(path):
             for file in files:
-                if re.search("\.trig$", file):
+                if re.search(r"\.trig$", file):
                     p = os.path.join(root, file)
                     try:
-                        fd = open(p, 'rU')
-                        buf = fd.read()
-                        fd.close()
-                    except IOError as exp:
+                        with open(p, 'r', encoding='utf-8') as fd:
+                            buf = fd.read()
+                    except OSError as exp:
                         logger.error("Cannot open trigger file '%s' for reading: %s", p, exp)
                         # ok, skip this one
                         continue
