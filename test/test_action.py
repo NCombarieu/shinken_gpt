@@ -39,16 +39,17 @@ class TestAction(ShinkenTest):
         time_hacker.set_real_time()
 
     def wait_finished(self, a, size=8012):
-        start = time.time()
+        # Subprocess tests must use a clock and sleep implementation that the
+        # legacy TimeHacker cannot accelerate. Otherwise the 20 second guard
+        # can elapse instantly while the child has not been scheduled yet.
+        start = time.monotonic()
         while True:
-            # Do the job
             if a.status == 'launched':
                 a.check_finished(size)
-                time.sleep(0.01)
+                time_hacker.original_time_sleep(0.01)
             if a.status != 'launched':
                 return
-            # 20s timeout
-            if time.time() - start > 20:
+            if time.monotonic() - start > 20:
                 print("COMMAND TIMEOUT AT 20s")
                 return
 
@@ -64,7 +65,6 @@ class TestAction(ShinkenTest):
         self.assertEqual(False, a.got_shell_characters())
         a.execute()
         self.assertEqual('launched', a.status)
-        # Give also the max output we want for the command
         self.wait_finished(a)
         self.assertEqual(0, a.exit_status)
         self.assertEqual('done', a.status)
@@ -75,13 +75,10 @@ class TestAction(ShinkenTest):
     def test_echo_environment_variables(self):
         if os.name == 'nt':
             return
-
         a = Action()
         a.timeout = 10
         a.env = {}
-
         a.command = "echo $TITI"
-
         self.assertNotIn('TITI', a.get_local_environnement())
         a.env = {'TITI': 'est en vacance'}
         self.assertIn('TITI', a.get_local_environnement())
@@ -93,13 +90,10 @@ class TestAction(ShinkenTest):
     def test_grep_for_environment_variables(self):
         if os.name == 'nt':
             return
-
         a = Action()
         a.timeout = 10
         a.env = {}
-
         a.command = "/usr/bin/env | grep TITI"
-
         self.assertNotIn('TITI', a.get_local_environnement())
         a.env = {'TITI': 'est en vacance'}
         self.assertIn('TITI', a.get_local_environnement())
@@ -109,42 +103,26 @@ class TestAction(ShinkenTest):
         self.assertEqual(a.output, 'TITI=est en vacance')
 
     def test_environment_variables(self):
-
         class ActionWithoutPerfData(Action):
             def get_outputs(self, out, max_len):
-                # do not cut the outputs into perf_data to avoid
-                # problems with enviroments containing a dash like in
-                # `LESSOPEN=|/usr/bin/lesspipe.sh %s`
                 self.output = out
 
         if os.name == 'nt':
             return
-
         a = ActionWithoutPerfData()
         a.timeout = 10
         a.command = "/usr/bin/env"
-
         a.env = {}
         self.assertNotIn('TITI', a.get_local_environnement())
-
         a.env = {'TITI': 'est en vacance'}
-
         self.assertEqual(False, a.got_shell_characters())
-
         self.assertIn('TITI', a.get_local_environnement())
         self.assertEqual(a.get_local_environnement()['TITI'], 'est en vacance')
         a.execute()
-
         self.assertEqual('launched', a.status)
         self.wait_finished(a, size=20*1024)
-        titi_found = False
-        for line in a.output.splitlines():
-            if line == 'TITI=est en vacance':
-                titi_found = True
-        self.assertTrue(titi_found)
+        self.assertTrue(any(line == 'TITI=est en vacance' for line in a.output.splitlines()))
 
-    # Some commands are shell without bangs! (like in Centreon...)
-    # We can show it in the launch, and it should be managed
     def test_noshell_bang_command(self):
         a = Action()
         a.timeout = 10
@@ -154,7 +132,6 @@ class TestAction(ShinkenTest):
             return
         self.assertEqual(False, a.got_shell_characters())
         a.execute()
-
         self.assertEqual('launched', a.status)
         self.wait_finished(a)
         self.assertEqual(0, a.exit_status)
@@ -169,7 +146,6 @@ class TestAction(ShinkenTest):
             return
         self.assertEqual(True, a.got_shell_characters())
         a.execute()
-
         self.assertEqual('launched', a.status)
         self.wait_finished(a)
         self.assertEqual(0, a.exit_status)
@@ -184,14 +160,12 @@ class TestAction(ShinkenTest):
             return
         self.assertEqual(True, a.got_shell_characters())
         a.execute()
-
         self.assertEqual('launched', a.status)
         self.wait_finished(a)
         self.assertEqual(0, a.exit_status)
         self.assertEqual('done', a.status)
 
     def test_got_unclosed_quote(self):
-        # https://github.com/naparuba/shinken/issues/155
         a = Action()
         a.timeout = 10
         a.command = "libexec/dummy_command_nobang.sh -a 'wwwwzzzzeeee"
@@ -199,20 +173,14 @@ class TestAction(ShinkenTest):
         if os.name == 'nt':
             return
         a.execute()
-
         self.wait_finished(a)
         self.assertEqual('done', a.status)
-        print('OUTPUT: %s' % a.output)
         self.assertEqual('Not a valid shell command: No closing quotation', a.output)
         self.assertEqual(3, a.exit_status)
 
-    # Validate that a plugin can emit more than a typical pipe buffer without
-    # blocking or truncating the output. Use the interpreter running the suite
-    # instead of relying on a potentially unrelated `python` from PATH.
     def test_huge_output(self):
         if os.name == 'nt':
             return
-
         a = Action()
         a.timeout = 5
         a.env = {}
@@ -233,13 +201,10 @@ class TestAction(ShinkenTest):
     def test_execve_fail_with_utf8(self):
         if os.name == 'nt':
             return
-
         a = Action()
         a.timeout = 10
         a.env = {}
-
         a.command = u"/bin/echo Wiadomo\u015b\u0107"
-
         a.execute()
         self.wait_finished(a)
         self.assertEqual(a.output, u"Wiadomo\u015b\u0107")
