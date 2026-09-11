@@ -150,13 +150,9 @@ class __Action(object):
                     self.process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     pass
-                if fcntl:
-                    self.stdoutdata += no_block_read(self.process.stdout)
-                    self.stderrdata += no_block_read(self.process.stderr)
-                else:
-                    stdoutdata, stderrdata = self.process.communicate()
-                    self.stdoutdata += bytes_to_unicode(stdoutdata)
-                    self.stderrdata += bytes_to_unicode(stderrdata)
+                stdoutdata, stderrdata = self.process.communicate()
+                self.stdoutdata += bytes_to_unicode(stdoutdata)
+                self.stderrdata += bytes_to_unicode(stderrdata)
                 if not self.stdoutdata.strip():
                     self.stdoutdata = self.stderrdata
                 self.get_outputs(self.stdoutdata, max_plugins_output_length)
@@ -170,13 +166,12 @@ class __Action(object):
                 return
             return
 
-        if not fcntl:
-            self.stdoutdata, self.stderrdata = self.process.communicate()
-            self.stdoutdata = bytes_to_unicode(self.stdoutdata)
-            self.stderrdata = bytes_to_unicode(self.stderrdata)
-        else:
-            self.stdoutdata += no_block_read(self.process.stdout)
-            self.stderrdata += no_block_read(self.process.stderr)
+        # Always use communicate() once the child is known to have exited. It
+        # drains any bytes still buffered in the pipe even when earlier polls
+        # already consumed part of a large output using non-blocking reads.
+        stdoutdata, stderrdata = self.process.communicate()
+        self.stdoutdata += bytes_to_unicode(stdoutdata)
+        self.stderrdata += bytes_to_unicode(stderrdata)
 
         self.exit_status = self.process.returncode
         del self.process
