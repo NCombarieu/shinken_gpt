@@ -185,7 +185,7 @@ class Interface(object):
         res = {}
         for (fname, f) in self.app.http_daemon.registered_fun.items():
             fclean = fname.replace('_', '-')
-            argspec = inspect.getargspec(f)
+            argspec = inspect.getfullargspec(f)
             args = [a for a in argspec.args if a != 'self']
             defaults = self.app.http_daemon.registered_fun_defaults.get(fname, {})
             e = {}
@@ -361,8 +361,7 @@ class Daemon(object):
                                  preexec_fn=os.setsid,
                                  env=env)
         except Exception as e:
-            logger.error("Failed to spawn child [pid=%s] [retcode=%s] [err=%s]" %
-                         p.pid, p.returncode, e)
+            logger.error("Failed to spawn child: %s", e)
             return False
         logger.info("Reloading daemon [pid=%s]", p.pid)
         try:
@@ -378,8 +377,8 @@ class Daemon(object):
         if p.poll() is not None:
             stdout = p.stdout.read()
             p.wait()
-            logger.error("Failed to spawn child [pid=%s] [retcode=%s] "
-                         "[stdout=%s]" % p.pid, p.returncode, stdout)
+            logger.error("Failed to spawn child [pid=%s] [retcode=%s] [stdout=%s]",
+                         p.pid, p.returncode, stdout)
             logger.info("Resuming normal operations without switching process")
             return False
         self.request_stop()
@@ -734,7 +733,7 @@ class Daemon(object):
                 daemon.shutdown()
             # Some multiprocessing lib got problems with start() that cannot take args
             # so we must look at it before
-            startargs = inspect.getargspec(manager.start)
+            startargs = inspect.getfullargspec(manager.start)
             # startargs[0] will be ['self'] if old multiprocessing lib
             # and ['self', 'initializer', 'initargs'] in newer ones
             # note: windows do not like pickle http_daemon...
@@ -1035,7 +1034,7 @@ class Daemon(object):
                 "Gabes Jean (naparuba@gmail.com)",
                 "Gerhard Lausser, Gerhard.Lausser@consol.de",
                 "Gregory Starck, g.starck@gmail.com",
-                "Hartmut Goebel, h.goebel@goebel-consult.de",
+                "Hartmut Goebel, h.goebel-consult.de",
                 "License: AGPL"]
 
 
@@ -1214,7 +1213,7 @@ class Daemon(object):
                     o = queue.get(block=False)
                 except (Empty, IOError, EOFError) as err:
                     if not isinstance(err, Empty):
-                        logger.error("An external module queue got a problem '%s'", str(exp))
+                        logger.error("An external module queue got a problem '%s'", str(err))
                     break
                 else:
                     had_some_objects = True
