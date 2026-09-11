@@ -1034,7 +1034,7 @@ class Daemon(object):
                 "Gabes Jean (naparuba@gmail.com)",
                 "Gerhard Lausser, Gerhard.Lausser@consol.de",
                 "Gregory Starck, g.starck@gmail.com",
-                "Hartmut Goebel, h.goebel-consult.de",
+                "Hartmut Goebel, h.goebel@goebel-consult.de",
                 "License: AGPL"]
 
 
