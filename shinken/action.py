@@ -50,7 +50,12 @@ shellchars = ('!', '$', '^', '&', '*', '(', ')', '~', '[', ']',
 
 def no_block_read(output):
     """Drain all currently available bytes from a subprocess pipe."""
-    fd = output.fileno()
+    if output is None or output.closed:
+        return ''
+    try:
+        fd = output.fileno()
+    except (OSError, ValueError):
+        return ''
     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
