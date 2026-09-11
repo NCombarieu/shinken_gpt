@@ -13,6 +13,11 @@ import pytest
 # during collection instead of carrying the obsolete unittest2 dependency.
 sys.modules.setdefault("unittest2", unittest)
 
+# unittest removed the long-deprecated regexp assertion aliases in Python 3.13.
+# Keep the historical suite runnable while using the supported implementation.
+if not hasattr(unittest.TestCase, "assertRegexpMatches"):
+    unittest.TestCase.assertRegexpMatches = unittest.TestCase.assertRegex
+
 # Python 2 exposed sys.setcheckinterval(). Python 3 replaced it with
 # sys.setswitchinterval(); the old test only used a large value to reduce
 # thread switching noise. Preserve that intent without touching production
