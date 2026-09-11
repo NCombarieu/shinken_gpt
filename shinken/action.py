@@ -49,29 +49,25 @@ shellchars = ('!', '$', '^', '&', '*', '(', ')', '~', '[', ']',
 
 
 def no_block_read(output):
-    """Drain all currently available bytes from a subprocess pipe."""
+    """Drain all currently available data from a subprocess pipe.
+
+    Keep reads on the buffered file object returned by ``subprocess`` rather
+    than mixing ``os.read`` with that object's internal buffer.  Python 3 can
+    otherwise lose data when a later buffered read is performed on the same
+    pipe after raw descriptor reads.
+    """
     if output is None or output.closed:
         return ''
     try:
         fd = output.fileno()
-    except (OSError, ValueError):
+        fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+        data = output.read()
+    except (BlockingIOError, OSError, ValueError):
         return ''
-    fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-
-    chunks = []
-    while True:
-        try:
-            chunk = os.read(fd, 65536)
-        except BlockingIOError:
-            break
-        except OSError:
-            break
-        if not chunk:
-            break
-        chunks.append(chunk)
-
-    return bytes_to_unicode(b''.join(chunks)) if chunks else ''
+    if not data:
+        return ''
+    return bytes_to_unicode(data)
 
 
 class __Action(object):
@@ -133,6 +129,8 @@ class __Action(object):
         self.perf_data = string_decode(self.perf_data)
 
     def check_finished(self, max_plugins_output_length):
+        if self.status != 'launched':
+            return
         self.last_poll = time.time()
 
         _, _, child_utime, child_stime, _ = os.times()
@@ -150,15 +148,22 @@ class __Action(object):
                     self.process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     pass
-                stdoutdata, stderrdata = self.process.communicate()
-                self.stdoutdata += bytes_to_unicode(stdoutdata)
-                self.stderrdata += bytes_to_unicode(stderrdata)
+                if fcntl:
+                    self.stdoutdata += no_block_read(self.process.stdout)
+                    self.stderrdata += no_block_read(self.process.stderr)
+                else:
+                    stdoutdata, stderrdata = self.process.communicate()
+                    self.stdoutdata += bytes_to_unicode(stdoutdata)
+                    self.stderrdata += bytes_to_unicode(stderrdata)
                 if not self.stdoutdata.strip():
                     self.stdoutdata = self.stderrdata
                 self.get_outputs(self.stdoutdata, max_plugins_output_length)
                 self.status = 'timeout'
                 self.execution_time = now - self.check_time
                 self.exit_status = 3
+                for pipe in (self.process.stdout, self.process.stderr):
+                    if pipe and not pipe.closed:
+                        pipe.close()
                 del self.process
                 _, _, n_child_utime, n_child_stime, _ = os.times()
                 self.u_time = n_child_utime - child_utime
@@ -166,14 +171,20 @@ class __Action(object):
                 return
             return
 
-        # Always use communicate() once the child is known to have exited. It
-        # drains any bytes still buffered in the pipe even when earlier polls
-        # already consumed part of a large output using non-blocking reads.
-        stdoutdata, stderrdata = self.process.communicate()
-        self.stdoutdata += bytes_to_unicode(stdoutdata)
-        self.stderrdata += bytes_to_unicode(stderrdata)
+        if fcntl:
+            # The child has exited, so a final non-blocking read can drain all
+            # bytes remaining in the kernel pipe without risking a deadlock.
+            self.stdoutdata += no_block_read(self.process.stdout)
+            self.stderrdata += no_block_read(self.process.stderr)
+        else:
+            stdoutdata, stderrdata = self.process.communicate()
+            self.stdoutdata += bytes_to_unicode(stdoutdata)
+            self.stderrdata += bytes_to_unicode(stderrdata)
 
         self.exit_status = self.process.returncode
+        for pipe in (self.process.stdout, self.process.stderr):
+            if pipe and not pipe.closed:
+                pipe.close()
         del self.process
 
         if self.exit_status == -11:
