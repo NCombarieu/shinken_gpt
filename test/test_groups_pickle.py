@@ -48,7 +48,7 @@ class TestConfig(ShinkenTest):
 
         # Look ifthe hg in the conf is valid
         vhg = vcfg.hostgroups.find_by_name('everyone')
-        self.assert_(len(vhg.members) == 1)
+        self.assertEqual(len(vhg.members), 1)
         
         hr1 = [h for h in vcfg.hosts if h.get_name() == "HR1"][0]
         print(hr1.hostgroups)
@@ -61,9 +61,9 @@ class TestConfig(ShinkenTest):
                 
         print("Founded hostgroup", hg1)
         print('There should be only one host there')
-        self.assert_(len(hg1.members) == 1)
+        self.assertEqual(len(hg1.members), 1)
         print('and should be the same than the vcfg one!')
-        self.assert_(hg1 == vhg)
+        self.assertEqual(hg1, vhg)
 
 
 if __name__ == '__main__':
