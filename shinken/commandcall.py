@@ -5,7 +5,7 @@
 #    Gabes Jean, naparuba@gmail.com
 #    Gerhard Lausser, Gerhard.Lausser@consol.de
 #    Gregory Starck, g.starck@gmail.com
-#    Hartmut Goebel, h.goebel@goebel-consult.de
+#    Hartmut Goebel, h.goebel-consult.de
 #
 # This file is part of Shinken.
 #
@@ -90,10 +90,10 @@ class CommandCall(DummyCommandCall):
                 self.priority = int(self.command.priority)
 
     def get_command_and_args(self):
-        """We want to get the command and the args with ! splitting.
+        r"""We want to get the command and the args with ! splitting.
         but don't forget to protect against the \! to do not split them
         """
-        p_call = self.call.replace('\!', '___PROTECT_EXCLAMATION___')
+        p_call = self.call.replace(r'\!', '___PROTECT_EXCLAMATION___')
         tab = p_call.split('!')
         self.command = tab[0]
         self.args = [s.replace('___PROTECT_EXCLAMATION___', '!') for s in tab[1:]]
