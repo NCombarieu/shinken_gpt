@@ -97,6 +97,9 @@ class __Action(object):
         self.local_env = self.get_local_environnement()
         self.stdoutdata = ''
         self.stderrdata = ''
+        self.output = ''
+        self.long_output = ''
+        self.perf_data = ''
         return self.execute__()
 
     def get_outputs(self, out, max_plugins_output_length):
@@ -138,6 +141,20 @@ class __Action(object):
 
             if (now - self.check_time) > self.timeout:
                 self.kill__()
+                try:
+                    self.process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    pass
+                if fcntl:
+                    self.stdoutdata += no_block_read(self.process.stdout)
+                    self.stderrdata += no_block_read(self.process.stderr)
+                else:
+                    stdoutdata, stderrdata = self.process.communicate()
+                    self.stdoutdata += bytes_to_unicode(stdoutdata)
+                    self.stderrdata += bytes_to_unicode(stderrdata)
+                if not self.stdoutdata.strip():
+                    self.stdoutdata = self.stderrdata
+                self.get_outputs(self.stdoutdata, max_plugins_output_length)
                 self.status = 'timeout'
                 self.execution_time = now - self.check_time
                 self.exit_status = 3
