@@ -1,11 +1,11 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
 #    Gabes Jean, naparuba@gmail.com
 #    Gerhard Lausser, Gerhard.Lausser@consol.de
 #    Gregory Starck, g.starck@gmail.com
-#    Hartmut Goebel, h.goebel@goebel-consult.de
+#    Hartmut Goebel, h.goebel-consult.de
 #
 # This file is part of Shinken.
 #
@@ -25,14 +25,13 @@
 import re
 from shinken.util import to_best_int_float
 
-perfdata_split_pattern = re.compile('([^=]+=\S+)')
+perfdata_split_pattern = re.compile(r'([^=]+=\S+)')
 # TODO: Improve this regex to not match strings like this:
 # 'metric=45+e-456.56unit;50;80;0;45+-e45e-'
-metric_pattern = \
-    re.compile(
-        '^([^=]+)=([\d\.\-\+eE]+)([\w\/%]*)'
-        ';?([\d\.\-\+eE:~@]+)?;?([\d\.\-\+eE:~@]+)?;?([\d\.\-\+eE]+)?;?([\d\.\-\+eE]+)?;?\s*'
-    )
+metric_pattern = re.compile(
+    r'^([^=]+)=([\d\.\-\+eE]+)([\w\/%]*)'
+    r';?([\d\.\-\+eE:~@]+)?;?([\d\.\-\+eE:~@]+)?;?([\d\.\-\+eE]+)?;?([\d\.\-\+eE]+)?;?\s*'
+)
 
 
 # If we can return an int or a float, or None
