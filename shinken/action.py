@@ -49,13 +49,7 @@ shellchars = ('!', '$', '^', '&', '*', '(', ')', '~', '[', ']',
 
 
 def no_block_read(output):
-    """Drain data currently available from a subprocess pipe.
-
-    ``BufferedReader.read()`` can discard bytes when the underlying descriptor
-    is non-blocking and the call eventually reaches EAGAIN.  ``read1()`` only
-    performs one raw read at a time, so successfully returned chunks are never
-    lost while a verbose child is still running.
-    """
+    """Drain data currently available from a subprocess pipe."""
     if output is None or output.closed:
         return ''
     try:
@@ -68,17 +62,12 @@ def no_block_read(output):
     chunks = []
     while True:
         try:
-            if hasattr(output, 'read1'):
-                chunk = output.read1(65536)
-            else:
-                chunk = output.read(65536)
+            chunk = output.read1(65536) if hasattr(output, 'read1') else output.read(65536)
         except (BlockingIOError, OSError, ValueError):
             break
         if not chunk:
             break
         chunks.append(chunk)
-        if len(chunk) < 65536:
-            break
     return bytes_to_unicode(b''.join(chunks)) if chunks else ''
 
 
@@ -160,13 +149,13 @@ class __Action(object):
                     self.process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     pass
-                if fcntl:
-                    self.stdoutdata += no_block_read(self.process.stdout)
-                    self.stderrdata += no_block_read(self.process.stderr)
-                else:
+                if self.process.poll() is not None:
                     stdoutdata, stderrdata = self.process.communicate()
                     self.stdoutdata += bytes_to_unicode(stdoutdata)
                     self.stderrdata += bytes_to_unicode(stderrdata)
+                elif fcntl:
+                    self.stdoutdata += no_block_read(self.process.stdout)
+                    self.stderrdata += no_block_read(self.process.stderr)
                 if not self.stdoutdata.strip():
                     self.stdoutdata = self.stderrdata
                 self.get_outputs(self.stdoutdata, max_plugins_output_length)
@@ -183,15 +172,11 @@ class __Action(object):
                 return
             return
 
-        if fcntl:
-            # The child has exited, so a final non-blocking read can drain all
-            # bytes remaining in the kernel pipe without risking a deadlock.
-            self.stdoutdata += no_block_read(self.process.stdout)
-            self.stderrdata += no_block_read(self.process.stderr)
-        else:
-            stdoutdata, stderrdata = self.process.communicate()
-            self.stdoutdata += bytes_to_unicode(stdoutdata)
-            self.stderrdata += bytes_to_unicode(stderrdata)
+        # Once the child has exited, communicate() is safe and drains anything
+        # left both in the pipe and in Python's buffered reader.
+        stdoutdata, stderrdata = self.process.communicate()
+        self.stdoutdata += bytes_to_unicode(stdoutdata)
+        self.stderrdata += bytes_to_unicode(stderrdata)
 
         self.exit_status = self.process.returncode
         for pipe in (self.process.stdout, self.process.stderr):
@@ -232,13 +217,7 @@ class __Action(object):
         return new_i
 
     def got_shell_characters(self):
-        """Return whether the command needs a shell.
-
-        Shell metacharacters inside single quotes are literal. Inside double
-        quotes only variable/command substitution characters still require a
-        shell. This avoids routing commands such as Python ``-c`` snippets
-        containing ``*`` through an unnecessary shell.
-        """
+        """Return whether the command needs a shell."""
         quote = None
         escaped = False
         for char in bytes_to_unicode(self.command):
