@@ -6,7 +6,7 @@
 #     Gabes Jean, naparuba@gmail.com
 #     Gerhard Lausser, Gerhard.Lausser@consol.de
 #     Gregory Starck, g.starck@gmail.com
-#     Hartmut Goebel, h.goebel@goebel-consult.de
+#     Hartmut Goebel, h.goebel-consult.de
 #
 # This file is part of Shinken.
 #
@@ -35,7 +35,7 @@ __all__ = ['UnusedProp', 'BoolProp', 'IntegerProp', 'FloatProp',
 # Suggestion
 # Is this useful? see above
 __author__ = "Hartmut Goebel <h.goebel@goebel-consult.de>"
-__copyright__ = "Copyright 2010-2011 by Hartmut Goebel <h.goebel@goebel-consult.de>"
+__copyright__ = "Copyright 2010-2011 by Hartmut Goebel <h.goebel-consult.de>"
 __licence__ = "GNU Affero General Public License version 3 (AGPL v3)"
 
 FULL_STATUS = 'full_status'
@@ -250,7 +250,7 @@ class DictProp(Property):
     def pythonize(self, val):
         val = unique_value(val)
         def split(kv):
-            m = re.match("^\s*([^\s]+)\s*=\s*([^\s]+)\s*$", kv)
+            m = re.match(r"^\s*([^\s]+)\s*=\s*([^\s]+)\s*$", kv)
             if m is None:
                 raise ValueError
 
@@ -280,7 +280,7 @@ class AddrProp(Property):
             NOTE: port is optional
         """
         val = unique_value(val)
-        m = re.match("^([^:]*)(?::(\d+))?$", val)
+        m = re.match(r"^([^:]*)(?::(\d+))?$", val)
         if m is None:
             raise ValueError
 
