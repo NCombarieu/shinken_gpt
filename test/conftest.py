@@ -1,9 +1,12 @@
 """Pytest compatibility helpers for the legacy Shinken test suite."""
 
+import os
 import subprocess
 import sys
 import types
 import unittest
+
+import pytest
 
 # The historical suite imports unittest2 throughout. On supported Python 3
 # versions the stdlib unittest module provides the required API, so alias it
@@ -28,3 +31,22 @@ if "commands" not in sys.modules:
     commands.getstatusoutput = subprocess.getstatusoutput
     commands.getoutput = subprocess.getoutput
     sys.modules["commands"] = commands
+
+
+@pytest.fixture(autouse=True)
+def normalize_legacy_log_paths(monkeypatch):
+    """Keep captured legacy log paths stable across checkout locations."""
+    from shinken.brok import Brok
+
+    original_prepare = Brok.prepare
+    test_dir = os.path.dirname(os.path.abspath(__file__)) + os.sep
+
+    def prepare_with_relative_test_paths(self):
+        result = original_prepare(self)
+        if self.type == "log":
+            log = self.data.get("log")
+            if isinstance(log, str):
+                self.data["log"] = log.replace(test_dir, "")
+        return result
+
+    monkeypatch.setattr(Brok, "prepare", prepare_with_relative_test_paths)
