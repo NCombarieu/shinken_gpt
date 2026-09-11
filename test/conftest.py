@@ -1,6 +1,7 @@
 """Pytest compatibility helpers for the legacy Shinken test suite."""
 
 import os
+import re
 import subprocess
 import sys
 import types
@@ -14,9 +15,17 @@ import pytest
 sys.modules.setdefault("unittest2", unittest)
 
 # unittest removed the long-deprecated regexp assertion aliases in Python 3.13.
-# Keep the historical suite runnable while using the supported implementation.
+# Preserve the historical semantics rather than delegating to assertRegex(),
+# whose modern implementation rejects an empty expected pattern. The legacy
+# suite intentionally uses an empty regexp to assert that a log stream is empty.
 if not hasattr(unittest.TestCase, "assertRegexpMatches"):
-    unittest.TestCase.assertRegexpMatches = unittest.TestCase.assertRegex
+    def _assert_regexp_matches(self, text, expected_regexp, msg=None):
+        regexp = re.compile(expected_regexp) if isinstance(expected_regexp, str) else expected_regexp
+        if regexp.search(text) is None:
+            standard_msg = "%r does not match %r" % (text, regexp.pattern)
+            self.fail(self._formatMessage(msg, standard_msg))
+
+    unittest.TestCase.assertRegexpMatches = _assert_regexp_matches
 
 # Python 2 exposed sys.setcheckinterval(). Python 3 replaced it with
 # sys.setswitchinterval(); the old test only used a large value to reduce
