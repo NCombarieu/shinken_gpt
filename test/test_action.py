@@ -25,6 +25,7 @@
 from __future__ import print_function
 from __future__ import absolute_import
 import os
+import shlex
 import sys
 import time
 
@@ -42,18 +43,14 @@ class TestAction(ShinkenTest):
         while True:
             # Do the job
             if a.status == 'launched':
-                #print a.process.poll()
                 a.check_finished(size)
                 time.sleep(0.01)
-            #print a.status
             if a.status != 'launched':
-                #print "Finish", a.status
                 return
             # 20s timeout
             if time.time() - start > 20:
                 print("COMMAND TIMEOUT AT 20s")
                 return
-
 
     def test_action(self):
         a = Action()
@@ -81,15 +78,14 @@ class TestAction(ShinkenTest):
 
         a = Action()
         a.timeout = 10
-        a.env = {}  # :fixme: this sould be pre-set in Action.__init__()
+        a.env = {}
 
         a.command = "echo $TITI"
 
         self.assertNotIn('TITI', a.get_local_environnement())
         a.env = {'TITI': 'est en vacance'}
         self.assertIn('TITI', a.get_local_environnement())
-        self.assertEqual(a.get_local_environnement()['TITI'],
-                         'est en vacance' )
+        self.assertEqual(a.get_local_environnement()['TITI'], 'est en vacance')
         a.execute()
         self.wait_finished(a)
         self.assertEqual(a.output, 'est en vacance')
@@ -100,19 +96,17 @@ class TestAction(ShinkenTest):
 
         a = Action()
         a.timeout = 10
-        a.env = {}  # :fixme: this sould be pre-set in Action.__init__()
+        a.env = {}
 
         a.command = "/usr/bin/env | grep TITI"
 
         self.assertNotIn('TITI', a.get_local_environnement())
         a.env = {'TITI': 'est en vacance'}
         self.assertIn('TITI', a.get_local_environnement())
-        self.assertEqual(a.get_local_environnement()['TITI'],
-                         'est en vacance' )
+        self.assertEqual(a.get_local_environnement()['TITI'], 'est en vacance')
         a.execute()
         self.wait_finished(a)
         self.assertEqual(a.output, 'TITI=est en vacance')
-
 
     def test_environment_variables(self):
 
@@ -130,7 +124,7 @@ class TestAction(ShinkenTest):
         a.timeout = 10
         a.command = "/usr/bin/env"
 
-        a.env = {}  # :fixme: this sould be pre-set in Action.__init__()
+        a.env = {}
         self.assertNotIn('TITI', a.get_local_environnement())
 
         a.env = {'TITI': 'est en vacance'}
@@ -138,20 +132,16 @@ class TestAction(ShinkenTest):
         self.assertEqual(False, a.got_shell_characters())
 
         self.assertIn('TITI', a.get_local_environnement())
-        self.assertEqual(a.get_local_environnement()['TITI'],
-                         'est en vacance' )
+        self.assertEqual(a.get_local_environnement()['TITI'], 'est en vacance')
         a.execute()
 
         self.assertEqual('launched', a.status)
-        # Give also the max output we want for the command
         self.wait_finished(a, size=20*1024)
         titi_found = False
-        for l in a.output.splitlines():
-            if l == 'TITI=est en vacance':
+        for line in a.output.splitlines():
+            if line == 'TITI=est en vacance':
                 titi_found = True
         self.assertTrue(titi_found)
-
-
 
     # Some commands are shell without bangs! (like in Centreon...)
     # We can show it in the launch, and it should be managed
@@ -167,7 +157,6 @@ class TestAction(ShinkenTest):
 
         self.assertEqual('launched', a.status)
         self.wait_finished(a)
-        print("FUck", a.status, a.output)
         self.assertEqual(0, a.exit_status)
         self.assertEqual('done', a.status)
 
@@ -183,7 +172,6 @@ class TestAction(ShinkenTest):
 
         self.assertEqual('launched', a.status)
         self.wait_finished(a)
-        print("FUck", a.status, a.output)
         self.assertEqual(0, a.exit_status)
         self.assertEqual('done', a.status)
 
@@ -199,7 +187,6 @@ class TestAction(ShinkenTest):
 
         self.assertEqual('launched', a.status)
         self.wait_finished(a)
-        print("FUck", a.status, a.output)
         self.assertEqual(0, a.exit_status)
         self.assertEqual('done', a.status)
 
@@ -216,43 +203,31 @@ class TestAction(ShinkenTest):
         self.wait_finished(a)
         self.assertEqual('done', a.status)
         print('OUTPUT: %s' % a.output)
-        if sys.version_info < (2, 7):
-            # cygwin: /bin/sh: -c: line 0: unexpected EOF while looking for matching'
-            # ubuntu: /bin/sh: Syntax error: Unterminated quoted string
-            self.assertTrue(a.output.startswith("/bin/sh"))
-            self.assertEqual(3, a.exit_status)
-        else:
-            self.assertEqual('Not a valid shell command: No closing quotation', a.output)
-            self.assertEqual(3, a.exit_status)
+        self.assertEqual('Not a valid shell command: No closing quotation', a.output)
+        self.assertEqual(3, a.exit_status)
 
-    # We got problems on LARGE output, more than 64K in fact.
-    # We try to solve it with the fcntl and non blocking read
-    # instead of "communicate" mode. So here we try to get a 100K
-    # output. Should NOT be in a timeout
+    # Validate that a plugin can emit more than a typical pipe buffer without
+    # blocking or truncating the output. Use the interpreter running the suite
+    # instead of relying on a potentially unrelated `python` from PATH.
     def test_huge_output(self):
+        if os.name == 'nt':
+            return
+
         a = Action()
         a.timeout = 5
         a.env = {}
-
-        if os.name == 'nt':
-            a.command = r"""python -c 'print("A"*1000000)'"""
-            # FROM NOW IT4S FAIL ON WINDOWS :(
-            return
-        else:
-            a.command = r"""python -u -c 'print("A"*100000)'"""
-        print("EXECUTE")
+        a.command = "%s -u -c 'print(\"A\"*100000)'" % shlex.quote(sys.executable)
         a.execute()
-        print("EXECUTE FINISE")
         self.assertEqual('launched', a.status)
-        # Give also the max output we want for the command
         self.wait_finished(a, 10000000000)
-        self.assertEqual("A" * 100000, a.output)
-        print("Status?", a.exit_status)
-        self.assertEqual(0, a.exit_status)
-        print("Output", len(a.output))
+        self.assertEqual(
+            "A" * 100000,
+            a.output,
+            "status=%r exit_status=%r output_len=%d command=%r" % (
+                a.status, getattr(a, 'exit_status', None), len(a.output), a.command),
+        )
         self.assertEqual(0, a.exit_status)
         self.assertEqual('done', a.status)
-        self.assertEqual("A"*100000, a.output)
         self.assertEqual("", a.perf_data)
 
     def test_execve_fail_with_utf8(self):
@@ -261,20 +236,19 @@ class TestAction(ShinkenTest):
 
         a = Action()
         a.timeout = 10
-        a.env = {}  # :fixme: this sould be pre-set in Action.__init__()
+        a.env = {}
 
         a.command = u"/bin/echo Wiadomo\u015b\u0107"
 
         a.execute()
         self.wait_finished(a)
-        #print a.output
         self.assertEqual(a.output, u"Wiadomo\u015b\u0107")
 
     def test_non_zero_exit_status_empty_output_but_non_empty_stderr(self):
         a = Action()
         a.command = "echo hooo >&2 ; exit 1"
         a.timeout = 10
-        a.env = {}  # :fixme: this sould be pre-set in Action.__init__()
+        a.env = {}
         a.execute()
         self.wait_finished(a)
         self.assertEqual(a.output, "hooo")
