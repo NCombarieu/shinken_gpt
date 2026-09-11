@@ -28,11 +28,7 @@ import shlex
 import sys
 import subprocess
 import signal
-
-try:
-    import fcntl
-except ImportError:
-    fcntl = None
+import threading
 
 from .log import logger
 from .util import string_decode, bytes_to_unicode
@@ -46,29 +42,6 @@ only_copy_prop = ('id', 'status', 'command', 't_to_go', 'timeout',
 
 shellchars = ('!', '$', '^', '&', '*', '(', ')', '~', '[', ']',
               '|', '{', '}', ';', '<', '>', '?', '`')
-
-
-def no_block_read(output):
-    """Drain data currently available from a subprocess pipe."""
-    if output is None or output.closed:
-        return ''
-    try:
-        fd = output.fileno()
-        fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-        fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-    except (OSError, ValueError):
-        return ''
-
-    chunks = []
-    while True:
-        try:
-            chunk = output.read1(65536) if hasattr(output, 'read1') else output.read(65536)
-        except (BlockingIOError, OSError, ValueError):
-            break
-        if not chunk:
-            break
-        chunks.append(chunk)
-    return bytes_to_unicode(b''.join(chunks)) if chunks else ''
 
 
 class __Action(object):
@@ -104,6 +77,32 @@ class __Action(object):
         self.perf_data = ''
         return self.execute__()
 
+    def _start_output_collector(self):
+        """Continuously drain child pipes without blocking the scheduler loop."""
+        self._communicate_result = (b'', b'')
+
+        def collect():
+            try:
+                self._communicate_result = self.process.communicate()
+            except (OSError, ValueError) as exp:
+                logger.debug("Failed while collecting command output: %s", exp)
+
+        self._output_collector = threading.Thread(
+            target=collect, name='shinken-action-output', daemon=True)
+        self._output_collector.start()
+
+    def _finish_output_collector(self):
+        collector = getattr(self, '_output_collector', None)
+        if collector is not None:
+            collector.join(timeout=1)
+        stdoutdata, stderrdata = getattr(self, '_communicate_result', (b'', b''))
+        self.stdoutdata += bytes_to_unicode(stdoutdata or b'')
+        self.stderrdata += bytes_to_unicode(stderrdata or b'')
+        if hasattr(self, '_output_collector'):
+            del self._output_collector
+        if hasattr(self, '_communicate_result'):
+            del self._communicate_result
+
     def get_outputs(self, out, max_plugins_output_length):
         out = out[:max_plugins_output_length]
         out = out.replace(r'\|', '___PROTECT_PIPE___')
@@ -138,24 +137,13 @@ class __Action(object):
         if self.process.poll() is None:
             self.wait_time = min(self.wait_time * 2, 0.1)
             now = time.time()
-
-            if fcntl:
-                self.stdoutdata += no_block_read(self.process.stdout)
-                self.stderrdata += no_block_read(self.process.stderr)
-
             if (now - self.check_time) > self.timeout:
                 self.kill__()
                 try:
                     self.process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     pass
-                if self.process.poll() is not None:
-                    stdoutdata, stderrdata = self.process.communicate()
-                    self.stdoutdata += bytes_to_unicode(stdoutdata)
-                    self.stderrdata += bytes_to_unicode(stderrdata)
-                elif fcntl:
-                    self.stdoutdata += no_block_read(self.process.stdout)
-                    self.stderrdata += no_block_read(self.process.stderr)
+                self._finish_output_collector()
                 if not self.stdoutdata.strip():
                     self.stdoutdata = self.stderrdata
                 self.get_outputs(self.stdoutdata, max_plugins_output_length)
@@ -172,12 +160,7 @@ class __Action(object):
                 return
             return
 
-        # Once the child has exited, communicate() is safe and drains anything
-        # left both in the pipe and in Python's buffered reader.
-        stdoutdata, stderrdata = self.process.communicate()
-        self.stdoutdata += bytes_to_unicode(stdoutdata)
-        self.stderrdata += bytes_to_unicode(stderrdata)
-
+        self._finish_output_collector()
         self.exit_status = self.process.returncode
         for pipe in (self.process.stdout, self.process.stderr):
             if pipe and not pipe.closed:
@@ -265,6 +248,7 @@ if os.name != 'nt':
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     close_fds=True, shell=force_shell, env=self.local_env,
                     preexec_fn=os.setsid)
+                self._start_output_collector()
             except OSError as exp:
                 logger.error("Fail launching command: %s %s %s", self.command, exp, force_shell)
                 if not force_shell and exp.errno == 8:
@@ -278,11 +262,6 @@ if os.name != 'nt':
 
         def kill__(self):
             os.killpg(self.process.pid, signal.SIGKILL)
-            for fd in [self.process.stdout, self.process.stderr]:
-                try:
-                    fd.close()
-                except Exception:
-                    pass
 
 
 else:
@@ -308,6 +287,7 @@ else:
                 self.process = subprocess.Popen(
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     env=self.local_env, shell=True)
+                self._start_output_collector()
             except OSError as exp:
                 logger.info("We kill the process: %s %s", exp, self.command)
                 self.status = 'timeout'
