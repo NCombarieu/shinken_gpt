@@ -109,3 +109,13 @@ def test_http_exception_alias_can_be_combined_with_other_exceptions():
         raise HTTPException("network failure")
     except (HTTPExceptions, KeyError):
         pass
+
+
+def test_satellite_round_robin_can_index_python3_dict_items():
+    satellite = SimpleNamespace(
+        q_by_mod={"fork": {4: "queue-4", 9: "queue-9"}},
+    )
+
+    assert Satellite._got_queue_from_action(
+        satellite, SimpleNamespace(id=3)
+    ) == (9, "queue-9")

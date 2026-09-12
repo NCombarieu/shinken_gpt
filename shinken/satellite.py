@@ -671,7 +671,9 @@ class Satellite(BaseSatellite):
     def _got_queue_from_action(self, a):
         # get the module name, if not, take fork
         mod = getattr(a, 'module_type', 'fork')
-        queues = self.q_by_mod[mod].items()
+        # Python 3 dictionary views are not subscriptable.  This collection is
+        # intentionally indexed below to distribute actions round-robin.
+        queues = list(self.q_by_mod[mod].items())
 
         # Maybe there is no more queue, it's very bad!
         if len(queues) == 0:
