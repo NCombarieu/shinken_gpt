@@ -1,0 +1,78 @@
+name: PR6 autofix
+
+on:
+  push:
+    branches: [modernize/podman-python3]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-regressions:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: modernize/podman-python3
+
+      - name: Restore maintenance behavior and long date macro
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin master
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          macro = Path('shinken/macroresolver.py')
+          text = macro.read_text()
+          old = 'return time.strftime("%a %d %b %H:%M:%S %Z %Y").decode(\'UTF-8\', \'ignore\')'
+          new = 'return time.strftime("%a %d %b %H:%M:%S %Z %Y")'
+          if old not in text:
+              raise SystemExit('LONGDATETIME regression pattern not found')
+          macro.write_text(text.replace(old, new, 1))
+
+          scheduler = Path('shinken/scheduler.py')
+          current = scheduler.read_text()
+          master = subprocess.check_output(
+              ['git', 'show', 'origin/master:shinken/scheduler.py'], text=True
+          )
+          master_start = master.index('    def get_maintenance_dt_times(self, now, elt):')
+          master_end = master.index('    # Main schedule function', master_start)
+          restored = master[master_start:master_end]
+
+          branch_start = current.index('    # Check for downtimes start and stop, and register\n    # them if needed\n    def update_downtimes_and_comments(self):')
+          branch_end = current.index('    # Main schedule function', branch_start)
+          scheduler.write_text(current[:branch_start] + restored + current[branch_end:])
+
+          test_macro = Path('test/test_macroresolver.py')
+          test_text = test_macro.read_text()
+          marker = "\n\nif __name__ == '__main__':"
+          regression = '''\n    def test_longdatetime_macro_is_text(self):\n        mr = self.get_mr()\n        value = mr._get_long_date_time()\n        self.assertIsInstance(value, str)\n        self.assertTrue(value)\n'''
+          if 'test_longdatetime_macro_is_text' not in test_text:
+              if marker not in test_text:
+                  raise SystemExit('test_macroresolver.py insertion marker not found')
+              test_macro.write_text(test_text.replace(marker, regression + marker, 1))
+          PY
+
+          # This upstream test was accidentally dropped by the modernization branch.
+          git show origin/master:test/test_maintenance_check.py > test/test_maintenance_check.py
+
+      - name: Run targeted regression tests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest pytest-timeout requests
+          pytest -q test/test_macroresolver.py test/test_maintenance_check.py --timeout=60
+
+      - name: Commit fixes back to PR branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/pr6-autofix.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add shinken/scheduler.py shinken/macroresolver.py test/test_macroresolver.py test/test_maintenance_check.py .github/workflows/pr6-autofix.yml
+          git commit -m "Fix maintenance and LONGDATETIME regressions"
+          git push origin HEAD:modernize/podman-python3
