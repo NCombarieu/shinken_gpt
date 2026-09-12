@@ -28,10 +28,6 @@ RUN apt-get update \
 COPY --from=builder /dist/ /tmp/dist/
 RUN python -m pip install /tmp/dist/*.whl && rm -rf /tmp/dist
 
-# The legacy wheel still places launchers as data files below usr/bin instead
-# of exposing proper console-script entry points. Keep the image functional
-# while setup.py is progressively replaced by native pyproject metadata.
-COPY --chmod=755 bin/shinken bin/shinken-arbiter bin/shinken-broker bin/shinken-poller bin/shinken-reactionner bin/shinken-receiver bin/shinken-scheduler /usr/local/bin/
 COPY --chown=shinken:shinken etc/ /usr/local/share/shinken/etc/
 COPY --chmod=755 containers/entrypoint.sh /usr/local/bin/shinken-entrypoint
 
