@@ -28,6 +28,7 @@ setup(
         "cheroot>=11.1.2,<12",
         "pycurl>=7.45.2",
         "Pyro5>=5.15",
+        "six>=1.16,<2",
     ],
     extras_require={
         "setproctitle": ["setproctitle>=1.3"],
