@@ -564,6 +564,12 @@ class Satellite(BaseSatellite):
     # Someone ask us our broks. We send them, and clean the queue
     def get_broks(self, broks_batch=0):
         _type = self.__class__.my_type
+        try:
+            broks_batch = int(broks_batch)
+        except (TypeError, ValueError):
+            logger.error("Invalid broks_batch in get_broks, should be an "
+                         "integer. Ignored.")
+            broks_batch = 0
         count = len(self.broks)
         if broks_batch > 0:
             count = min(broks_batch, count)
@@ -753,7 +759,7 @@ class Satellite(BaseSatellite):
                     # Explicit pickle load
                     tmp = base64.b64decode(tmp)
                     tmp = zlib.decompress(tmp)
-                    tmp = cPickle.loads(str(tmp))
+                    tmp = cPickle.loads(tmp)
                     logger.debug("Ask actions to %d, got %d", sched_id, len(tmp))
                     # We 'tag' them with sched_id and put into queue for workers
                     # REF: doc/shinken-action-queues.png (2)

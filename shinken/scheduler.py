@@ -931,7 +931,7 @@ class Scheduler(object):
                     # Before ask a call that can be long, do a simple ping to be sure it is alive
                     con.get('ping')
                     results = con.get('get_returns', {'sched_id': self.instance_id}, wait='long')
-                    results = cPickle.loads(str(results))
+                    results = cPickle.loads(results)
                     nb_received = len(results)
                     self.nb_check_received += nb_received
                     logger.debug("Received %d passive results", nb_received)

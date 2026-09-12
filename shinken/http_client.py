@@ -49,7 +49,10 @@ class HTTPException(Exception):
     pass
 
 
-HTTPExceptions = (HTTPException,)
+# Keep this alias for callers while exposing an exception class.  A tuple here
+# cannot be nested in clauses such as ``except (HTTPExceptions, KeyError)`` on
+# Python 3.
+HTTPExceptions = HTTPException
 
 
 class FileReader:

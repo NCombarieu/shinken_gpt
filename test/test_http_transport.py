@@ -6,8 +6,9 @@ from types import SimpleNamespace
 
 import bottle
 
-from shinken.http_client import HTTPClient
+from shinken.http_client import HTTPClient, HTTPException, HTTPExceptions
 from shinken.http_daemon import HTTPDaemon
+from shinken.satellite import Satellite
 from shinken.scheduler import Scheduler
 
 
@@ -87,3 +88,24 @@ def test_scheduler_brok_batch_zero_means_all_and_positive_is_a_limit():
     assert scheduler.broks == []
     assert scheduler.brokers["broker"]["broks"] == ["private-2"]
     assert Scheduler.get_broks(scheduler, "broker", 0) == ["private-2"]
+
+
+def test_satellite_brok_batch_accepts_http_query_strings():
+    class FakeSatellite:
+        my_type = "poller"
+
+    satellite = FakeSatellite()
+    satellite.broks = ["brok-1", "brok-2"]
+
+    assert Satellite.get_broks(satellite, "1") == ["brok-1"]
+    assert satellite.broks == ["brok-2"]
+    assert Satellite.get_broks(satellite, "invalid") == ["brok-2"]
+
+
+def test_http_exception_alias_can_be_combined_with_other_exceptions():
+    assert HTTPExceptions is HTTPException
+
+    try:
+        raise HTTPException("network failure")
+    except (HTTPExceptions, KeyError):
+        pass
