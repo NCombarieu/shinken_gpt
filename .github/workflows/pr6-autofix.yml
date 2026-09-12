@@ -27,12 +27,14 @@ jobs:
             shinken/check.py \
             shinken/objects/host.py \
             shinken/objects/service.py \
-            shinken/objects/schedulingitem.py \
-            test/shinken_test.py
+            shinken/objects/schedulingitem.py
 
           python - <<'PY'
           from pathlib import Path
           import subprocess
+
+          def master_file(path):
+              return subprocess.check_output(['git', 'show', f'origin/master:{path}'], text=True)
 
           macro = Path('shinken/macroresolver.py')
           text = macro.read_text()
@@ -44,15 +46,31 @@ jobs:
 
           scheduler = Path('shinken/scheduler.py')
           current = scheduler.read_text()
-          master = subprocess.check_output(
-              ['git', 'show', 'origin/master:shinken/scheduler.py'], text=True
-          )
+          master = master_file('shinken/scheduler.py')
           master_start = master.index('    def get_maintenance_dt_times(self, now, elt):')
           master_end = master.index('    # Main schedule function', master_start)
           restored = master[master_start:master_end]
           branch_start = current.index('    # Check for downtimes start and stop, and register\n    # them if needed\n    def update_downtimes_and_comments(self):')
           branch_end = current.index('    # Main schedule function', branch_start)
           scheduler.write_text(current[:branch_start] + restored + current[branch_end:])
+
+          # Keep the branch's Python 3 path handling, but restore the maintenance-aware
+          # fake_check/scheduler_loop helpers removed by the mechanical conversion.
+          helper = Path('test/shinken_test.py')
+          helper_text = helper.read_text()
+          helper_master = master_file('test/shinken_test.py')
+          if 'from shinken.objects.schedulingitem import SchedulingItem' not in helper_text:
+              anchor = 'from shinken.objects.module import Module\n'
+              helper_text = helper_text.replace(
+                  anchor,
+                  anchor + 'from shinken.objects.schedulingitem import SchedulingItem\n',
+                  1,
+              )
+          m_start = helper_master.index('    def fake_check(')
+          m_end = helper_master.index('    def worker_loop(', m_start)
+          b_start = helper_text.index('    def fake_check(')
+          b_end = helper_text.index('    def worker_loop(', b_start)
+          helper.write_text(helper_text[:b_start] + helper_master[m_start:m_end] + helper_text[b_end:])
 
           test_macro = Path('test/test_macroresolver.py')
           test_text = test_macro.read_text()
