@@ -14,6 +14,8 @@ cleanup() {
     if (( status != 0 )); then
         echo "--- container status ---" >&2
         podman ps -a --filter "network=${NETWORK}" >&2 || true
+        echo "--- web status ---" >&2
+        curl -fsS http://127.0.0.1:18080/api/status >&2 || true
         for container in "${CONTAINERS[@]}"; do
             echo "--- ${container} logs ---" >&2
             podman logs "$container" >&2 || true
@@ -40,10 +42,27 @@ sed -i -E 's/^([[:space:]]*address[[:space:]]+).*/\1reactionner/' "$CONFIG_DIR/r
 sed -i -E 's/^([[:space:]]*address[[:space:]]+).*/\1broker/' "$CONFIG_DIR/brokers/broker-master.cfg"
 sed -i -E 's/^([[:space:]]*address[[:space:]]+).*/\1receiver/' "$CONFIG_DIR/receivers/receiver-master.cfg"
 
+# Image-provided modules live outside /var/lib/shinken so persistent data
+# volumes cannot hide the application code.
+sed -i -E 's#^modules_dir=.*#modules_dir=/usr/local/lib/shinken/modules#' "$CONFIG_DIR/shinken.cfg"
+for daemon_ini in "$CONFIG_DIR"/daemons/*.ini; do
+    sed -i -E 's#^modules_dir=.*#modules_dir=/usr/local/lib/shinken/modules#' "$daemon_ini"
+done
+sed -i -E 's/^([[:space:]]*)modules[[:space:]]*$/\1modules             status-webui/' "$CONFIG_DIR/brokers/broker-master.cfg"
+
 # Integration checks should run immediately instead of being spread over the
 # historical five-minute startup window.
 sed -i -E 's/^max_service_check_spread=.*/max_service_check_spread=0/' "$CONFIG_DIR/shinken.cfg"
 sed -i -E 's/^max_host_check_spread=.*/max_host_check_spread=0/' "$CONFIG_DIR/shinken.cfg"
+
+cat >"$CONFIG_DIR/modules/status-webui.cfg" <<'EOF'
+define module {
+    module_name     status-webui
+    module_type     status_webui
+    host            0.0.0.0
+    port            8080
+}
+EOF
 
 cat >"$CONFIG_DIR/commands/integration-lab.cfg" <<'EOF'
 define command {
@@ -106,15 +125,16 @@ podman run -d --name lab-http --network "$NETWORK" "$IMAGE" \
 podman run -d --name lab-scheduler --network-alias scheduler "${common_args[@]}" "$IMAGE" scheduler >/dev/null
 podman run -d --name lab-poller --network-alias poller "${common_args[@]}" "$IMAGE" poller >/dev/null
 podman run -d --name lab-reactionner --network-alias reactionner "${common_args[@]}" "$IMAGE" reactionner >/dev/null
-podman run -d --name lab-broker --network-alias broker "${common_args[@]}" "$IMAGE" broker >/dev/null
+podman run -d --name lab-broker --network-alias broker -p 127.0.0.1:18080:8080 "${common_args[@]}" "$IMAGE" broker >/dev/null
 podman run -d --name lab-receiver --network-alias receiver "${common_args[@]}" "$IMAGE" receiver >/dev/null
 
 # Validate the exact configuration before starting the control plane.
 podman run --rm "${common_args[@]}" "$IMAGE" shinken-arbiter -v -c /etc/shinken/shinken.cfg
 podman run -d --name lab-arbiter --network-alias arbiter "${common_args[@]}" "$IMAGE" arbiter >/dev/null
 
-# Prove that all long-running components stay alive and that an active host
-# check plus a real HTTP service check were dispatched to the poller.
+# Prove that all long-running components stay alive, that an active host check
+# and a real HTTP service check were dispatched to the poller, and that the
+# broker received the resulting state and exposed it through the modern UI.
 deadline=$((SECONDS + 120))
 while (( SECONDS < deadline )); do
     all_running=1
@@ -127,14 +147,23 @@ while (( SECONDS < deadline )); do
 
     markers=$(podman run --rm -v "$DATA_VOLUME:/var/lib/shinken:Z" "$IMAGE" \
         shell -c 'cat /var/lib/shinken/integration-checks.log 2>/dev/null || true')
-    if (( all_running )) && grep -q '^host-ok lab-http ' <<<"$markers" && grep -q '^http-ok lab-http 200$' <<<"$markers"; then
-        echo "Distributed Shinken integration succeeded."
+    status_json=$(curl -fsS http://127.0.0.1:18080/api/status 2>/dev/null || true)
+    dashboard=$(curl -fsS http://127.0.0.1:18080/ 2>/dev/null || true)
+
+    if (( all_running )) \
+        && grep -q '^host-ok lab-http ' <<<"$markers" \
+        && grep -q '^http-ok lab-http 200$' <<<"$markers" \
+        && grep -q 'integration-http' <<<"$status_json" \
+        && grep -q 'HTTP endpoint' <<<"$status_json" \
+        && grep -q '<title>Shinken Status</title>' <<<"$dashboard"; then
+        echo "Distributed Shinken integration and broker web UI succeeded."
         echo "$markers"
+        echo "$status_json"
         podman ps --filter "network=${NETWORK}"
         exit 0
     fi
     sleep 2
 done
 
-echo "Integration checks did not complete within 120 seconds." >&2
+echo "Integration checks and web status did not complete within 120 seconds." >&2
 exit 1
