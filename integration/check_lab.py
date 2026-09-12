@@ -3,8 +3,8 @@
 
 The script intentionally uses only Python's standard library so the integration
 suite validates Shinken itself instead of an unrelated monitoring plugin
-package. Successful checks append a marker to the shared Shinken data volume,
-which lets the outer test prove that the scheduler/poller path executed them.
+package. Checks append markers to the shared Shinken data volume so the outer
+lab can prove that scheduler/poller execution actually happened.
 """
 
 from __future__ import annotations
@@ -50,14 +50,25 @@ def check_http(host: str, marker_file: str) -> int:
     return 0
 
 
+def check_expected_failure(host: str, marker_file: str) -> int:
+    record(marker_file, f"critical-seen {host}")
+    print(f"CRITICAL - intentional integration failure for {host}")
+    return 2
+
+
 def main() -> int:
-    if len(sys.argv) != 4 or sys.argv[1] not in {"host", "http"}:
-        print(f"usage: {sys.argv[0]} <host|http> <hostname> <marker-file>", file=sys.stderr)
+    if len(sys.argv) != 4 or sys.argv[1] not in {"host", "http", "fail"}:
+        print(
+            f"usage: {sys.argv[0]} <host|http|fail> <hostname> <marker-file>",
+            file=sys.stderr,
+        )
         return 3
     mode, host, marker_file = sys.argv[1:]
     if mode == "host":
         return check_host(host, marker_file)
-    return check_http(host, marker_file)
+    if mode == "http":
+        return check_http(host, marker_file)
+    return check_expected_failure(host, marker_file)
 
 
 if __name__ == "__main__":
