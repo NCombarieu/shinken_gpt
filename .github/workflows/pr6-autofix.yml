@@ -23,14 +23,12 @@ jobs:
           set -euo pipefail
           git fetch origin master
 
-          # These core files lost maintenance checks and other current master behavior
-          # during the mechanical modernization. Keep the known-good master semantics;
-          # they are already Python 3 compatible through six/future imports.
           git checkout origin/master -- \
             shinken/check.py \
             shinken/objects/host.py \
             shinken/objects/service.py \
-            shinken/objects/schedulingitem.py
+            shinken/objects/schedulingitem.py \
+            test/shinken_test.py
 
           python - <<'PY'
           from pathlib import Path
@@ -104,6 +102,7 @@ jobs:
             shinken/objects/schedulingitem.py \
             shinken/scheduler.py \
             shinken/macroresolver.py \
+            test/shinken_test.py \
             test/test_macroresolver.py \
             test/test_maintenance_check.py \
             test/etc/shinken_maintenance_check.cfg \
