@@ -18,7 +18,12 @@ cleanup() {
         for container in "${CONTAINERS[@]}"; do
             echo "--- ${container} logs ---" >&2
             podman logs "$container" >&2 || true
+            podman top "$container" pid ppid stat args >&2 || true
         done
+        while IFS= read -r diagnostic_file; do
+            echo "--- ${diagnostic_file#"$STATE_DIR"/} ---" >&2
+            cat "$diagnostic_file" >&2 || true
+        done < <(find "$STATE_DIR" -type f -print)
     fi
     for container in "${CONTAINERS[@]}"; do
         podman rm -f "$container" >/dev/null 2>&1 || true
