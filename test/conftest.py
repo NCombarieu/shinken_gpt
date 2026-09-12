@@ -14,18 +14,20 @@ import pytest
 # during collection instead of carrying the obsolete unittest2 dependency.
 sys.modules.setdefault("unittest2", unittest)
 
-# unittest removed the long-deprecated regexp assertion aliases in Python 3.13.
-# Preserve the historical semantics rather than delegating to assertRegex(),
-# whose modern implementation rejects an empty expected pattern. The legacy
-# suite intentionally uses an empty regexp to assert that a log stream is empty.
-if not hasattr(unittest.TestCase, "assertRegexpMatches"):
-    def _assert_regexp_matches(self, text, expected_regexp, msg=None):
-        regexp = re.compile(expected_regexp) if isinstance(expected_regexp, str) else expected_regexp
-        if regexp.search(text) is None:
-            standard_msg = "%r does not match %r" % (text, regexp.pattern)
-            self.fail(self._formatMessage(msg, standard_msg))
+# Preserve the historical regexp assertion semantics consistently across all
+# supported Python versions. Python 3.11/3.12 still expose the deprecated
+# assertRegexpMatches alias while Python 3.13 removes it; the stdlib
+# implementation behind the older alias now rejects an empty expected pattern.
+# The legacy suite intentionally uses an empty regexp to assert that a log
+# stream is empty, so provide one compatibility implementation everywhere.
+def _assert_regexp_matches(self, text, expected_regexp, msg=None):
+    regexp = re.compile(expected_regexp) if isinstance(expected_regexp, str) else expected_regexp
+    if regexp.search(text) is None:
+        standard_msg = "%r does not match %r" % (text, regexp.pattern)
+        self.fail(self._formatMessage(msg, standard_msg))
 
-    unittest.TestCase.assertRegexpMatches = _assert_regexp_matches
+
+unittest.TestCase.assertRegexpMatches = _assert_regexp_matches
 
 # Python 2 exposed sys.setcheckinterval(). Python 3 replaced it with
 # sys.setswitchinterval(); the old test only used a large value to reduce
@@ -72,7 +74,7 @@ def preserve_python2_daterange_none_semantics(monkeypatch):
 
     Python 2 tolerated ordering comparisons such as ``timestamp < None``.
     Some legacy daterange code relied on that accidental behavior when a
-    fixed calendar range was entirely in the past.  Keep the suite moving
+    fixed calendar range was entirely in the past. Keep the suite moving
     while making the intended result explicit: no next valid time exists.
     """
     from shinken.daterange import Daterange
