@@ -59,20 +59,15 @@ class Trigger(Item):
     # ctx is the object we are evaluating the code. In the code
     # it will be "self".
     def eval(myself, ctx):
-        self = ctx
+        namespace = {'self': ctx}
+        namespace.update(trigger_functions)
 
-        # Ok we can declare for this trigger call our functions
-        for (n, f) in trigger_functions.items():
-            locals()[n] = f
-
-        code = myself.code_bin  # Comment? => compile(myself.code_bin, "<irc>", "exec")
-        #try:
-        #    exec code in dict(locals())
-        #except Exception as err:
-        #    set_value(self, "UNKNOWN: Trigger error: %s" % err, "", 3)
-        #    logger.error('%s Trigger %s failed: %s ; '
-        #                 '%s' % (self.host_name, myself.trigger_name, err, traceback.format_exc()))
-
+        try:
+            exec(myself.code_bin, globals(), namespace)
+        except Exception as err:
+            set_value(ctx, "UNKNOWN: Trigger error: %s" % err, "", 3)
+            logger.error('%s Trigger %s failed: %s ; '
+                         '%s' % (ctx.host_name, myself.trigger_name, err, traceback.format_exc()))
 
     def __getstate__(self):
         return {'trigger_name': self.trigger_name,
