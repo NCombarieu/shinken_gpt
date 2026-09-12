@@ -33,30 +33,8 @@ import traceback
 import zlib
 
 import bottle
-
-try:
-    import ssl
-except ImportError:
-    ssl = None
-
-try:
-    from cherrypy import wsgiserver as cheery_wsgiserver
-except ImportError:
-    cheery_wsgiserver = None
-try:
-    from OpenSSL import SSL
-    from cherrypy.wsgiserver.ssl_pyopenssl import pyOpenSSLAdapter
-
-    class pyOpenSSLAdapterSafe(pyOpenSSLAdapter):
-        """CherryPy adapter that explicitly disables obsolete SSL versions."""
-
-        def get_context(self):
-            context = pyOpenSSLAdapter.get_context(self)
-            context.set_options(SSL.OP_NO_SSLv2 | SSL.OP_NO_SSLv3)
-            return context
-except ImportError:
-    SSL = None
-    pyOpenSSLAdapterSafe = None
+from cheroot.ssl.builtin import BuiltinSSLAdapter
+from cheroot.wsgi import Server as CherootWSGIServer
 
 from .log import logger
 from shinken.safepickle import SafeUnpickler
@@ -73,42 +51,37 @@ class PortNotFree(Exception):
     pass
 
 
-class CherryPyServer(bottle.ServerAdapter):
-    """Bottle adapter that constructs Shinken's CherryPy WSGI server."""
+class CherootServer(bottle.ServerAdapter):
+    """Bottle adapter that constructs a maintained Cheroot WSGI server."""
 
     def run(self, handler):  # pragma: no cover
-        if cheery_wsgiserver is None:
-            raise RuntimeError("CherryPy WSGI server is unavailable")
         daemon_thread_pool_size = self.options["daemon_thread_pool_size"]
-        server = cheery_wsgiserver.CherryPyWSGIServer(
+        server = CherootWSGIServer(
             (self.host, self.port),
             handler,
             numthreads=daemon_thread_pool_size,
             shutdown_timeout=1,
         )
         logger.info(
-            "Initializing a CherryPy backend with %d threads",
+            "Initializing a Cheroot backend with %d threads",
             daemon_thread_pool_size,
         )
-        use_ssl = self.options["use_ssl"]
-        ca_cert = self.options["ca_cert"]
-        ssl_cert = self.options["ssl_cert"]
-        ssl_key = self.options["ssl_key"]
-        if SSL and pyOpenSSLAdapterSafe and use_ssl:
-            server.ssl_adapter = pyOpenSSLAdapterSafe(ssl_cert, ssl_key, ca_cert)
-        if use_ssl:
-            server.ssl_certificate = ssl_cert
-            server.ssl_private_key = ssl_key
+        if self.options["use_ssl"]:
+            server.ssl_adapter = BuiltinSSLAdapter(
+                self.options["ssl_cert"],
+                self.options["ssl_key"],
+                self.options["ca_cert"],
+            )
         return server
 
 
-class CherryPyBackend:
+class CherootBackend:
     def __init__(self, host, port, use_ssl, ca_cert, ssl_key,
                  ssl_cert, hard_ssl_name_check, daemon_thread_pool_size):
         self.port = port
         self.use_ssl = use_ssl
         try:
-            adapter = CherryPyServer(
+            adapter = CherootServer(
                 host=host,
                 port=port,
                 use_ssl=use_ssl,
@@ -119,30 +92,28 @@ class CherryPyBackend:
                 daemon_thread_pool_size=daemon_thread_pool_size,
             )
             self.srv = adapter.run(bottle.default_app())
-        except socket.error as exp:
+        except OSError as exp:
             msg = "Error: Sorry, the port %d is not free: %s" % (self.port, str(exp))
-            raise PortNotFree(msg)
+            raise PortNotFree(msg) from exp
         except Exception as exc:
             logger.error("Error: the http port cannot be open: %s", traceback.format_exc())
-            raise InvalidWorkDir(exc)
+            raise InvalidWorkDir(exc) from exc
 
     def get_sockets(self):
         return []
 
     def stop(self):
-        if self.use_ssl:
-            return
         try:
             self.srv.stop()
         except Exception as exp:
-            logger.warning("Cannot stop the CherryPy backend: %s", exp)
+            logger.warning("Cannot stop the Cheroot backend: %s", exp)
 
     def run(self):
         try:
             self.srv.start()
-        except socket.error as exp:
+        except OSError as exp:
             msg = "Error: Sorry, the port %d is not free: %s" % (self.port, str(exp))
-            raise PortNotFree(msg)
+            raise PortNotFree(msg) from exp
         finally:
             try:
                 self.srv.stop()
@@ -168,7 +139,7 @@ class HTTPDaemon:
         self.uri = "%s://%s:%s" % (protocol, self.host, self.port)
         logger.info("Opening HTTP socket at %s", self.uri)
 
-        self.srv = CherryPyBackend(
+        self.srv = CherootBackend(
             host,
             port,
             use_ssl,
