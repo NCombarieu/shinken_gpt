@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (C) 2009-2010:
 #    Gabes Jean, naparuba@gmail.com
 #    Gerhard Lausser, Gerhard.Lausser@consol.de
@@ -22,21 +22,9 @@
 
 import os
 import sys
-import shlex
 import shutil
 import optparse
 from subprocess import Popen, PIPE
-
-# Try to load json (2.5 and higer) or simplejson if failed (python2.4)
-try:
-    import json
-except ImportError:
-    # For old Python version, load
-    # simple json (it can be hard json?! It's 2 functions guy!)
-    try:
-        import simplejson as json
-    except ImportError:
-        sys.exit("Error: you need the json or simplejson module for this script")
 
 VERSION = '0.1'
 
@@ -60,11 +48,11 @@ def get_vmware_hosts(check_esx_path, vcenter, user, password):
     list_host_cmd = [check_esx_path, '-D', vcenter, '-u', user, '-p', password,
                      '-l', 'runtime', '-s', 'listhost']
 
-    output = Popen(list_host_cmd, stdout=PIPE).communicate()
+    output = Popen(list_host_cmd, stdout=PIPE, text=True).communicate()
 
     parts = output[0].split(':')
-    if len(parts) == 1 or not '|' in parts[1]:
-        print "ERROR : there was an error with the esx3.pl command. Plase fix it : '%s'" % " ".join(parts)
+    if len(parts) == 1 or '|' not in parts[1]:
+        print("ERROR : there was an error with the esx3.pl command. Please fix it : '%s'" % " ".join(parts))
         sys.exit(2)
     hsts_raw = parts[1].split('|')[0]
     hsts_raw_lst = hsts_raw.split(',')
@@ -82,11 +70,11 @@ def get_vmware_hosts(check_esx_path, vcenter, user, password):
 
 # For a specific host, ask all VM on it to the VCenter
 def get_vm_of_host(check_esx_path, vcenter, host, user, password):
-    print "Listing host", host
+    print("Listing host", host)
     list_vm_cmd = [check_esx_path, '-D', vcenter, '-H', host,
                    '-u', user, '-p', password,
                    '-l', 'runtime', '-s', 'list']
-    output = Popen(list_vm_cmd, stdout=PIPE).communicate()
+    output = Popen(list_vm_cmd, stdout=PIPE, text=True).communicate()
     parts = output[0].split(':')
     # Maybe we got a 'CRITICAL - There are no VMs.' message,
     # if so, we bypass this host
@@ -121,25 +109,23 @@ def create_all_links(res, rules):
 
 def write_output(elements, path, rules):
     try:
-        f = open(path + '.tmp', 'wb')
-        for e in elements:
-            e = e.strip()
-            e = _apply_rules(e, rules)
-            f.write('%s\n' % e)
-        f.close()
+        with open(path + '.tmp', 'w', encoding='utf-8') as f:
+            for e in elements:
+                e = e.strip()
+                e = _apply_rules(e, rules)
+                f.write('%s\n' % e)
         shutil.move(path + '.tmp', path)
-        print "File %s wrote" % path
-    except IOError, exp:
+        print("File %s wrote" % path)
+    except OSError as exp:
         sys.exit("Error writing the file %s: %s" % (path, exp))
 
 
 def main(check_esx_path, vcenter, user, password, output, rules, vm_only, esx_only):
     rules = _split_rules(rules)
-    res = {}
     hosts = get_vmware_hosts(check_esx_path, vcenter, user, password)
     if esx_only:
         write_output(hosts, output, rules)
-        print "Created %d hosts" % len(hosts)
+        print("Created %d hosts" % len(hosts))
         sys.exit(0)
 
     vms = []
@@ -149,8 +135,8 @@ def main(check_esx_path, vcenter, user, password, output, rules, vm_only, esx_on
             vms.extend(lst)
     write_output(vms, output, rules)
 
-    print "Created %d hosts" % len(vms)
-    print "Finished!"
+    print("Created %d hosts" % len(vms))
+    print("Finished!")
 
 
 # Here we go!
@@ -164,7 +150,7 @@ if __name__ == "__main__":
                       default='/usr/local/nagios/libexec/check_esx3.pl',
                       help="Full path of the check_esx3.pl script (default: %default)")
     parser.add_option("-V", "--vcenter", '--Vcenter',
-                      help="tThe IP/DNS address of your Vcenter host.")
+                      help="The IP/DNS address of your Vcenter host.")
     parser.add_option("-u", "--user",
                       help="User name to connect to this Vcenter")
     parser.add_option("-p", "--password",
@@ -178,7 +164,6 @@ if __name__ == "__main__":
                       help="Dump only the ESX hosts")
     parser.add_option('--vm', default='', dest='vm_only', action='store_true',
                       help="Dump only the VM hosts")
-    
 
     opts, args = parser.parse_args()
     if args:
@@ -192,7 +177,6 @@ if __name__ == "__main__":
     if opts.user is None:
         parser.error("missing -u or --user option for the vcenter username")
     if opts.password is None:
-        error = True
         parser.error("missing -p or --password option for the vcenter password")
     if not os.path.exists(opts.check_esx_path):
         parser.error("the path %s for the check_esx3.pl script is wrong, missing file" % opts.check_esx_path)
