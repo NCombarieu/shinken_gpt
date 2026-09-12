@@ -54,8 +54,6 @@ jobs:
           branch_end = current.index('    # Main schedule function', branch_start)
           scheduler.write_text(current[:branch_start] + restored + current[branch_end:])
 
-          # Keep the branch's Python 3 path handling, but restore the maintenance-aware
-          # fake_check/scheduler_loop helpers removed by the mechanical conversion.
           helper = Path('test/shinken_test.py')
           helper_text = helper.read_text()
           helper_master = master_file('test/shinken_test.py')
@@ -85,6 +83,18 @@ jobs:
           git show origin/master:test/etc/shinken_maintenance_check.cfg > test/etc/shinken_maintenance_check.cfg
           git show origin/master:test/etc/maintenance_check/hosts.cfg > test/etc/maintenance_check/hosts.cfg
           git show origin/master:test/etc/maintenance_check/services.cfg > test/etc/maintenance_check/services.cfg
+
+          # Brok.data is serialized until prepare() on Python 3.
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('test/test_maintenance_check.py')
+          text = path.read_text()
+          old = "        #[b.prepare() for b in self.broks]\n        logs = [b.data['log'] for b in self.broks if b.type == 'log']"
+          new = "        [b.prepare() for b in self.broks if b.type == 'log']\n        logs = [b.data['log'] for b in self.broks if b.type == 'log']"
+          if old not in text:
+              raise SystemExit('maintenance brok preparation pattern not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
 
       - name: Install targeted test environment
         run: |
