@@ -224,7 +224,7 @@ class TestMacroResolver(ShinkenTest):
         mr = self.get_mr()
         value = mr._get_long_date_time()
         self.assertIsInstance(value, str)
-        self.assertTrue(value)
+        self.assertRegex(value, r'\d{4}$')
 
 
 if __name__ == '__main__':
