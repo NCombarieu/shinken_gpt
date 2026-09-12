@@ -41,7 +41,7 @@ class TestConfig(ShinkenTest):
         n = Notification('PROBLEM', 'scheduled', 'BADCOMMAND', cmd, host, None, 0)
         n.execute()
         time.sleep(0.2)
-        if n.status is not 'done':
+        if n.status != 'done':
             n.check_finished(8000)
         print(n.__dict__)
         self.sched.actions[n.id] = n
