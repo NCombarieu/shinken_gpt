@@ -62,8 +62,6 @@ from .log import logger
 from shinken.safepickle import SafeUnpickler
 from shinken.stats import statsmgr
 
-# Keep Bottle diagnostics routed through Shinken logging instead of enabling
-# framework debug mode globally in production daemons.
 bottle.debug(False)
 
 
@@ -76,9 +74,11 @@ class PortNotFree(Exception):
 
 
 class CherryPyServer(bottle.ServerAdapter):
-    """Bottle adapter backed by Shinken's CherryPy WSGI server."""
+    """Bottle adapter that constructs Shinken's CherryPy WSGI server."""
 
     def run(self, handler):  # pragma: no cover
+        if cheery_wsgiserver is None:
+            raise RuntimeError("CherryPy WSGI server is unavailable")
         daemon_thread_pool_size = self.options["daemon_thread_pool_size"]
         server = cheery_wsgiserver.CherryPyWSGIServer(
             (self.host, self.port),
@@ -108,17 +108,17 @@ class CherryPyBackend:
         self.port = port
         self.use_ssl = use_ssl
         try:
-            self.srv = bottle.run(
+            adapter = CherryPyServer(
                 host=host,
                 port=port,
-                server=CherryPyServer,
-                quiet=False,
                 use_ssl=use_ssl,
                 ca_cert=ca_cert,
                 ssl_key=ssl_key,
                 ssl_cert=ssl_cert,
+                hard_ssl_name_check=hard_ssl_name_check,
                 daemon_thread_pool_size=daemon_thread_pool_size,
             )
+            self.srv = adapter.run(bottle.default_app())
         except socket.error as exp:
             msg = "Error: Sorry, the port %d is not free: %s" % (self.port, str(exp))
             raise PortNotFree(msg)
