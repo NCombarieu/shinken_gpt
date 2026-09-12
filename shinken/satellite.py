@@ -172,6 +172,7 @@ class ISchedulers(Interface):
         ret = self.app.get_return_for_passive(int(sched_id))
         # print "Send mack", len(ret), "returns"
         return cPickle.dumps(ret)
+    get_returns.encode = 'raw'
     get_returns.doc = doc
 
 
@@ -187,6 +188,7 @@ class IBroks(Interface):
     def get_broks(self, bname, broks_batch=0):
         res = self.app.get_broks(broks_batch)
         return base64.b64encode(zlib.compress(cPickle.dumps(res), 2))
+    get_broks.encode = 'raw'
     get_broks.doc = doc
 
 
