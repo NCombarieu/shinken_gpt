@@ -1,5 +1,4 @@
+Bottle>=0.13.4,<0.14
 CherryPy>=18.8.0
-legacy-cgi>=2.6
 pycurl>=7.45.2
 Pyro5>=5.15
-six>=1.16.0
