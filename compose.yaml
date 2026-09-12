@@ -6,6 +6,10 @@ x-shinken: &shinken
     dockerfile: Containerfile
   image: localhost/shinken:dev
   restart: unless-stopped
+  environment:
+    SHINKEN_CONTAINER_DNS: "1"
+    SHINKEN_STATUS_WEBUI: "1"
+    SHINKEN_MODULES_DIR: /usr/local/lib/shinken/modules
   security_opt:
     - no-new-privileges:true
   cap_drop:
@@ -41,6 +45,18 @@ services:
   broker:
     <<: *shinken
     command: ["broker"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).read()"
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
 
   receiver:
     <<: *shinken
