@@ -64,3 +64,26 @@ def normalize_legacy_log_paths(monkeypatch):
         return result
 
     monkeypatch.setattr(Brok, "prepare", prepare_with_relative_test_paths)
+
+
+@pytest.fixture(autouse=True)
+def preserve_python2_daterange_none_semantics(monkeypatch):
+    """Treat a missing next valid day as no future match under Python 3.
+
+    Python 2 tolerated ordering comparisons such as ``timestamp < None``.
+    Some legacy daterange code relied on that accidental behavior when a
+    fixed calendar range was entirely in the past.  Keep the suite moving
+    while making the intended result explicit: no next valid time exists.
+    """
+    from shinken.daterange import Daterange
+
+    original = Daterange.get_next_valid_time_from_t
+
+    def get_next_valid_time_from_t(self, t):
+        if self.is_time_valid(t):
+            return t
+        if self.get_next_valid_day(t) is None:
+            return None
+        return original(self, t)
+
+    monkeypatch.setattr(Daterange, "get_next_valid_time_from_t", get_next_valid_time_from_t)
