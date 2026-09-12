@@ -59,6 +59,8 @@ jobs:
       - name: Lint fatal errors
         # bottlecore.py is vendored legacy Bottle code.
         run: ruff check shinken bin cli modules libexec integration --select E9,F7,F82 --exclude shinken/webui/bottlecore.py
+      - name: Inventory modernization debt
+        run: python integration/modernization_audit.py
 
   compatibility-tests:
     runs-on: ubuntu-latest
