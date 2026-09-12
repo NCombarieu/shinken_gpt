@@ -38,6 +38,9 @@ def test_python3_http_transport_handles_json_raw_and_pickled_post_data():
 
         raw.encode = "raw"
 
+        def binary(self):
+            return b"unannotated-binary"
+
     api = API()
     daemon = HTTPDaemon(
         "127.0.0.1", port, "cheroot", False, "", "", "", False, 2
@@ -63,6 +66,7 @@ def test_python3_http_transport_handles_json_raw_and_pickled_post_data():
         assert args == {"value": value}
         assert api.received == value
         assert base64.b64decode(client.get("raw")) == b"raw-payload"
+        assert client.get("binary") == b"unannotated-binary"
     finally:
         daemon.shutdown()
         server_thread.join(2)

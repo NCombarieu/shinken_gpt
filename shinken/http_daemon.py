@@ -236,8 +236,10 @@ class HTTPDaemon:
                     calling_time = t3 - t2
 
                     encoding = getattr(callback, "encode", "json")
-                    if encoding == "raw":
-                        payload = result
+                    if encoding == "raw" or isinstance(
+                        result, (bytes, bytearray, memoryview)
+                    ):
+                        payload = bytes(result)
                         bottle.response.content_type = "application/octet-stream"
                     else:
                         payload = json.dumps(result)
