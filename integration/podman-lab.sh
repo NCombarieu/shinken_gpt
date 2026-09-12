@@ -4,9 +4,8 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 IMAGE=${SHINKEN_LAB_IMAGE:-localhost/shinken:integration}
 NETWORK=${SHINKEN_LAB_NETWORK:-shinken-integration}
-DATA_VOLUME=${SHINKEN_LAB_DATA_VOLUME:-shinken-integration-data}
-LOG_VOLUME=${SHINKEN_LAB_LOG_VOLUME:-shinken-integration-logs}
 CONFIG_DIR=$(mktemp -d)
+STATE_DIR=$(mktemp -d)
 CONTAINERS=(lab-arbiter lab-scheduler lab-poller lab-reactionner lab-broker lab-receiver lab-http)
 
 cleanup() {
@@ -25,8 +24,7 @@ cleanup() {
         podman rm -f "$container" >/dev/null 2>&1 || true
     done
     podman network rm "$NETWORK" >/dev/null 2>&1 || true
-    podman volume rm -f "$DATA_VOLUME" "$LOG_VOLUME" >/dev/null 2>&1 || true
-    rm -rf "$CONFIG_DIR"
+    rm -rf "$CONFIG_DIR" "$STATE_DIR"
     exit "$status"
 }
 trap cleanup EXIT
@@ -133,8 +131,10 @@ EOF
 cd "$ROOT_DIR"
 podman build --tag "$IMAGE" --file Containerfile .
 podman network create "$NETWORK" >/dev/null
-podman volume create "$DATA_VOLUME" >/dev/null
-podman volume create "$LOG_VOLUME" >/dev/null
+
+for role in arbiter scheduler poller reactionner broker receiver; do
+    install -d -m 0777 "$STATE_DIR/$role/data" "$STATE_DIR/$role/log"
+done
 
 common_args=(
     --network "$NETWORK"
@@ -142,21 +142,32 @@ common_args=(
     --cap-drop ALL
     -v "$CONFIG_DIR:/etc/shinken:ro,Z"
     -v "$ROOT_DIR/integration:/opt/shinken-integration:ro,Z"
-    -v "$DATA_VOLUME:/var/lib/shinken:Z"
-    -v "$LOG_VOLUME:/var/log/shinken:Z"
 )
+
+run_daemon() {
+    local role=$1
+    shift
+    podman run -d --name "lab-$role" --network-alias "$role" \
+        "${common_args[@]}" \
+        -v "$STATE_DIR/$role/data:/var/lib/shinken:Z" \
+        -v "$STATE_DIR/$role/log:/var/log/shinken:Z" \
+        "$@" "$IMAGE" "$role" >/dev/null
+}
 
 podman run -d --name lab-http --network "$NETWORK" "$IMAGE" \
     shell -c 'python -m http.server 8000 --bind 0.0.0.0 --directory /usr/local/share/shinken/etc' >/dev/null
 
-podman run -d --name lab-scheduler --network-alias scheduler "${common_args[@]}" "$IMAGE" scheduler >/dev/null
-podman run -d --name lab-poller --network-alias poller "${common_args[@]}" "$IMAGE" poller >/dev/null
-podman run -d --name lab-reactionner --network-alias reactionner "${common_args[@]}" "$IMAGE" reactionner >/dev/null
-podman run -d --name lab-broker --network-alias broker -p 127.0.0.1:18080:8080 "${common_args[@]}" "$IMAGE" broker >/dev/null
-podman run -d --name lab-receiver --network-alias receiver "${common_args[@]}" "$IMAGE" receiver >/dev/null
+run_daemon scheduler
+run_daemon poller
+run_daemon reactionner
+run_daemon broker -p 127.0.0.1:18080:8080
+run_daemon receiver
 
-podman run --rm "${common_args[@]}" "$IMAGE" shinken-arbiter -v -c /etc/shinken/shinken.cfg
-podman run -d --name lab-arbiter --network-alias arbiter "${common_args[@]}" "$IMAGE" arbiter >/dev/null
+podman run --rm "${common_args[@]}" \
+    -v "$STATE_DIR/arbiter/data:/var/lib/shinken:Z" \
+    -v "$STATE_DIR/arbiter/log:/var/log/shinken:Z" \
+    "$IMAGE" shinken-arbiter -v -c /etc/shinken/shinken.cfg
+run_daemon arbiter
 
 deadline=$((SECONDS + 120))
 while (( SECONDS < deadline )); do
@@ -168,8 +179,7 @@ while (( SECONDS < deadline )); do
         fi
     done
 
-    markers=$(podman run --rm -v "$DATA_VOLUME:/var/lib/shinken:Z" "$IMAGE" \
-        shell -c 'cat /var/lib/shinken/integration-checks.log 2>/dev/null || true')
+    markers=$(cat "$STATE_DIR/poller/data/integration-checks.log" 2>/dev/null || true)
     status_json=$(curl -fsS http://127.0.0.1:18080/api/status 2>/dev/null || true)
     dashboard=$(curl -fsS http://127.0.0.1:18080/ 2>/dev/null || true)
 
