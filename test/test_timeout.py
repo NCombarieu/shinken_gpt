@@ -91,6 +91,12 @@ class TestTimeout(ShinkenTest):
         self.assertEqual(3, o.exit_status)
         self.assertLess(o.execution_time, n.timeout + 1)
 
+        # The legacy scheduler result boundary still normalizes byte payloads.
+        # Preserve that transport representation while this test bypasses the
+        # reactionner process and calls Scheduler.put_results() directly.
+        if isinstance(o.output, str):
+            o.output = o.output.encode('utf8')
+
         # Now look what the scheduler says to all this.
         self.sched.actions[n.id] = n
         self.sched.put_results(o)
