@@ -22,8 +22,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
+import base64
+from io import BytesIO
+
 from shinken.imports import cpickle
-from shinken.imports import StringIO
 import zlib
 import json
 
@@ -131,7 +133,7 @@ class HTTPClient(object):
         
         c.setopt(c.URL, str(self.uri + path + '?' + urlencode(args)))
         # Ok now manage the response
-        response = StringIO()
+        response = BytesIO()
         c.setopt(pycurl.WRITEFUNCTION, response.write)
         c.setopt(c.VERBOSE, 0)
         try:
@@ -143,23 +145,29 @@ class HTTPClient(object):
         # Do NOT close the connection, we want a keep alive
         
         if r != 200:
-            err = response.getvalue()
+            err = response.getvalue().decode("utf-8", "replace")
             logger.error("There was a critical error : %s", err)
             raise HTTPException('Connection error to %s : %s' % (self.uri, r))
         else:
             # Manage special return of pycurl
-            ret = json.loads(response.getvalue().replace('\\/', '/'))
-            # print "GOT RAW RESULT", ret, type(ret)
-            return ret
+            payload = response.getvalue()
+            try:
+                return json.loads(payload.decode("utf-8").replace('\\/', '/'))
+            except (UnicodeDecodeError, ValueError):
+                # Raw endpoints transport compressed, base64-encoded payloads.
+                return payload
     
     
     # Try to get an URI path
     def post(self, path, args, wait='short'):
         size = 0
         # Take args, pickle them and then compress the result
+        encoded_args = {}
         for (k, v) in args.items():
-            args[k] = zlib.compress(cpickle.dumps(v), 2)
-            size += len(args[k])
+            encoded_args[k] = base64.b64encode(
+                zlib.compress(cpickle.dumps(v), 2)
+            ).decode("ascii")
+            size += len(encoded_args[k])
         # Ok go for it!
         
         c = self.post_con
@@ -176,11 +184,11 @@ class HTTPClient(object):
         # if proxy:
         #    c.setopt(c.PROXY, proxy)
         # Pycurl want a list of tuple as args
-        postargs = [(k, v) for (k, v) in args.items()]
+        postargs = [(k, v) for (k, v) in encoded_args.items()]
         c.setopt(c.HTTPPOST, postargs)
         c.setopt(c.URL, str(self.uri + path))
         # Ok now manage the response
-        response = StringIO()
+        response = BytesIO()
         c.setopt(pycurl.WRITEFUNCTION, response.write)
         c.setopt(c.VERBOSE, 0)
         try:
@@ -193,13 +201,13 @@ class HTTPClient(object):
         # Do NOT close the connection
         # c.close()
         if r != 200:
-            err = response.getvalue()
+            err = response.getvalue().decode("utf-8", "replace")
             logger.error("There was a critical error : %s", err)
             raise HTTPException('Connection error to %s : %s' % (self.uri, r))
         else:
             # Manage special return of pycurl
             # ret  = json.loads(response.getvalue().replace('\\/', '/'))
-            ret = response.getvalue()
+            ret = response.getvalue().decode("utf-8", "replace")
             return ret
         
         # Should return us pong string
@@ -210,8 +218,10 @@ class HTTPClient(object):
     def put(self, path, v, wait='short'):
         
         c = self.put_con
+        if isinstance(v, str):
+            v = v.encode("utf-8")
         filesize = len(v)
-        f = StringIO(v)
+        f = BytesIO(v)
         
         c.setopt(pycurl.INFILESIZE, filesize)
         c.setopt(pycurl.PUT, 1)
@@ -230,7 +240,7 @@ class HTTPClient(object):
         c.setopt(c.URL, str(self.uri + path))
         c.setopt(c.VERBOSE, 0)
         # Ok now manage the response
-        response = StringIO()
+        response = BytesIO()
         c.setopt(pycurl.WRITEFUNCTION, response.write)
         # c.setopt(c.VERBOSE, 1)
         try:
@@ -245,9 +255,9 @@ class HTTPClient(object):
         # Do NOT close the connection
         # c.close()
         if r != 200:
-            err = response.getvalue()
+            err = response.getvalue().decode("utf-8", "replace")
             logger.error("There was a critical error : %s", err)
             raise HTTPException('Connection error to %s : %s' % (self.uri, r))
         else:
-            ret = response.getvalue()
+            ret = response.getvalue().decode("utf-8", "replace")
             return ret

@@ -562,10 +562,9 @@ class Satellite(BaseSatellite):
     # Someone ask us our broks. We send them, and clean the queue
     def get_broks(self, broks_batch=0):
         _type = self.__class__.my_type
+        count = len(self.broks)
         if broks_batch > 0:
-            count = len(self.broks)
-        else:
-            count = min(broks_batch, len(self.broks))
+            count = min(broks_batch, count)
         res = self.broks[:count]
         del self.broks[:count]
         statsmgr.incr('core.%s.broks.out' % _type, count, 'queue')

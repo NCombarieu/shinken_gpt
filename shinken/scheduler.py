@@ -688,7 +688,7 @@ class Scheduler(object):
                     execution_time = c.execution_time
 
                 # Add protection for strange charset
-                if isinstance(c.output, str):
+                if isinstance(c.output, bytes):
                     c.output = c.output.decode('utf8', 'ignore')
 
                 self.actions[c.id].get_return_from(c)
@@ -968,18 +968,15 @@ class Scheduler(object):
     # We give them, and clean them!
     def get_broks(self, bname, broks_batch=0):
         res = []
+        count = len(self.broks)
         if broks_batch > 0:
-            count = len(self.broks)
-        else:
-            count = min(broks_batch, len(self.broks))
+            count = min(broks_batch, count)
         res.extend(self.broks[:count])
         del self.broks[:count]
         # If we are here, we are sure the broker entry exists
+        count = len(self.brokers[bname]['broks'])
         if broks_batch > 0:
-            count = len(self.brokers[bname]['broks'])
-        else:
-            count = min(broks_batch, len(self.brokers[bname]['broks']))
-            count -= len(res)
+            count = min(max(broks_batch - len(res), 0), count)
         res.extend(self.brokers[bname]['broks'][:count])
         del self.brokers[bname]['broks'][:count]
         return res

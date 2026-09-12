@@ -107,13 +107,12 @@ They connect here and get all broks (data for brokers). Data must be ORDERED!
         if bname not in self.app.brokers:
             self.fill_initial_broks(bname)
 
-        if broks_batch > 0:
-            try:
-                broks_batch = int(broks_batch)
-            except ValueError:
-                logger.error("Invalid broks_batch in get_broks, should be an "
-                             "integer. Igored.")
-                broks_batch = 0
+        try:
+            broks_batch = int(broks_batch)
+        except (TypeError, ValueError):
+            logger.error("Invalid broks_batch in get_broks, should be an "
+                         "integer. Ignored.")
+            broks_batch = 0
 
         # Now get the broks for this specific broker
         res = self.app.get_broks(bname, broks_batch)

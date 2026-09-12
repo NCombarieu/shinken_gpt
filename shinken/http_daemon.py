@@ -22,6 +22,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
+import base64
 import errno
 import inspect
 import json
@@ -201,7 +202,8 @@ class HTTPDaemon:
                             value = bottle.request.forms.get(argument_name, None)
                             if value is not None:
                                 if isinstance(value, str):
-                                    value = value.encode("latin-1")
+                                    value = value.encode("ascii")
+                                value = base64.b64decode(value)
                                 value = zlib.decompress(value)
                                 value = SafeUnpickler.loads(value)
                         elif method == "get":
@@ -233,7 +235,13 @@ class HTTPDaemon:
                     t3 = time.time()
                     calling_time = t3 - t2
 
-                    payload = json.dumps(result)
+                    encoding = getattr(callback, "encode", "json")
+                    if encoding == "raw":
+                        payload = result
+                        bottle.response.content_type = "application/octet-stream"
+                    else:
+                        payload = json.dumps(result)
+                        bottle.response.content_type = "application/json"
                     t4 = time.time()
                     json_time = t4 - t3
 
@@ -261,7 +269,6 @@ class HTTPDaemon:
                             "perf",
                         )
 
-                    bottle.response.content_type = "application/json"
                     return payload
 
                 bottle.route(

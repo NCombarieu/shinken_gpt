@@ -53,13 +53,17 @@ class TestConfig(ShinkenTest):
         self.assertEqual('UP', host.state)
         self.assertEqual('HARD', host.state_type)
 
-        for n in svc.notifications_in_progress.values():
+        # Python 2 returned a list here. Keep that snapshot behavior because
+        # successful result processing removes the notification from the map.
+        for n in list(svc.notifications_in_progress.values()):
             print("HEHE")
             print(n.__dict__)
             n.execute()
             print(n.exit_status)
             n.output = u'I love myself $£¤'
             self.sched.put_results(n)
+
+        self.assertEqual({}, svc.notifications_in_progress)
 
 if __name__ == '__main__':
     unittest.main()
