@@ -27,8 +27,8 @@ from __future__ import print_function
 from __future__ import absolute_import
 from shinken_test import *
 
+from queue import Queue
 from shinken.worker import Worker
-from multiprocessing import Queue, Manager
 from shinken.objects.service import Service
 from shinken.objects.host import Host
 from shinken.objects.contact import Contact
@@ -50,10 +50,11 @@ class TestTimeout(ShinkenTest):
         
         svc = self.sched.services.find_srv_by_name_and_hostname("test_host_0", "test_ok_0")
         
-        # These queues connect a poller/reactionner with a worker
+        # These queues connect a poller/reactionner with a worker. This test
+        # drives the worker synchronously in-process, so use thread queues to
+        # avoid multiprocessing feeder-thread races while polling non-blocking.
         to_queue = Queue()
-        # manager = Manager()
-        from_queue = Queue()  # manager.list()
+        from_queue = Queue()
         control_queue = Queue()
         
         # This testscript plays the role of the reactionner
@@ -95,15 +96,11 @@ class TestTimeout(ShinkenTest):
         
         # The worker should have finished it's job now, either correctly or
         # with a timeout
-        o = from_queue.get()
+        o = from_queue.get(timeout=1)
         
         self.assertEqual('timeout', o.status)
         self.assertEqual(3, o.exit_status)
         self.assertLess(o.execution_time, n.timeout + 1)
-        
-        # Be a good poller and clean up.
-        to_queue.close()
-        control_queue.close()
         
         # Now look what the scheduler says to all this
         self.sched.actions[n.id] = n
