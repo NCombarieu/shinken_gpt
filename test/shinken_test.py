@@ -35,6 +35,7 @@ import shinken
 from shinken.objects.config import Config
 from shinken.objects.command import Command
 from shinken.objects.module import Module
+from shinken.objects.schedulingitem import SchedulingItem
 
 from shinken.dispatcher import Dispatcher
 from shinken.log import logger, cprint
@@ -304,63 +305,85 @@ class ShinkenTest(unittest.TestCase):
             self.sched.run_external_command(b.cmd_line)
     
     
-    def fake_check(self, ref, exit_status, output="OK"):
+    def fake_check(self, ref, exit_status, output="OK",
+                   check_variant=SchedulingItem.default_check_variant,
+                   fake_timeout=False):
+        #print("fake", ref)
         now = time.time()
         ref.schedule(force=True)
         # now checks are schedule and we get them in
         # the action queue
-        # check = ref.actions.pop()
-        check = ref.checks_in_progress[0]
+        #check = ref.actions.pop()
+        check = ref.get_checks_in_progress(check_variant)[0]
         self.sched.add(check)  # check is now in sched.checks[]
-        
+
         # Allows to force check scheduling without setting its status nor
         # output. Useful for manual business rules rescheduling, for instance.
         if exit_status is None:
             return
-        
+
         # fake execution
         check.check_time = now
-        
+
         # and lie about when we will launch it because
         # if not, the schedule call for ref
         # will not really reschedule it because there
         # is a valid value in the future
         ref.next_chk = now - 0.5
-        
+
         check.get_outputs(output, 9000)
         check.exit_status = exit_status
         check.execution_time = 0.001
-        check.status = 'waitconsume'
+        if fake_timeout is True:
+            check.status = "timeout"
+        else:
+            check.status = 'waitconsume'
         self.sched.waiting_results.append(check)
-    
-    
-    def scheduler_loop(self, count, reflist, do_sleep=False, sleep_time=61, verbose=True):
+
+
+    def scheduler_loop(self, count, reflist, do_sleep=False, sleep_time=61,
+                       verbose=True):
         for ref in reflist:
-            (obj, exit_status, output) = ref
+            if isinstance(ref, dict):
+                obj = ref["item"]
+            else:
+                obj = ref[0]
             obj.checks_in_progress = []
         for loop in range(1, count + 1):
             if verbose is True:
-                print(("processing check %s" % loop))
+                print("processing check", loop)
             for ref in reflist:
-                (obj, exit_status, output) = ref
-                obj.update_in_checking()
-                self.fake_check(obj, exit_status, output)
+                ext = {}
+                if isinstance(ref, dict):
+                    obj = ref["item"]
+                    exit_status = ref["exit_status"]
+                    output = ref["output"]
+                    if "check_variant" in ref:
+                        ext["check_variant"] = ref["check_variant"]
+                    if "timeout" in ref:
+                        ext["fake_timeout"] = ref["timeout"]
+                else:
+                    (obj, exit_status, output) = ref
+                self.fake_check(obj, exit_status, output, **ext)
             self.sched.manage_internal_checks()
-            
+
             self.sched.consume_results()
             self.sched.get_new_actions()
             self.sched.get_new_broks()
             self.sched.scatter_master_notifications()
             self.worker_loop(verbose)
             for ref in reflist:
-                (obj, exit_status, output) = ref
+                if isinstance(ref, dict):
+                    obj = ref["item"]
+                else:
+                    obj = ref[0]
                 obj.checks_in_progress = []
             self.sched.update_downtimes_and_comments()
-            # time.sleep(ref.retry_interval * 60 + 1)
+            #time.sleep(ref.retry_interval * 60 + 1)
             if do_sleep:
                 time.sleep(sleep_time)
-    
-    
+
+
     def worker_loop(self, verbose=True):
         self.sched.delete_zombie_checks()
         self.sched.delete_zombie_actions()

@@ -23,6 +23,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 from shinken.action import Action
 from shinken.property import BoolProp, IntegerProp, FloatProp
 from shinken.property import StringProp
@@ -41,7 +43,7 @@ class Check(Action):
     properties = {
         'is_a':             StringProp(default='check'),
         'type':             StringProp(default=''),
-        '_in_timeout':      BoolProp(default=False),
+        'in_timeout':      BoolProp(default=False),
         'status':           StringProp(default=''),
         'exit_status':      IntegerProp(default=3),
         'state':            IntegerProp(default=0),
@@ -64,20 +66,21 @@ class Check(Action):
         'module_type':      StringProp(default='fork'),
         'worker':           StringProp(default='none'),
         'from_trigger':     BoolProp(default=False),
+        'check_variant':    StringProp(default='state'),
         'priority':         IntegerProp(default=100),
     }
 
     def __init__(self, status, command, ref, t_to_go, dep_check=None, id=None,
                  timeout=10, poller_tag='None', reactionner_tag='None',
                  env={}, module_type='fork', from_trigger=False,
-                 dependency_check=False, priority=100):
+                 dependency_check=False, check_variant='state', priority=100):
 
         self.is_a = 'check'
         self.type = ''
         if id is None:  # id != None is for copy call only
             self.id = Action.id
             Action.id += 1
-        self._in_timeout = False
+        self.in_timeout = False
         self.timeout = timeout
         self.status = status
         self.exit_status = 3
@@ -111,6 +114,7 @@ class Check(Action):
             self.internal = False
         self.from_trigger = from_trigger
         self.dependency_check = dependency_check
+        self.check_variant = check_variant
         self.priority = priority
 
 
@@ -131,6 +135,10 @@ class Check(Action):
         self.perf_data = c.perf_data
         self.u_time = c.u_time
         self.s_time = c.s_time
+        if c.status == "timeout":
+            self.in_timeout = True
+        else:
+            self.in_timeout = False
 
 
     def is_launchable(self, t):

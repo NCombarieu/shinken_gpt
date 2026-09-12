@@ -220,6 +220,12 @@ class TestMacroResolver(ShinkenTest):
         self.assertEqual('plugins/nothing ::1', com)
 
         
+    def test_longdatetime_macro_is_text(self):
+        mr = self.get_mr()
+        value = mr._get_long_date_time()
+        self.assertIsInstance(value, str)
+        self.assertTrue(value)
+
 
 if __name__ == '__main__':
     unittest.main()

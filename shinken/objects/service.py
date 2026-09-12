@@ -26,11 +26,13 @@
 """ This Class is the service one, s it manage all service specific thing.
 If you look at the scheduling part, look at the scheduling item class"""
 
-import time
-import re
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+import six
 import itertools
+import time
 import uuid
-from six import add_metaclass
+import re
 
 try:
     from ClusterShell.NodeSet import NodeSet, NodeSetParseRangeError
@@ -53,9 +55,8 @@ from shinken.log import logger, naglog_result
 from shinken.util import filter_service_by_regex_name
 from shinken.util import filter_service_by_host_name
 
-@add_metaclass(AutoSlots)
-class Service(SchedulingItem):
 
+class Service(six.with_metaclass(AutoSlots, SchedulingItem)):
     # Every service have a unique ID, and 0 is always special in
     # database and co...
     id = 1
@@ -80,7 +81,7 @@ class Service(SchedulingItem):
         'service_description':
             StringProp(fill_brok=['full_status', 'check_result', 'next_schedule']),
         'display_name':
-            StringProp(default='', fill_brok=['full_status']),
+            StringProp(default='', fill_brok=['full_status'], no_slots=True),
         'servicegroups':
             ListProp(default=[], fill_brok=['full_status'],
                      brok_transformation=to_list_string_of_names, merging='join'),
@@ -254,6 +255,20 @@ class Service(SchedulingItem):
         'snapshot_interval':
             IntegerProp(default=5),
 
+        # Maintenance part
+        'maintenance_check_command':
+            StringProp(default='', fill_brok=['full_status']),
+        'maintenance_period':
+            StringProp(default='', brok_transformation=to_name_if_possible, fill_brok=['full_status']),
+        'maintenance_checks_enabled':
+            BoolProp(default=False, fill_brok=['full_status']),
+        'maintenance_check_period':
+            StringProp(default='', brok_transformation=to_name_if_possible, fill_brok=['full_status']),
+        'maintenance_check_interval':
+            IntegerProp(default=0, fill_brok=['full_status', 'check_result']),
+        'maintenance_retry_interval':
+            IntegerProp(default=0, fill_brok=['full_status', 'check_result']),
+
         # Check/notification priority
         'priority':
             IntegerProp(default=100, fill_brok=['full_status']),
@@ -268,9 +283,6 @@ class Service(SchedulingItem):
             IntegerProp(default=0, fill_brok=['full_status', 'check_result'], retention=True),
         'next_chk':
             IntegerProp(default=0, fill_brok=['full_status', 'next_schedule'], retention=True),
-        'in_checking':
-            BoolProp(default=False,
-                     fill_brok=['full_status', 'check_result', 'next_schedule'], retention=True),
         'in_maintenance':
             IntegerProp(default=None, fill_brok=['full_status'], retention=True),
         'latency':
@@ -353,7 +365,7 @@ class Service(SchedulingItem):
         'percent_state_change':
             FloatProp(default=0.0, fill_brok=['full_status', 'check_result'], retention=True),
         'problem_has_been_acknowledged':
-            BoolProp(default=False, fill_brok=['full_status', 'check_result'], retention=True),
+            BoolProp(default=False, fill_brok=['full_status', 'check_result']),
         'acknowledgement':
             StringProp(default=None, retention=True),
         'acknowledgement_type':
@@ -383,7 +395,7 @@ class Service(SchedulingItem):
         'check_flapping_recovery_notification':
             BoolProp(default=True, fill_brok=['full_status'], retention=True),
         'scheduled_downtime_depth':
-            IntegerProp(default=0, fill_brok=['full_status'], retention=True),
+            IntegerProp(default=0, fill_brok=['full_status']),
         'pending_flex_downtime':
             IntegerProp(default=0, fill_brok=['full_status'], retention=True),
         'timeout':
@@ -412,7 +424,7 @@ class Service(SchedulingItem):
                                        retention=True,
                                        retention_preparation=to_list_of_names),
         'in_scheduled_downtime': BoolProp(
-            default=False, fill_brok=['full_status', 'check_result'], retention=True),
+            default=False, fill_brok=['full_status', 'check_result']),
         'in_scheduled_downtime_during_last_check': BoolProp(default=False, retention=True),
         'actions':            ListProp(default=[]),  # put here checks and notif raised
         'broks':              ListProp(default=[]),  # and here broks raised
@@ -476,6 +488,23 @@ class Service(SchedulingItem):
         # Keep the string of the last command launched for this element
         'last_check_command': StringProp(default=''),
 
+        # Maintenance states: PRODUCTION (0), MAINTENANCE (1), UNKNOWN (2)
+        'last_maintenance_chk':
+            IntegerProp(default=0, fill_brok=['full_status', 'check_result'], retention=True),
+        'next_maintenance_chk':
+            IntegerProp(default=0, fill_brok=['full_status', 'next_schedule'], retention=True),
+        'maintenance_check_output':
+            IntegerProp(default=0, fill_brok=['full_status', 'check_result'], retention=True),
+        'maintenance_state':
+            StringProp(default='PENDING', fill_brok=['full_status', 'check_result'], retention=True),
+        'maintenance_state_id':
+            IntegerProp(default=0, fill_brok=['full_status', 'check_result'], retention=True),
+        'last_maintenance_state':
+            StringProp(default='PENDING', fill_brok=['full_status', 'check_result'], retention=True),
+        'last_maintenance_state_id':
+            IntegerProp(default=0, fill_brok=['full_status', 'check_result'], retention=True),
+        'last_maintenance_state_change':
+            FloatProp(default=0.0, fill_brok=['full_status', 'check_result'], retention=True),
     })
 
     # Mapping between Macros and properties (can be prop or a function)
@@ -567,7 +596,18 @@ class Service(SchedulingItem):
 
     @property
     def unique_key(self):  # actually only used for (un)indexitem() via name_property..
-        return '%s/%s' % (self.host_name, self.service_description)
+        return (self.host_name, self.service_description)
+
+    @property
+    def display_name(self):
+        display_name = getattr(self, '_display_name', None)
+        if not display_name:
+            return self.service_description
+        return display_name
+
+    @display_name.setter
+    def display_name(self, display_name):
+        self._display_name = display_name
 
     # Give a nice name output
     def get_name(self):
@@ -657,7 +697,7 @@ class Service(SchedulingItem):
                     state = False  # Bad boy...
 
         # Then look if we have some errors in the conf
-        # Juts print warnings, but raise errors
+        # Juts print(warnings, but raise errors)
         for err in self.configuration_warnings:
             logger.warning("[service::%s] %s", desc, err)
 
@@ -977,9 +1017,10 @@ class Service(SchedulingItem):
 
     # The last time when the state was not OK
     def last_time_non_ok_or_up(self):
-        non_ok_times = list(filter(lambda x: x > self.last_time_ok, [self.last_time_warning,
-                                                                self.last_time_critical,
-                                                                self.last_time_unknown]))
+        non_ok_times = list(filter(
+            lambda x: x > self.last_time_ok,
+            [self.last_time_warning, self.last_time_critical, self.last_time_unknown]
+        ))
         if len(non_ok_times) == 0:
             last_time_non_ok = 0  # program_start would be better
         else:
@@ -988,11 +1029,15 @@ class Service(SchedulingItem):
 
     # Add a log entry with a SERVICE ALERT like:
     # SERVICE ALERT: server;Load;UNKNOWN;HARD;1;I don't know what to say...
-    def raise_alert_log_entry(self):
-        naglog_result('info', 'SERVICE ALERT: %s;%s;%s;%s;%d;%s'
-                                  % (self.host.get_name(), self.get_name(),
-                                     self.state, self.state_type,
-                                     self.attempt, self.output))
+    def raise_alert_log_entry(self, check_variant=None):
+        if check_variant is None:
+            naglog_result('critical', 'SERVICE ALERT: %s;%s;%s;%s;%d;%s' % (
+                self.host.get_name(), self.get_name(), self.state,
+                self.state_type, self.attempt, self.output))
+        elif check_variant == "maintenance":
+            naglog_result('critical', 'SERVICE MAINTENANCE ALERT: %s;%s;%s;%s' % (
+                self.host.get_name(), self.get_name(), self.maintenance_state,
+                self.maintenance_check_output))
 
     # If the configuration allow it, raise an initial log like
     # CURRENT SERVICE STATE: server;Load;UNKNOWN;HARD;1;I don't know what to say...
@@ -1025,7 +1070,7 @@ class Service(SchedulingItem):
         else:
             state = self.state
         if self.__class__.log_notifications:
-            naglog_result('info', "SERVICE NOTIFICATION: %s;%s;%s;%s;%s;%s"
+            naglog_result('critical', "SERVICE NOTIFICATION: %s;%s;%s;%s;%s;%s"
                                       % (contact.get_name(),
                                          self.host.get_name(), self.get_name(), state,
                                          command.get_name(), self.output))
@@ -1034,7 +1079,7 @@ class Service(SchedulingItem):
     # SERVICE EVENT HANDLER: test_host_0;test_ok_0;OK;SOFT;4;eventhandler
     def raise_event_handler_log_entry(self, command):
         if self.__class__.log_event_handlers:
-            naglog_result('info', "SERVICE EVENT HANDLER: %s;%s;%s;%s;%s;%s"
+            naglog_result('critical', "SERVICE EVENT HANDLER: %s;%s;%s;%s;%s;%s"
                                       % (self.host.get_name(), self.get_name(),
                                          self.state, self.state_type,
                                          self.attempt, command.get_name()))
@@ -1044,7 +1089,7 @@ class Service(SchedulingItem):
     # SERVICE SNAPSHOT: test_host_0;test_ok_0;OK;SOFT;4;eventhandler
     def raise_snapshot_log_entry(self, command):
         if self.__class__.log_event_handlers:
-            naglog_result('info', "SERVICE SNAPSHOT: %s;%s;%s;%s;%s;%s"
+            naglog_result('critical', "SERVICE SNAPSHOT: %s;%s;%s;%s;%s;%s"
                           % (self.host.get_name(), self.get_name(),
                              self.state, self.state_type, self.attempt, command.get_name()))
 
@@ -1053,7 +1098,7 @@ class Service(SchedulingItem):
     # SERVICE FLAPPING ALERT: server;LOAD;STARTED;
     # Service appears to have started flapping (50.6% change >= 50.0% threshold)
     def raise_flapping_start_log_entry(self, change_ratio, threshold):
-        naglog_result('info', "SERVICE FLAPPING ALERT: %s;%s;STARTED; "
+        naglog_result('critical', "SERVICE FLAPPING ALERT: %s;%s;STARTED; "
                                   "Service appears to have started flapping "
                                   "(%.1f%% change >= %.1f%% threshold)"
                                   % (self.host.get_name(), self.get_name(),
@@ -1064,7 +1109,7 @@ class Service(SchedulingItem):
     # SERVICE FLAPPING ALERT: server;LOAD;STOPPED;
     # Service appears to have stopped flapping (23.0% change < 25.0% threshold)
     def raise_flapping_stop_log_entry(self, change_ratio, threshold):
-        naglog_result('info', "SERVICE FLAPPING ALERT: %s;%s;STOPPED; "
+        naglog_result('critical', "SERVICE FLAPPING ALERT: %s;%s;STOPPED; "
                                   "Service appears to have stopped flapping "
                                   "(%.1f%% change < %.1f%% threshold)"
                                   % (self.host.get_name(), self.get_name(),
@@ -1080,7 +1125,7 @@ class Service(SchedulingItem):
     # SERVICE DOWNTIME ALERT: test_host_0;test_ok_0;STARTED;
     # Service has entered a period of scheduled downtime
     def raise_enter_downtime_log_entry(self):
-        naglog_result('info', "SERVICE DOWNTIME ALERT: %s;%s;STARTED; "
+        naglog_result('critical', "SERVICE DOWNTIME ALERT: %s;%s;STARTED; "
                                   "Service has entered a period of scheduled "
                                   "downtime" % (self.host.get_name(), self.get_name()))
 
@@ -1088,7 +1133,7 @@ class Service(SchedulingItem):
     # SERVICE DOWNTIME ALERT: test_host_0;test_ok_0;STOPPED;
     # Service has exited from a period of scheduled downtime
     def raise_exit_downtime_log_entry(self):
-        naglog_result('info', "SERVICE DOWNTIME ALERT: %s;%s;STOPPED; Service "
+        naglog_result('critical', "SERVICE DOWNTIME ALERT: %s;%s;STOPPED; Service "
                                   "has exited from a period of scheduled downtime"
                       % (self.host.get_name(), self.get_name()))
 
@@ -1097,7 +1142,7 @@ class Service(SchedulingItem):
     # Service has entered a period of scheduled downtime
     def raise_cancel_downtime_log_entry(self):
         naglog_result(
-            'info', "SERVICE DOWNTIME ALERT: %s;%s;CANCELLED; "
+            'critical', "SERVICE DOWNTIME ALERT: %s;%s;CANCELLED; "
                         "Scheduled downtime for service has been cancelled."
             % (self.host.get_name(), self.get_name()))
 
@@ -1193,11 +1238,11 @@ class Service(SchedulingItem):
                 return True
             if self.state == 'OK' and 'r' not in self.notification_options:
                 return True
-        if (type in ('FLAPPINGSTART', 'FLAPPINGSTOP', 'FLAPPINGDISABLED')
-                and 'f' not in self.notification_options):
+        if (type in ('FLAPPINGSTART', 'FLAPPINGSTOP', 'FLAPPINGDISABLED') and
+                'f' not in self.notification_options):
             return True
-        if (type in ('DOWNTIMESTART', 'DOWNTIMEEND', 'DOWNTIMECANCELLED')
-                and 's' not in self.notification_options):
+        if (type in ('DOWNTIMESTART', 'DOWNTIMEEND', 'DOWNTIMECANCELLED') and
+                's' not in self.notification_options):
             return True
 
         # Acknowledgements make no sense when the status is ok/up
@@ -1399,7 +1444,7 @@ class Services(Items):
 
     # Search a service by it's name and hot_name
     def find_srv_by_name_and_hostname(self, host_name, sdescr):
-        key = '%s/%s' % (host_name, sdescr)
+        key = (host_name, sdescr)
         return self.name_to_item.get(key, None)
 
     # Make link between elements:
@@ -1414,11 +1459,13 @@ class Services(Items):
         self.linkify_with_timeperiods(timeperiods, 'check_period')
         self.linkify_with_timeperiods(timeperiods, 'maintenance_period')
         self.linkify_with_timeperiods(timeperiods, 'snapshot_period')
+        self.linkify_with_timeperiods(timeperiods, 'maintenance_check_period')
         self.linkify_s_by_hst(hosts)
         self.linkify_s_by_sg(servicegroups)
         self.linkify_one_command_with_commands(commands, 'check_command')
         self.linkify_one_command_with_commands(commands, 'event_handler')
         self.linkify_one_command_with_commands(commands, 'snapshot_command')
+        self.linkify_one_command_with_commands(commands, 'maintenance_check_command')
         self.linkify_with_contacts(contacts)
         self.linkify_with_resultmodulations(resultmodulations)
         self.linkify_with_business_impact_modulations(businessimpactmodulations)
@@ -1458,10 +1505,10 @@ class Services(Items):
                 # Looks for corresponding services
                 services = self.get_ovr_services_from_expression(host, sdescr)
                 if not services:
-                    err = "Error: trying to override property '%s' on " \
+                    err = "Warn: trying to override property '%s' on " \
                           "service identified by '%s' " \
                           "but it's unknown for this host" % (prop, sdescr)
-                    host.configuration_errors.append(err)
+                    host.configuration_warnings.append(err)
                     continue
                 value = Service.properties[prop].pythonize(value)
                 for service in services:
@@ -1517,7 +1564,7 @@ class Services(Items):
                           (self.get_name(), hst_name)
                     s.configuration_warnings.append(err)
                     continue
-            except AttributeError:
+            except AttributeError as exp:
                 pass  # Will be catch at the is_correct moment
 
     # We look for servicegroups property in services and
@@ -1540,7 +1587,8 @@ class Services(Items):
     # In the scheduler we need to relink the commandCall with
     # the real commands
     def late_linkify_s_by_commands(self, commands):
-        props = ['check_command', 'event_handler', 'snapshot_command']
+        props = ['check_command', 'maintenance_check_command',
+                 'event_handler', 'snapshot_command']
         for s in self:
             for prop in props:
                 cc = getattr(s, prop, None)
@@ -1785,7 +1833,7 @@ class Services(Items):
 
         # Then for every host create a copy of the service with just the host
         # because we are adding services, we can't just loop in it
-        for s in list(self.items.values()):  # python 3
+        for s in list(self.items.values()):
             # items::explode_host_groups_into_hosts
             # take all hosts from our hostgroup_name into our host_name property
             self.explode_host_groups_into_hosts(s, hosts, hostgroups)
