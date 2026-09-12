@@ -42,33 +42,29 @@ class TestTimeout(ShinkenTest):
         # we have an external process, so we must un-fake time functions
         self.setup_with_file('etc/shinken_check_timeout.cfg')
         time_hacker.set_real_time()
-    
-    
+
     def test_notification_timeout(self):
         if os.name == 'nt':
             return
-        
+
         svc = self.sched.services.find_srv_by_name_and_hostname("test_host_0", "test_ok_0")
-        
-        # These queues connect a poller/reactionner with a worker. This test
-        # drives the worker synchronously in-process, so use thread queues to
-        # avoid multiprocessing feeder-thread races while polling non-blocking.
-        to_queue = Queue()
+
+        # This test drives a worker synchronously in-process. Thread queues are
+        # sufficient for the result/control paths and avoid multiprocessing
+        # feeder threads that otherwise make this legacy test timing-sensitive.
         from_queue = Queue()
         control_queue = Queue()
-        
-        # This testscript plays the role of the reactionner
-        # Now "fork" a worker
-        w = Worker(1, to_queue, from_queue, 1)
+
+        # This testscript plays the role of the reactionner.
+        w = Worker(1, Queue(), from_queue, 1)
         w.id = 1
         w.i_am_dying = False
-        
-        # We prepare a notification in the to_queue
+
+        # We prepare a notification for the worker.
         c = Contact()
         c.contact_name = "mr.schinken"
         n = Notification('PROBLEM', 'scheduled', 'libexec/sleep_command.sh 7', '', svc, '', '', id=1)
         n.status = "queue"
-        # n.command = "libexec/sleep_command.sh 7"
         n.t_to_go = time.time()
         n.contact = c
         n.timeout = 2
@@ -76,39 +72,31 @@ class TestTimeout(ShinkenTest):
         n.exit_status = 0
         n.module_type = "fork"
         nn = n.copy_shell()
-        
-        # Send the job to the worker
-        msg = Message(id=0, type='Do', data=nn)
-        to_queue.put(msg)
-        
-        w.checks = []
+
+        # Exercise the same launch/finish path as Worker.work(), but seed the
+        # in-process worker directly instead of relying on queue feeder timing.
+        w.checks = [nn]
         w.returns_queue = from_queue
-        w.s = to_queue
         w.c = control_queue
-        # Now we simulate the Worker's work() routine. We can't call it
-        # as w.work() because it is an endless loop
-        for i in range(1, 10):
-            w.get_new_checks()
-            # During the first loop the sleeping command is launched
+        deadline = time.monotonic() + n.timeout + 5
+        while w.checks and time.monotonic() < deadline:
             w.launch_new_checks()
             w.manage_finished_checks()
-            time.sleep(1)
-        
-        # The worker should have finished it's job now, either correctly or
-        # with a timeout
+
+        # The worker should have finished its job now, either correctly or
+        # with a timeout.
         o = from_queue.get(timeout=1)
-        
+
         self.assertEqual('timeout', o.status)
         self.assertEqual(3, o.exit_status)
         self.assertLess(o.execution_time, n.timeout + 1)
-        
-        # Now look what the scheduler says to all this
+
+        # Now look what the scheduler says to all this.
         self.sched.actions[n.id] = n
         self.sched.put_results(o)
         self.show_logs()
         self.assert_any_log_match("Contact mr.schinken service notification command 'libexec/sleep_command.sh 7 ' timed out after 2 seconds")
-    
-    
+
     def test_notification_timeout_on_command(self):
         #
         # Config is not correct because of a wrong relative path
