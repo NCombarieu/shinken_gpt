@@ -25,7 +25,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
       - name: Compile all shipped Python sources
-        run: python -m compileall -q shinken bin cli modules libexec
+        run: python -m compileall -q shinken bin cli modules libexec integration
 
   packaging:
     runs-on: ubuntu-latest
@@ -58,7 +58,7 @@ jobs:
         run: python -m pip install ruff
       - name: Lint fatal errors
         # bottlecore.py is vendored legacy Bottle code.
-        run: ruff check shinken bin cli modules libexec --select E9,F7,F82 --exclude shinken/webui/bottlecore.py
+        run: ruff check shinken bin cli modules libexec integration --select E9,F7,F82 --exclude shinken/webui/bottlecore.py
 
   compatibility-tests:
     runs-on: ubuntu-latest
@@ -116,3 +116,11 @@ jobs:
         run: podman build --tag shinken:test --file Containerfile .
       - name: Smoke test daemon executable
         run: podman run --rm shinken:test shinken-arbiter --version
+
+  distributed-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Deploy Shinken and execute real checks
+        run: bash integration/podman-lab.sh
