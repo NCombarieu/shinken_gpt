@@ -10,7 +10,6 @@ pub enum CheckState {
     Critical,
     Unknown,
 }
-
 impl CheckState {
     #[must_use]
     pub const fn from_plugin_status(status: i32) -> Self {
@@ -56,4 +55,3 @@ mod tests {
         assert_eq!(CheckState::from_plugin_status(-1), CheckState::Unknown);
     }
 }
-

@@ -92,11 +92,7 @@ pub fn parse_objects(
 
         if let Some((kind, define_line)) = pending.take() {
             if text != "{" {
-                return Err(ParseError::MissingOpeningBrace {
-                    path,
-                    line,
-                    kind,
-                });
+                return Err(ParseError::MissingOpeningBrace { path, line, kind });
             }
             current = Some(ObjectDefinition {
                 kind,
@@ -174,11 +170,7 @@ pub fn parse_objects(
     }
 
     if let Some((kind, line)) = pending {
-        return Err(ParseError::MissingOpeningBrace {
-            path,
-            line,
-            kind,
-        });
+        return Err(ParseError::MissingOpeningBrace { path, line, kind });
     }
     if let Some(object) = current {
         return Err(ParseError::UnclosedObject {
@@ -250,10 +242,7 @@ fn collect_cfg_files(directory: &Path, files: &mut BTreeSet<PathBuf>) -> Result<
         let path = entry.path();
         if file_type.is_dir() {
             collect_cfg_files(&path, files)?;
-        } else if file_type.is_file()
-            && path
-                .extension()
-                .is_some_and(|extension| extension == "cfg")
+        } else if file_type.is_file() && path.extension().is_some_and(|extension| extension == "cfg")
         {
             files.insert(path);
         }
@@ -293,11 +282,31 @@ define service {
                 kind: "service".into(),
                 line: 3,
                 directives: vec![
-                    Directive { name: "host_name".into(), value: "router-01".into(), line: 4 },
-                    Directive { name: "service_description".into(), value: "HTTP health".into(), line: 5 },
-                    Directive { name: "_DETAIL".into(), value: "value;kept #kept".into(), line: 6 },
-                    Directive { name: "contacts".into(), value: "alice".into(), line: 7 },
-                    Directive { name: "contacts".into(), value: "bob".into(), line: 8 },
+                    Directive {
+                        name: "host_name".into(),
+                        value: "router-01".into(),
+                        line: 4
+                    },
+                    Directive {
+                        name: "service_description".into(),
+                        value: "HTTP health".into(),
+                        line: 5
+                    },
+                    Directive {
+                        name: "_DETAIL".into(),
+                        value: "value;kept #kept".into(),
+                        line: 6
+                    },
+                    Directive {
+                        name: "contacts".into(),
+                        value: "alice".into(),
+                        line: 7
+                    },
+                    Directive {
+                        name: "contacts".into(),
+                        value: "bob".into(),
+                        line: 8
+                    },
                 ],
             }]
         );
