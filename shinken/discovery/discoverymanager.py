@@ -23,9 +23,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
-import six
+
 import sys
 import os
 import re
@@ -224,14 +223,14 @@ class DiscoveredHost(object):
     def read_disco_buf(self, buf):
         print('Read buf in', self.name)
         for l in buf.split('\n'):
-            # print("")
+            # print ""
             # If it's not a disco line, bypass it
             if not re.search('::', l):
                 continue
-            # print("line", l)
+            # print "line", l
             elts = l.split('::', 1)
             if len(elts) <= 1:
-                # print("Bad discovery data")
+                # print "Bad discovery data"
                 continue
             name = elts[0].strip()
 
@@ -250,7 +249,7 @@ class DiscoveredHost(object):
                     print('Bad data for me? I bail out data!')
                     data = ''
                 else:
-                    print('Bad data for me? Let\'s switch !')
+                    print("Bad data for me? Let's switch !")
                     self.name = name
 
             # Now get key,values
@@ -281,11 +280,11 @@ class DiscoveredHost(object):
             all_ok = True
             for r in self.in_progress_runners:
                 if not r.is_finished():
-                    # print("Check finished of", r.get_name())
+                    # print "Check finished of", r.get_name()
                     r.check_finished()
                 b = r.is_finished()
                 if not b:
-                    # print(r.get_name(), "is not finished")
+                    # print r.get_name(), "is not finished"
                     all_ok = False
             time.sleep(0.1)
 
@@ -308,7 +307,7 @@ class DiscoveredHost(object):
         self.read_disco_buf(raw_disco_data)
 
 
-class DiscoveryManager(object):
+class DiscoveryManager:
     def __init__(self, path, macros, overwrite, runners, output_dir=None,
                  dbmod='', db_direct_insert=False, only_new_hosts=False,
                  backend=None, modules_path='', merge=False, conf=None, first_level_only=False):
@@ -401,7 +400,7 @@ class DiscoveryManager(object):
 
     # We try to init the backend if we got one
     def init_backend(self):
-        if not self.backend or not isinstance(self.backend, six.string_types):
+        if not self.backend or not isinstance(self.backend, basestring):
             return
 
         print("Doing backend init")
@@ -444,14 +443,14 @@ class DiscoveryManager(object):
     def read_disco_buf(self):
         buf = self.raw_disco_data
         for l in buf.split('\n'):
-            # print("")
+            # print ""
             # If it's not a disco line, bypass it
             if not re.search('::', l):
                 continue
-            # print("line", l)
+            # print "line", l
             elts = l.split('::', 1)
             if len(elts) <= 1:
-                # print("Bad discovery data")
+                # print "Bad discovery data"
                 continue
             name = elts[0].strip()
 
@@ -511,11 +510,11 @@ class DiscoveryManager(object):
         if '*' in self.runners:
             return True
 
-        # print(self.runners)
+        # print self.runners
         # If we match the name, ok
         for r in self.runners:
             r_name = r.strip()
-            # print("Look", r_name, name)
+            # print "Look", r_name, name
             if r_name == name:
                 return True
 
@@ -535,10 +534,8 @@ class DiscoveryManager(object):
             return
 
         for r in allowed_runners:
-            print(
-                "I'm launching %s with a %d seconds timeout" %
-                (r.get_name(), self.conf.runners_timeout)
-            )
+            print("I'm launching %s with a %d seconds timeout" %
+                  (r.get_name(), self.conf.runners_timeout))
             r.launch(timeout=self.conf.runners_timeout)
 
 
@@ -549,11 +546,11 @@ class DiscoveryManager(object):
             all_ok = True
             for r in self.allowed_runners():
                 if not r.is_finished():
-                    #print("Check finished of", r.get_name())
+                    #print "Check finished of", r.get_name()
                     r.check_finished()
                 b = r.is_finished()
                 if not b:
-                    #print(r.get_name(), "is not finished")
+                    #print r.get_name(), "is not finished"
                     all_ok = False
             '''
             all_ok = self.is_all_ok()
@@ -564,11 +561,11 @@ class DiscoveryManager(object):
         all_ok = True
         for r in self.allowed_runners():
             if not r.is_finished():
-                # print("Check finished of", r.get_name())
+                # print "Check finished of", r.get_name()
                 r.check_finished()
             b = r.is_finished()
             if not b:
-                # print(r.get_name(), "is not finished")
+                # print r.get_name(), "is not finished"
                 all_ok = False
         return all_ok
 
@@ -699,8 +696,8 @@ class DiscoveryManager(object):
                         srv_rules[desc] = []
                     srv_rules[desc].append(r)
 
-        # print("Generate services for", host)
-        # print(srv_rules)
+        # print "Generate services for", host
+        # print srv_rules
         for (desc, rules) in srv_rules.items():
             d = {'service_description': desc, 'host_name': host}
             for r in rules:

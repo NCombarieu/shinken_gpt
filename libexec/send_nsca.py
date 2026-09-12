@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright (C) 2009-2012:
 #    Gabes Jean, naparuba@gmail.com
@@ -19,13 +19,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import sys
 import optparse
+import sys
 
 try:
-    import pynsca
     from pynsca import NSCANotifier
 except ImportError:
     raise SystemExit("Error: you need the pynsca module for this script")
@@ -33,28 +30,28 @@ except ImportError:
 VERSION = '0.1'
 
 
-def main(hostname, port, encryption, password):
-    notif = NSCANotifier(hostname, port, encryption, password)
+def main(hostname, port, encryption, password, delimiter):
+    notifier = NSCANotifier(hostname, port, encryption, password)
 
-    for line in sys.stdin.readlines():
+    for line in sys.stdin:
         line = line.rstrip()
         if not line:
             continue
-        notif = line.split(opts.delimiter)
-        if len(notif) == 3:
+        fields = line.split(delimiter)
+        if len(fields) == 3:
             # only host, rc, output
-            notif.insert(1, '')  # insert service
-        # line consists of host, service, rc, output
-        assert len(notif) == 4
-        notif.svc_result(*notif)
+            fields.insert(1, '')  # insert service
+        if len(fields) != 4:
+            raise ValueError("expected host, service, return code and output")
+        notifier.svc_result(*fields)
 
 
 if __name__ == "__main__":
     parser = optparse.OptionParser(
-                      version="Python NSCA client version %s" % VERSION)
+        version="Python NSCA client version %s" % VERSION)
     parser.add_option("-H", "--hostname", default='localhost',
                       help="NSCA server IP (default: %default)")
-    parser.add_option("-P", "--port", type="int", default='5667',
+    parser.add_option("-P", "--port", type="int", default=5667,
                       help="NSCA server port (default: %default)")
     parser.add_option("-e", "--encryption", default='1',
                       help=("Encryption mode used by NSCA server "
@@ -66,8 +63,7 @@ if __name__ == "__main__":
                       help="Argument delimiter (defaults to the tab-character)")
 
     opts, args = parser.parse_args()
-
     if args:
         parser.error("does not take any positional arguments")
 
-    main(opts.hostname, opts.port, opts.encryption, opts.password)
+    main(opts.hostname, opts.port, opts.encryption, opts.password, opts.delimiter)

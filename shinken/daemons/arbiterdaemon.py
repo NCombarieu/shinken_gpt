@@ -22,16 +22,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import six
 import sys
 import os
 import time
 import socket
 import traceback
+from shinken.imports import StringIO as cStringIO
+from shinken.imports import cpickle as cPickle
 import json
-import io
 
 from shinken.objects.config import Config
 from shinken.external_command import ExternalCommandManager
@@ -43,7 +41,6 @@ from shinken.brok import Brok
 from shinken.external_command import ExternalCommand
 from shinken.property import BoolProp
 from shinken.util import jsonify_r, get_memory, free_memory
-from shinken.serializer import serialize, deserialize
 
 # Interface for the other Arbiter
 # It connects, and together we decide who's the Master and who's the Slave, etc.
@@ -67,7 +64,7 @@ class IForArbiter(Interface):
     def put_conf(self, conf):
         super(IForArbiter, self).put_conf(conf)
         self.app.must_run = False
-    put_conf.method = 'PUT'
+    put_conf.method = 'POST'
     put_conf.doc = doc
 
 
@@ -115,7 +112,7 @@ class IForArbiter(Interface):
     doc = 'Dummy call for the arbiter'
     # Dummy call. We are the master, we manage what we want
     def what_i_managed(self):
-        return serialize({})
+        return {}
     what_i_managed.need_lock = False
     what_i_managed.doc = doc
 
@@ -155,15 +152,15 @@ class IForArbiter(Interface):
     doc = 'Dump all objects of the type in [hosts, services, contacts, ' \
           'commands, hostgroups, servicegroups]'
     def get_objects_properties(self, table):
-        logger.debug('ASK:: table= %s', table)
+        logger.debug('ASK:: table= %s', str(table))
         objs = getattr(self.app.conf, table, None)
-        logger.debug("OBJS:: %s", objs)
+        logger.debug("OBJS:: %s", str(objs))
         if objs is None or len(objs) == 0:
             return []
         res = []
         for obj in objs:
-            ln = jsonify_r(obj)
-            res.append(ln)
+            l = jsonify_r(obj)
+            res.append(l)
         return res
     get_objects_properties.doc = doc
 
@@ -172,20 +169,17 @@ class IForArbiter(Interface):
 class Arbiter(Daemon):
 
     def __init__(self, config_files, is_daemon, do_replace, verify_only, debug,
-                 debug_file, profile=None, analyse=None, migrate=None, arb_name='',
-                 dump_config_file=None):
+                 debug_file, profile=None, analyse=None, migrate=None, arb_name=''):
 
         super(Arbiter, self).__init__('arbiter', config_files[0], is_daemon, do_replace,
                                       debug, debug_file)
 
         self.graceful_enabled = False
-        self.aggressive_memory_management = False
         self.config_files = config_files
         self.verify_only = verify_only
         self.analyse = analyse
         self.migrate = migrate
         self.arb_name = arb_name
-        self.dump_config_file = dump_config_file
 
         self.broks = []
         self.is_master = False
@@ -225,7 +219,7 @@ class Arbiter(Daemon):
         brokers = self.conf.brokers
         for brk in [b for b in brokers if b.manage_arbiters and b.alive]:
             while len(self.broks) > 0:
-                if brk.broks_batch == 0:
+                if brk.broks_batch > 0:
                     count = len(self.broks)
                 else:
                     count = min(brk.broks_batch, len(self.broks))
@@ -464,9 +458,6 @@ class Arbiter(Daemon):
         # Clean objects of temporary/unnecessary attributes for live work:
         self.conf.clean()
 
-        if self.dump_config_file:
-            self.dump_config()
-
         # Exit if we are just here for config checking
         if self.verify_only:
             sys.exit(0)
@@ -521,11 +512,9 @@ class Arbiter(Daemon):
                 try:
                     r = inst.get_objects()
                 except Exception as exp:
-                    logger.error(
-                        "Instance %s raised an exception %s. Log and continue to run",
-                         inst.get_name(), exp
-                    )
-                    output = io.StringIO()
+                    logger.error("Instance %s raised an exception %s. Log and continue to run",
+                                 inst.get_name(), str(exp))
+                    output = cStringIO.StringIO()
                     traceback.print_exc(file=output)
                     logger.error("Back trace of this remove: %s", output.getvalue())
                     output.close()
@@ -574,54 +563,6 @@ class Arbiter(Daemon):
         f.close()
 
 
-    def dump_config(self):
-        logger.info("Dumping configuration to %s", self.dump_config_file)
-        with open(self.dump_config_file, "w") as f:
-            self.conf.dump(f)
-            f.close()
-
-
-    def go_migrate(self):
-        print("***********" * 5)
-        print("WARNING : this feature is NOT supported in this version!")
-        print("***********" * 5)
-
-        migration_module_name = self.migrate.strip()
-        mig_mod = self.conf.modules.find_by_name(migration_module_name)
-        if not mig_mod:
-            print("Cannot find the migration module %s. Please configure it" % migration_module_name)
-            sys.exit(2)
-
-        print(self.modules_manager.instances)
-        # Ok now all we need is the import module
-        self.modules_manager.set_modules([mig_mod])
-        self.do_load_modules()
-        print(self.modules_manager.instances)
-        if len(self.modules_manager.instances) == 0:
-            print("Error during the initialization of the import module. Bailing out")
-            sys.exit(2)
-        print("Configuration migrating in progress...")
-        mod = self.modules_manager.instances[0]
-        f = getattr(mod, 'import_objects', None)
-        if not f or not callable(f):
-            print("Import module is missing the import_objects function. Bailing out")
-            sys.exit(2)
-
-        objs = {}
-        types = ['hosts', 'services', 'commands', 'timeperiods', 'contacts']
-        for t in types:
-            print("New type", t)
-            objs[t] = []
-            for i in getattr(self.conf, t):
-                d = i.get_raw_import_values()
-                if d:
-                    objs[t].append(d)
-            f(objs)
-        # Ok we can exit now
-        sys.exit(0)
-
-
-
     # Main loop function
     def main(self):
         try:
@@ -660,7 +601,7 @@ class Arbiter(Daemon):
             # With a 2.4 interpreter the sys.exit() in load_config_file
             # ends up here and must be handled.
             sys.exit(exp.code)
-        except Exception as exp:
+        except Exception:
             self.print_unrecoverable(traceback.format_exc())
             raise
 
@@ -670,7 +611,7 @@ class Arbiter(Daemon):
         conf = self.new_conf
         if not conf:
             return
-        conf = deserialize(conf)
+        conf = cPickle.loads(conf)
         self.new_conf = None
         self.cur_conf = conf
         self.conf = conf

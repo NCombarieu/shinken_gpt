@@ -26,8 +26,6 @@
 that shinken modules will subclass
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import os
 import signal
 import time
@@ -67,7 +65,7 @@ properties = {
 }
 
 
-class ModulePhases(object):
+class ModulePhases:
     """TODO: Add some comment about this class for the doc"""
     # TODO: why not use simply integers instead of string
     # to represent the different phases??
@@ -194,19 +192,15 @@ class BaseModule(object):
 
 
     def __kill(self):
-        """Sometime terminate() is not enough, we must "help"
-        external modules to die...
-        """
+        """Terminate an external module process and wait for it to be reaped."""
+        if self.process is None:
+            return
 
-        if os.name == 'nt':
-            self.process.terminate()
-        else:
-            # Ok, let him 1 second before really KILL IT
-            os.kill(self.process.pid, signal.SIGTERM)
-            time.sleep(1)
-            # You do not let me another choice guy...
-            if self.process.is_alive():
-                os.kill(self.process.pid, signal.SIGKILL)
+        self.process.terminate()
+        self.process.join(timeout=1)
+        if self.process.is_alive() and os.name != 'nt':
+            os.kill(self.process.pid, signal.SIGKILL)
+            self.process.join(timeout=1)
 
 
     def stop_process(self):
@@ -250,7 +244,7 @@ class BaseModule(object):
         manage = getattr(self, 'manage_' + brok.type + '_brok', None)
         if manage:
             # Be sure the brok is prepared before call it
-            #brok.prepare()
+            brok.prepare()
             return manage(brok)
 
 

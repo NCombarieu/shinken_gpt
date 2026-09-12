@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,11 +22,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import copy
-from shinken.objects.item import Item
-from shinken.objects.itemgroup import Itemgroup, Itemgroups
+
+from .item import Item
+from .itemgroup import Itemgroup, Itemgroups
 from shinken.property import BoolProp, IntegerProp, StringProp, DictProp, ListProp
 from shinken.log import logger
 
@@ -301,7 +299,7 @@ class Realm(Itemgroup):
             c = r.give_satellite_cfg()
             cfg['reactionners'][r.id] = c
 
-        # print("***** Preparing a satellites conf for a scheduler", cfg)
+        # print "***** Preparing a satellites conf for a scheduler", cfg
         return cfg
 
 

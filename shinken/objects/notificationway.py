@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -22,8 +21,6 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
-
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 from .item import Item, Items
 
@@ -222,9 +219,8 @@ class NotificationWay(Item):
                                    "host_notification_command is missing", self.get_name())
                     state = False
                 if not cmd.is_valid():
-                    logger.warning(
-                        "[notificationway::%s] a host_notification_command "
-                        "is invalid (%s)", cmd.get_name(), cmd.__dict__)
+                    logger.warning("[notificationway::%s] a host_notification_command "
+                                   "is invalid (%s)", cmd.get_name(), str(cmd.__dict__))
                     state = False
 
         if getattr(self, 'host_notification_period', None) is None:
@@ -260,6 +256,6 @@ class NotificationWays(Items):
         if name is None:
             name = NotificationWay.id
         params['notificationway_name'] = name
-        # print("Asking a new inner notificationway from name %s with params %s" % (name, params))
+        # print "Asking a new inner notificationway from name %s with params %s" % (name, params)
         nw = NotificationWay(params)
         self.add_item(nw)

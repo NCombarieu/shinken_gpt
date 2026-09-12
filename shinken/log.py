@@ -23,8 +23,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import logging
 import sys
 import os
@@ -32,7 +30,7 @@ import stat
 from logging import Handler, Formatter, StreamHandler, NOTSET, FileHandler
 from logging.handlers import TimedRotatingFileHandler
 
-from shinken.brok import Brok
+from .brok import Brok
 
 try:
     from shinken.misc.termcolor import cprint
@@ -234,6 +232,8 @@ class Log(logging.Logger):
     def error(self, *args, **kwargs):
         self._stack('error', args, kwargs)
         logging.Logger.error(self, *args, **kwargs)
+
+
 
 
 # --- create the main logger ---

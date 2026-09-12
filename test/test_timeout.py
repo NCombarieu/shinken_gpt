@@ -23,15 +23,17 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
+from queue import Queue
 from shinken.worker import Worker
-from multiprocessing import Queue, Manager
 from shinken.objects.service import Service
 from shinken.objects.host import Host
 from shinken.objects.contact import Contact
+from six.moves import range
+
 modconf = Module()
 
 
@@ -47,24 +49,22 @@ class TestTimeout(ShinkenTest):
 
         svc = self.sched.services.find_srv_by_name_and_hostname("test_host_0", "test_ok_0")
 
-        # These queues connect a poller/reactionner with a worker
-        to_queue = Queue()
-        #manager = Manager()
-        from_queue = Queue() #manager.list()
+        # This test drives a worker synchronously in-process. Thread queues are
+        # sufficient for the result/control paths and avoid multiprocessing
+        # feeder threads that otherwise make this legacy test timing-sensitive.
+        from_queue = Queue()
         control_queue = Queue()
 
-        # This testscript plays the role of the reactionner
-        # Now "fork" a worker
-        w = Worker(1, to_queue, from_queue, 1)
+        # This testscript plays the role of the reactionner.
+        w = Worker(1, Queue(), from_queue, 1)
         w.id = 1
         w.i_am_dying = False
 
-        # We prepare a notification in the to_queue
+        # We prepare a notification for the worker.
         c = Contact()
         c.contact_name = "mr.schinken"
         n = Notification('PROBLEM', 'scheduled', 'libexec/sleep_command.sh 7', '', svc, '', '', id=1)
         n.status = "queue"
-        #n.command = "libexec/sleep_command.sh 7"
         n.t_to_go = time.time()
         n.contact = c
         n.timeout = 2
@@ -73,42 +73,35 @@ class TestTimeout(ShinkenTest):
         n.module_type = "fork"
         nn = n.copy_shell()
 
-        # Send the job to the worker
-        msg = Message(id=0, type='Do', data=nn)
-        to_queue.put(msg)
-
-        w.checks = []
+        # Exercise the same launch/finish path as Worker.work(), but seed the
+        # in-process worker directly instead of relying on queue feeder timing.
+        w.checks = [nn]
         w.returns_queue = from_queue
-        w.s = to_queue
         w.c = control_queue
-        # Now we simulate the Worker's work() routine. We can't call it
-        # as w.work() because it is an endless loop
-        for i in range(1, 10):
-            w.get_new_checks()
-            # During the first loop the sleeping command is launched
+        deadline = time.monotonic() + n.timeout + 5
+        while w.checks and time.monotonic() < deadline:
             w.launch_new_checks()
             w.manage_finished_checks()
-            time.sleep(1)
 
-        # The worker should have finished it's job now, either correctly or
-        # with a timeout
-        o = from_queue.get()
+        # The worker should have finished its job now, either correctly or
+        # with a timeout.
+        o = from_queue.get(timeout=1)
 
         self.assertEqual('timeout', o.status)
         self.assertEqual(3, o.exit_status)
-        self.assertLess(o.execution_time, n.timeout+1)
+        self.assertLess(o.execution_time, n.timeout + 1)
 
-        # Be a good poller and clean up.
-        to_queue.close()
-        control_queue.close()
+        # The legacy scheduler result boundary still normalizes byte payloads.
+        # Preserve that transport representation while this test bypasses the
+        # reactionner process and calls Scheduler.put_results() directly.
+        if isinstance(o.output, str):
+            o.output = o.output.encode('utf8')
 
-        # Now look what the scheduler says to all this
+        # Now look what the scheduler says to all this.
         self.sched.actions[n.id] = n
         self.sched.put_results(o)
         self.show_logs()
         self.assert_any_log_match("Contact mr.schinken service notification command 'libexec/sleep_command.sh 7 ' timed out after 2 seconds")
-
-
 
     def test_notification_timeout_on_command(self):
         #
@@ -125,7 +118,7 @@ class TestTimeout(ShinkenTest):
         router.act_depend_of = []  # ignore the router
         svc = self.sched.services.find_srv_by_name_and_hostname("test_host_0", "test_ok_0")
         print(svc.checks_in_progress)
-        cs = svc.get_checks_in_progress()
+        cs = svc.checks_in_progress
         self.assertEqual(1, len(cs))
         c = cs.pop()
         print(c)

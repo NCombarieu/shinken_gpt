@@ -1,0 +1,67 @@
+name: shinken
+
+x-shinken: &shinken
+  build:
+    context: .
+    dockerfile: Containerfile
+  image: localhost/shinken:dev
+  restart: unless-stopped
+  environment:
+    SHINKEN_CONTAINER_DNS: "1"
+    SHINKEN_STATUS_WEBUI: "1"
+    SHINKEN_MODULES_DIR: /usr/local/lib/shinken/modules
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  volumes:
+    - ./etc:/etc/shinken:ro,Z
+    - shinken-data:/var/lib/shinken:Z
+    - shinken-logs:/var/log/shinken:Z
+
+services:
+  arbiter:
+    <<: *shinken
+    command: ["arbiter"]
+    depends_on:
+      - scheduler
+      - poller
+      - reactionner
+      - broker
+      - receiver
+
+  scheduler:
+    <<: *shinken
+    command: ["scheduler"]
+
+  poller:
+    <<: *shinken
+    command: ["poller"]
+
+  reactionner:
+    <<: *shinken
+    command: ["reactionner"]
+
+  broker:
+    <<: *shinken
+    command: ["broker"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).read()"
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  receiver:
+    <<: *shinken
+    command: ["receiver"]
+
+volumes:
+  shinken-data:
+  shinken-logs:

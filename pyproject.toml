@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["test"]
+pythonpath = ["test"]
+addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
+filterwarnings = [
+  "default::DeprecationWarning",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = ["doc", "inventory", "share"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"test/**" = ["B011"]
+
+[tool.coverage.run]
+branch = true
+source = ["shinken"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # skvidal@fedoraproject.org, modified by David Laval
 # gplv2+
 
@@ -22,38 +22,45 @@
 #password=yourpasssword
 #resource=monitoring
 
-defaults = {'server':'jabber.org',
-            'port':'5222',
-            'resource':'monitoring'}
-
-# until xmppony is inplace
-
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+import configparser
+import os
+import sys
 import warnings
-warnings.simplefilter("ignore")
+from optparse import OptionParser
 
 import xmpp
 from xmpp.protocol import Message
 
 
-from optparse import OptionParser
-import ConfigParser
-import sys
-import os
+defaults = {
+    'server': 'jabber.org',
+    'port': '5222',
+    'resource': 'monitoring',
+}
 
+# until xmppony is inplace
+warnings.simplefilter("ignore")
 
 parser = OptionParser()
-parser.add_option("-a", dest="authfile", default=None, help="file to retrieve username/password/server/port/resource information from")
+parser.add_option(
+    "-a",
+    dest="authfile",
+    default=None,
+    help="file to retrieve username/password/server/port/resource information from",
+)
 opts, args = parser.parse_args()
 
-conf = ConfigParser.ConfigParser(defaults=defaults)
+conf = configparser.ConfigParser(defaults=defaults)
 if not opts.authfile or not os.path.exists(opts.authfile):
-   print("no config/auth file specified, can't continue")
-   sys.exit(1)
+    print("no config/auth file specified, can't continue")
+    sys.exit(1)
 
 conf.read(opts.authfile)
-if not conf.has_section('xmpp_account') or not conf.has_option('xmpp_account', 'username') or not conf.has_option('xmpp_account', 'password'):
+if (
+    not conf.has_section('xmpp_account')
+    or not conf.has_option('xmpp_account', 'username')
+    or not conf.has_option('xmpp_account', 'password')
+):
     print("cannot find at least one of: config section 'xmpp_account' or username or password")
     sys.exit(1)
 server = conf.get('xmpp_account', 'server')
@@ -62,17 +69,14 @@ password = conf.get('xmpp_account', 'password')
 resource = conf.get('xmpp_account', 'resource')
 port = conf.get('xmpp_account', 'port')
 
-
 if len(args) < 1:
     print("xmppsend message [to whom, multiple args]")
     sys.exit(1)
 
-msg = args[0]
-
-msg = msg.replace('\\n', '\n')
+msg = args[0].replace('\\n', '\n')
 
 c = xmpp.Client(server=server, port=port, debug=[])
-con  = c.connect()
+con = c.connect()
 if not con:
     print("Error: could not connect to server: %s:%s" % (c.Server, c.Port))
     sys.exit(1)
@@ -83,14 +87,11 @@ if not auth:
     sys.exit(1)
 
 if len(args) < 2:
-    r = c.getRoster()
-    for user in r.keys():
+    roster = c.getRoster()
+    for user in roster.keys():
         if user == username:
             continue
         c.send(Message(user, '%s' % msg))
 else:
     for user in args[1:]:
         c.send(Message(user, '%s' % msg))
-
-
-

@@ -21,13 +21,14 @@
 #
 # This test checks that sslv3 is disabled when SSL is used with a cherrypy backend to secure against the Poodle vulnerability (https://poodlebleed.com)
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 import subprocess
 from time import sleep
 
-import requests
+import six.moves.http_client
 import ssl
+
 try:
     import OpenSSL
 except ImportError:
@@ -40,59 +41,51 @@ from shinken.daemons.schedulerdaemon import Shinken
 from shinken.daemons.arbiterdaemon import Arbiter
 
 daemons_config = {
-    Shinken:      "etc/test_sslv3_disabled/schedulerd.ini",
-    Arbiter:    ["etc/test_sslv3_disabled/shinken.cfg"]
+    Shinken: "etc/test_sslv3_disabled/schedulerd.ini",
+    Arbiter: ["etc/test_sslv3_disabled/shinken.cfg"]
 }
 
 
 class testSchedulerInit(ShinkenTest):
     def setUp(self):
         time_hacker.set_real_time()
-
+    
+    
     def create_daemon(self):
         cls = Shinken
         return cls(daemons_config[cls], False, True, False, None, '')
-
+    
+    
     @unittest.skipIf(OpenSSL is None, "Test requires OpenSSL")
     def test_scheduler_init(self):
-        if not hasattr(ssl, 'SSLContext'):
-            print('BAD ssl version for testing, bailing out')
-            return
-
-        if not hasattr(ssl, 'PROTOCOL_SSLv3'):
-            print('BAD ssl version for testing, no PROTOCOL_SSLv3 support')
-            return
-
+        
         shinken_log.local_log = None  # otherwise get some "trashs" logs..
         d = self.create_daemon()
-
+        
         d.load_config_file()
-
+        
         d.http_backend = 'cherrypy'
         d.do_daemon_init_and_start(fake=True)
         d.load_modules_manager()
-
+        
         # Launch an arbiter so that the scheduler get a conf and init
         subprocess.Popen(["../bin/shinken-arbiter.py", "-c", daemons_config[Arbiter][0], "-d"])
-
+        if not hasattr(ssl, 'SSLContext'):
+            print('BAD ssl version for testing, bailing out')
+            return
         ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv3)
-        ctx.check_hostname=False
-        ctx.verify_mode=ssl.CERT_NONE
-
-        def connect():
-            with socket.create_connection(("localhost", 9998)) as sock:
-                with ctx.wrap_socket(sock, server_hostname="localhost") as ssock:
-                    pass
-
-        self.assertRaises(ssl.SSLError, connect)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        self.conn = six.moves.http_client.HTTPSConnection("localhost:9998", context=ctx)
+        self.assertRaises(ssl.SSLError, self.conn.connect)
         try:
-            connect()
+            self.conn.connect()
         except ssl.SSLError as e:
-            self.assertEqual(e.reason, 'SSLV3_ALERT_HANDSHAKE_FAILURE')
+            assert e.reason == 'SSLV3_ALERT_HANDSHAKE_FAILURE'
         sleep(2)
-        pid = int(file("tmp/arbiterd.pid").read())
-        print ("KILLING %d" % pid)*50
-        os.kill(int(file("tmp/arbiterd.pid").read()), 2)
+        pid = int(open("tmp/arbiterd.pid").read())
+        print(("KILLING %d" % pid) * 50)
+        os.kill(int(open("tmp/arbiterd.pid").read()), 2)
         d.do_stop()
 
 

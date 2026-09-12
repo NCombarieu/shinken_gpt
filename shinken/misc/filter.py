@@ -27,8 +27,6 @@
 Helper functions for some filtering, like for user based
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 
 # Get only user relevant items for the user
 def only_related_to(lst, user):

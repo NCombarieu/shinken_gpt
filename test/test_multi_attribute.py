@@ -22,8 +22,7 @@
 # This file is used to test multi valued attribute feature.
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import absolute_import
 import re
 from shinken_test import unittest, ShinkenTest
 
@@ -48,15 +47,10 @@ class TestMultiVuledAttributes(ShinkenTest):
         self.assertEqual(3, srv1.max_check_attempts)
 
         # list parameter (all items should appear in the order they are defined)
-        self.assertEqual(
-            sorted(['d', 'u', 'f', '1', 's', 'r']),
-            sorted(list(set(hst1.notification_options)))
-        )
+        self.assertEqual(set([u'd', u'f', u'1', u's', u'r', u'u']), set(hst1.notification_options))
 
-        self.assertEqual(
-            sorted(['c', 'u', 'f', '1', 's', 'r', 'w']),
-            sorted(list(set(srv1.notification_options)))
-        )
+        self.assertEqual(set([u'c', u'f', u'1', u's', u'r', u'u', u'w']), set(srv1.notification_options))
+
 
 
 if __name__ == '__main__':

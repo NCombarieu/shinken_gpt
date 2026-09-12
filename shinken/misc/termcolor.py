@@ -23,10 +23,14 @@
 
 """ANSII Color formatting for output in terminal."""
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
 import os
+import sys
 
+PY3 = sys.version_info >= (3,)
+if PY3:
+    basestring = str
+    unicode = str
 
 __ALL__ = ['colored', 'cprint']
 
@@ -129,8 +133,11 @@ def colored(text, color=None, on_color=None, attrs=None):
 def cprint(text, color=None, on_color=None, attrs=None, **kwargs):
     """Print colorize text.
 
-    It accepts arguments of print(function.)
+    It accepts arguments of print function.
     """
+
+    if isinstance(text, unicode):
+        text = text.encode("utf-8")
     print((colored(text, color, on_color, attrs)), **kwargs)
 
 

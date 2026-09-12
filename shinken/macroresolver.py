@@ -30,12 +30,11 @@
 # get the number of service in a host, you call a method to get the
 # len(host.services)
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import re
 import time
 
 from shinken.borg import Borg
+from .util import unicode
 
 
 class MacroResolver(Borg):
@@ -137,15 +136,15 @@ class MacroResolver(Borg):
         try:
             value = getattr(elt, prop)
             if callable(value):
-                return str(value())
+                return unicode(value())
             else:
-                return str(value)
+                return unicode(value)
         except AttributeError as exp:
             # Return no value
             return ''
         except UnicodeError as exp:
             if isinstance(value, str):
-                return str(value, 'utf8', errors='ignore')
+                return unicode(value, 'utf8', errors='ignore')
             else:
                 return ''
 
@@ -202,7 +201,7 @@ class MacroResolver(Borg):
 
             # We can get out if we do not have macros this loop
             still_got_macros = (len(macros) != 0)
-            # print("Still go macros:", still_got_macros)
+            # print "Still go macros:", still_got_macros
 
             # Put in the macros the type of macro for all macros
             self._get_type_of_macro(macros, clss)
@@ -261,7 +260,7 @@ class MacroResolver(Borg):
         # We now replace the big dirty token we made by only a simple $
         c_line = c_line.replace("DOUBLEDOLLAR", "$")
 
-        # print("Retuning c_line", c_line.strip())
+        # print "Retuning c_line", c_line.strip()
         return c_line.strip()
 
     # Resolve a command with macro by looking at data classes.macros
@@ -279,22 +278,22 @@ class MacroResolver(Borg):
     def _get_type_of_macro(self, macros, clss):
         for macro in macros:
             # ARGN Macros
-            if re.match(r'ARG\d', macro):
+            if re.match('ARG\d', macro):
                 macros[macro]['type'] = 'ARGN'
                 continue
             # USERN macros
             # are managed in the Config class, so no
             # need to look that here
-            elif re.match(r'_HOST\w', macro):
+            elif re.match('_HOST\w', macro):
                 macros[macro]['type'] = 'CUSTOM'
                 macros[macro]['class'] = 'HOST'
                 continue
-            elif re.match(r'_SERVICE\w', macro):
+            elif re.match('_SERVICE\w', macro):
                 macros[macro]['type'] = 'CUSTOM'
                 macros[macro]['class'] = 'SERVICE'
                 # value of macro: re.split('_HOST', '_HOSTMAC_ADDRESS')[1]
                 continue
-            elif re.match(r'_CONTACT\w', macro):
+            elif re.match('_CONTACT\w', macro):
                 macros[macro]['type'] = 'CUSTOM'
                 macros[macro]['class'] = 'CONTACT'
                 continue
@@ -313,7 +312,7 @@ class MacroResolver(Borg):
     def _resolve_argn(self, macro, args):
         # first, get the number of args
         id = None
-        r = re.search(r'ARG(?P<id>\d+)', macro)
+        r = re.search('ARG(?P<id>\d+)', macro)
         if r is not None:
             id = int(r.group('id')) - 1
             try:
@@ -323,14 +322,14 @@ class MacroResolver(Borg):
 
     # Resolve on-demand macro, quite hard in fact
     def _resolve_ondemand(self, macro, data):
-        # print("\nResolving macro", macro)
+        # print "\nResolving macro", macro
         elts = macro.split(':')
         nb_parts = len(elts)
         macro_name = elts[0]
         # Len 3 == service, 2 = all others types...
         if nb_parts == 3:
             val = ''
-            # print("Got a Service on demand asking...", elts)
+            # print "Got a Service on demand asking...", elts
             (host_name, service_description) = (elts[1], elts[2])
             # host_name can be void, so it's the host in data
             # that is important. We use our self.host_class to
@@ -345,7 +344,7 @@ class MacroResolver(Borg):
                 cls = s.__class__
                 prop = cls.macros[macro_name]
                 val = self._get_value_from_element(s, prop)
-                # print("Got val:", val)
+                # print "Got val:", val
                 return val
         # Ok, service was easy, now hard part
         else:
@@ -373,7 +372,7 @@ class MacroResolver(Borg):
 
     # Get Fri 15 May 11:42:39 CEST 2009
     def _get_long_date_time(self):
-        return time.strftime("%a %d %b %H:%M:%S %Z %Y")
+        return time.strftime("%a %d %b %H:%M:%S %Z %Y").decode('UTF-8', 'ignore')
 
 
     # Get 10-13-2000 00:30:28

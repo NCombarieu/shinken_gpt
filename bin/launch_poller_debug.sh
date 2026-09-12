@@ -23,9 +23,9 @@
 
 
 DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+BIN="$DIR"
 ETC="$DIR"/../etc
 DEBUG_PATH="/tmp/poller.debug"
 
 echo "Launching Poller (which launches checks) in debug mode to the file $DEBUG_PATH"
-"$BIN"/shinken_poller.py -d -c "$ETC"/daemons/pollerd.ini --debug "$DEBUG_PATH" --profile /tmp/poller.profile
+"$BIN"/shinken-poller.py -d -c "$ETC"/daemons/pollerd.ini --debug "$DEBUG_PATH" --profile /tmp/poller.profile
