@@ -58,6 +58,7 @@ jobs:
           PY
 
           git show origin/master:test/test_maintenance_check.py > test/test_maintenance_check.py
+          git show origin/master:test/etc/shinken_maintenance_check.cfg > test/etc/shinken_maintenance_check.cfg
 
       - name: Install targeted test environment
         run: |
@@ -86,6 +87,6 @@ jobs:
           rm -f .github/workflows/pr6-autofix.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add shinken/scheduler.py shinken/macroresolver.py test/test_macroresolver.py test/test_maintenance_check.py .github/workflows/pr6-autofix.yml
+          git add shinken/scheduler.py shinken/macroresolver.py test/test_macroresolver.py test/test_maintenance_check.py test/etc/shinken_maintenance_check.cfg .github/workflows/pr6-autofix.yml
           git commit -m "Fix maintenance and LONGDATETIME regressions"
           git push origin HEAD:modernize/podman-python3
