@@ -42,7 +42,6 @@ jobs:
           master_start = master.index('    def get_maintenance_dt_times(self, now, elt):')
           master_end = master.index('    # Main schedule function', master_start)
           restored = master[master_start:master_end]
-
           branch_start = current.index('    # Check for downtimes start and stop, and register\n    # them if needed\n    def update_downtimes_and_comments(self):')
           branch_end = current.index('    # Main schedule function', branch_start)
           scheduler.write_text(current[:branch_start] + restored + current[branch_end:])
@@ -52,13 +51,14 @@ jobs:
           marker = "\n\nif __name__ == '__main__':"
           regression = '''\n    def test_longdatetime_macro_is_text(self):\n        mr = self.get_mr()\n        value = mr._get_long_date_time()\n        self.assertIsInstance(value, str)\n        self.assertTrue(value)\n'''
           if 'test_longdatetime_macro_is_text' not in test_text:
-              if marker not in test_text:
-                  raise SystemExit('test_macroresolver.py insertion marker not found')
               test_macro.write_text(test_text.replace(marker, regression + marker, 1))
           PY
 
+          mkdir -p test/etc/maintenance_check
           git show origin/master:test/test_maintenance_check.py > test/test_maintenance_check.py
           git show origin/master:test/etc/shinken_maintenance_check.cfg > test/etc/shinken_maintenance_check.cfg
+          git show origin/master:test/etc/maintenance_check/hosts.cfg > test/etc/maintenance_check/hosts.cfg
+          git show origin/master:test/etc/maintenance_check/services.cfg > test/etc/maintenance_check/services.cfg
 
       - name: Install targeted test environment
         run: |
@@ -87,6 +87,6 @@ jobs:
           rm -f .github/workflows/pr6-autofix.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add shinken/scheduler.py shinken/macroresolver.py test/test_macroresolver.py test/test_maintenance_check.py test/etc/shinken_maintenance_check.cfg .github/workflows/pr6-autofix.yml
+          git add shinken/scheduler.py shinken/macroresolver.py test/test_macroresolver.py test/test_maintenance_check.py test/etc/shinken_maintenance_check.cfg test/etc/maintenance_check/hosts.cfg test/etc/maintenance_check/services.cfg .github/workflows/pr6-autofix.yml
           git commit -m "Fix maintenance and LONGDATETIME regressions"
           git push origin HEAD:modernize/podman-python3
