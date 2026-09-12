@@ -23,13 +23,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 shinken \
     && useradd --uid 10001 --gid shinken --home-dir /var/lib/shinken --create-home shinken \
-    && install -d -o shinken -g shinken /etc/shinken /var/lib/shinken /var/lib/shinken/modules /var/log/shinken /run/shinken
+    && install -d -o shinken -g shinken /etc/shinken /var/lib/shinken /var/log/shinken /run/shinken \
+    && install -d -o shinken -g shinken /usr/local/lib/shinken/modules
 
 COPY --from=builder /dist/ /tmp/dist/
 RUN python -m pip install /tmp/dist/*.whl && rm -rf /tmp/dist
 
 COPY --chown=shinken:shinken etc/ /usr/local/share/shinken/etc/
-COPY --chown=shinken:shinken modules/ /var/lib/shinken/modules/
+COPY --chown=shinken:shinken modules/ /usr/local/lib/shinken/modules/
 COPY --chmod=755 containers/entrypoint.sh /usr/local/bin/shinken-entrypoint
 
 USER 10001:10001
