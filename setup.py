@@ -25,7 +25,7 @@ setup(
     python_requires=">=3.11",
     install_requires=[
         "Bottle>=0.13.4,<0.14",
-        "CherryPy>=18.8.0",
+        "cheroot>=11.1.2,<12",
         "pycurl>=7.45.2",
         "Pyro5>=5.15",
     ],
