@@ -1,0 +1,15 @@
+[package]
+name = "shinken-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+clap.workspace = true
+shinken-config = { path = "../shinken-config" }
+shinken-livestatus = { path = "../shinken-livestatus" }
+
+[lints]
+workspace = true
