@@ -257,7 +257,13 @@ class Worker(object):
         self.set_proctitle()
 
         if self.http_daemon:
-            self.http_daemon.shutdown()
+            # The worker is forked after the Cheroot server has started its
+            # thread pool.  Stopping that copied server in the child can wait
+            # forever for threads which only exist in the parent process.
+            # Workers are terminated with their owning satellite, so discard
+            # the inherited Python object without touching the parent's
+            # running server.
+            self.http_daemon = None
 
         timeout = 1.0
         self.checks = []
