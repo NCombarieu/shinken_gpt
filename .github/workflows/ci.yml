@@ -61,13 +61,16 @@ jobs:
 
   legacy-suite:
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install test environment
         run: |
@@ -80,7 +83,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: legacy-test-results
+          name: legacy-test-results-${{ matrix.python-version }}
           path: legacy-results.xml
           if-no-files-found: warn
           retention-days: 7
