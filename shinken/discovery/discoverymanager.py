@@ -56,7 +56,7 @@ def get_uuid(self):
     if uuid:
         return uuid.uuid1().hex
     # Ok for old python like 2.4, we will lie here :)
-    return int(random.random() * sys.maxint)
+    return int(random.random() * sys.maxsize)
 
 
 # Look if the name is a IPV4 address or not

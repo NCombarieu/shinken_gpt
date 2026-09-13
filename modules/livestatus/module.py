@@ -408,7 +408,7 @@ class LiveStatus_broker(BaseModule, Daemon):
             try:
                 l = self.to_q.get(True, 1)
             except IOError as err:
-                if err.errno != os.errno.EINTR:
+                if err.errno != errno.EINTR:
                     raise
             except queue.Empty:
                 pass

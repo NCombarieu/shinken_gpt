@@ -784,15 +784,15 @@ class ExternalCommandManager:
 
     # CHANGE_CONTACT_MODSATTR;<contact_name>;<value>
     def CHANGE_CONTACT_MODSATTR(self, contact, value):  # TODO
-        contact.modified_service_attributes = long(value)
+        contact.modified_service_attributes = int(value)
 
     # CHANGE_CONTACT_MODHATTR;<contact_name>;<value>
     def CHANGE_CONTACT_MODHATTR(self, contact, value):  # TODO
-        contact.modified_host_attributes = long(value)
+        contact.modified_host_attributes = int(value)
 
     # CHANGE_CONTACT_MODATTR;<contact_name>;<value>
     def CHANGE_CONTACT_MODATTR(self, contact, value):
-        contact.modified_attributes = long(value)
+        contact.modified_attributes = int(value)
 
     # CHANGE_CONTACT_HOST_NOTIFICATION_TIMEPERIOD;<contact_name>;<notification_timeperiod>
     def CHANGE_CONTACT_HOST_NOTIFICATION_TIMEPERIOD(self, contact, notification_timeperiod):
@@ -888,7 +888,7 @@ class ExternalCommandManager:
 
     # CHANGE_HOST_MODATTR;<host_name>;<value>
     def CHANGE_HOST_MODATTR(self, host, value):
-        host.modified_attributes = long(value)
+        host.modified_attributes = int(value)
 
     # CHANGE_MAX_HOST_CHECK_ATTEMPTS;<host_name>;<check_attempts>
     def CHANGE_MAX_HOST_CHECK_ATTEMPTS(self, host, check_attempts):
@@ -964,7 +964,7 @@ class ExternalCommandManager:
         # This is not enough.
         # We need to also change each of the needed attributes.
         previous_value = service.modified_attributes
-        future_value = long(value)
+        future_value = int(value)
         changes = future_value ^ previous_value
 
         for modattr in [
