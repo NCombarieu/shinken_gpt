@@ -47,6 +47,7 @@ services:
     command: ["broker"]
     ports:
       - "127.0.0.1:8081:8080"
+      - "127.0.0.1:50000:50000"
     healthcheck:
       test:
         - CMD

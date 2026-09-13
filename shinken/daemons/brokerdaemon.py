@@ -163,6 +163,18 @@ class Broker(BaseSatellite):
                 # The module death will be looked for elsewhere and restarted.
 
 
+    # Called by the arbiter to collect external commands raised by our
+    # modules (livestatus COMMAND queries, for example). Poller/Reactionner
+    # get this for free from Satellite/BaseSatellite; the broker has its own
+    # class hierarchy and never had it, so those commands (force check,
+    # acknowledge, downtime...) were accepted by modules but silently went
+    # nowhere.
+    def get_external_commands(self):
+        res = self.external_commands
+        self.external_commands = []
+        return res
+
+
     # Get the good tabs for links by the kind. If unknown, return None
     def get_links_from_type(self, d_type):
         t = {'scheduler':   self.schedulers,

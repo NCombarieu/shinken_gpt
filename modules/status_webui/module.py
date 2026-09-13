@@ -111,16 +111,16 @@ class StatusWebUI(BaseModule):
         }
         with self._lock:
             self._events.append(event)
-            if "host" in brok_type and "status" in brok_type:
+            if brok_type in ("initial_host_status", "update_host_status", "host_check_result"):
                 name = data.get("host_name") or data.get("name")
                 if name:
-                    self._hosts[str(name)] = data
-            if "service" in brok_type and "status" in brok_type:
+                    self._hosts.setdefault(str(name), {}).update(data)
+            if brok_type in ("initial_service_status", "update_service_status", "service_check_result"):
                 host_name = data.get("host_name", "")
                 description = data.get("service_description") or data.get("description") or data.get("name")
                 if description:
                     key = f"{host_name}/{description}"
-                    self._services[key] = data
+                    self._services.setdefault(key, {}).update(data)
 
     def snapshot(self):
         with self._lock:

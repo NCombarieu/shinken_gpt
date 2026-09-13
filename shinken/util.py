@@ -71,29 +71,17 @@ def my_sort(lst, cmp_f):
 # Try to print strings, but if there is an utf8 error, go in simple ascii mode
 # (Like if the terminal do not have en_US.UTF8 as LANG for example)
 def safe_print(*args):
+    # Python 3 strings are already unicode: no str/unicode distinction, and
+    # no decode/encode round-trip needed to make them printable.
     l = []
     for e in args:
-        # If we got an str, go in unicode, and if we cannot print
-        # utf8, go in ascii mode
         if isinstance(e, str):
-            if safe_stdout:
-                s = unicode(e, 'utf8', errors='ignore')
-            else:
-                s = e.decode('ascii', 'replace').encode('ascii', 'replace').\
-                    decode('ascii', 'replace')
-            l.append(s)
-        # Same for unicode, but skip the unicode pass
-        elif isinstance(e, unicode):
-            if safe_stdout:
-                s = e
-            else:
-                s = e.encode('ascii', 'replace')
-            l.append(s)
-        # Other types can be directly convert in unicode
+            s = e if safe_stdout else e.encode('ascii', 'replace').decode('ascii', 'replace')
         else:
-            l.append(unicode(e))
+            s = str(e)
+        l.append(s)
     # Ok, now print it :)
-    print(u' '.join(l))
+    print(' '.join(l))
 
 
 def split_semicolon(line, maxsplit=None):
@@ -416,7 +404,7 @@ def get_customs_keys(d):
 
 # return the values of the dict
 def get_customs_values(d):
-    return d.values()
+    return list(d.values())
 
 
 # Checks that a parameter has an unique value. If it's a list, the last

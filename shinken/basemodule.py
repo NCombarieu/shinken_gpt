@@ -282,9 +282,14 @@ class BaseModule(object):
         """module "main" method. Only used by external modules."""
         self.set_proctitle(self.name)
 
-        # TODO: fix this hack:
+        # The module is forked after the Cheroot server has started its
+        # thread pool. Stopping that copied server in the child can wait
+        # forever for threads which only exist in the parent process (same
+        # class of bug fixed for Worker in shinken/worker.py). The daemon
+        # keeps running the real server; the child just discards its inert
+        # copy of the Python object without touching the parent's server.
         if shinken.http_daemon.daemon_inst:
-            shinken.http_daemon.daemon_inst.shutdown()
+            shinken.http_daemon.daemon_inst = None
 
         self.set_signal_handler()
         logger.info("[%s[%d]]: Now running..", self.name, os.getpid())

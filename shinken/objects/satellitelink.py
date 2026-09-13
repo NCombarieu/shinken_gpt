@@ -376,7 +376,12 @@ class SatelliteLink(Item):
         try:
             self.con.get('ping')
             tab = self.con.get('get_external_commands', wait='long')
-            tab = cpickle.loads(str(tab))
+            # get_external_commands returns a plain list server-side (no
+            # base64/zlib framing like get_broks uses) so HTTPClient.get()
+            # hands back raw pickle bytes here. str(tab) on Python 3 bytes
+            # just mangled them and made this call always fail silently
+            # into the bare except below.
+            tab = cpickle.loads(tab)
             # Protect against bad return
             if not isinstance(tab, list):
                 self.con = None
@@ -388,7 +393,7 @@ class SatelliteLink(Item):
         except AttributeError:
             self.con = None
             return []
-        except:
+        except Exception:
             self.con = None
             return []
 
