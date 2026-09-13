@@ -69,7 +69,10 @@ mod tests {
         let third = second.apply_result(CheckState::Critical);
         assert_eq!((third.state_type, third.attempt), (StateType::Hard, 3));
         assert_eq!(third.apply_result(CheckState::Critical), third);
-        assert_eq!(third.apply_result(CheckState::Warning).state_type, StateType::Hard);
+        assert_eq!(
+            third.apply_result(CheckState::Warning).state_type,
+            StateType::Hard
+        );
     }
 
     #[test]

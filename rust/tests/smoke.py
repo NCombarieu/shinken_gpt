@@ -118,6 +118,7 @@ def run_suite(binary):
         proc = start()
         try:
             eventually(lambda: query("GET services\nColumns: state state_type\nFilter: description = load") == [[2, 1]])
+            eventually(lambda: query("GET services\nColumns: state\nFilter: description = timeout") == [[3]])
             assert query("GET hosts\nColumns: state\nFilter: name = edge", tcp=True) == [[0]]
             assert query("GET services\nStats: state = 2\nStats: state = 3\nStatsOr: 2")[0][0] >= 2
             assert query("GET hosts\nColumns: name\nAuthUser: alice") == [["edge"]]

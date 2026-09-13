@@ -59,7 +59,9 @@ jobs:
         if: "!cancelled() && steps.build.outcome == 'success'"
         env:
           THRUK_PERL_LIB: /tmp/thruk-client
-        run: python3 rust/tests/smoke.py target/debug/shinken-rs
+        run: |
+          target/debug/shinken-rs config-check etc/shinken.cfg
+          python3 rust/tests/smoke.py target/debug/shinken-rs
       - name: Save canonical sources and dependency lock for review
         if: "!cancelled()"
         uses: actions/upload-artifact@v4
