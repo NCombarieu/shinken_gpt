@@ -37,7 +37,7 @@ target/release/shinken-rs run rust/examples/minimal/shinken.cfg \
 
 `--once` prints a JSON snapshot including header rows. Its exit status indicates whether execution completed, while monitoring problems are encoded in the snapshot. Plugin states do not make a healthy monitoring engine exit.
 
-The daemon restores matching objects from retention at startup and writes atomic snapshots every 30 seconds and on SIGINT/SIGTERM. Abrupt termination can lose changes since the last snapshot. An invalid retention file is a startup error. Configuration is loaded at startup; reload currently requires a restart.
+The daemon restores matching objects from retention at startup and writes atomic snapshots every 30 seconds and on SIGINT/SIGTERM. Abrupt termination can lose changes since the last snapshot. An invalid retention file is a startup error. Configuration is loaded at startup; reload currently requires a restart. Notification delivery history is retained too. Delivery is best effort: a crash between executing a command and saving state can produce a duplicate after restart.
 
 Unix sockets use mode 0660. Startup refuses any existing socket path. On a normal shutdown, the engine removes only the socket it created. After a crash, verify that the previous process is gone before removing a stale socket yourself.
 
@@ -49,7 +49,15 @@ Livestatus is a trusted administrative protocol: it carries external commands an
 
 The contract tests use the actual upstream `Monitoring::Livestatus` client and the provider's default host, service, contact, status, comment, downtime and log columns. Full browser interaction with Thruk and all of its optional plugins remains unvalidated.
 
-Supported actions include passive results, acknowledgements without sending an acknowledgement notification, enabling/disabling checks, scheduling checks, comments and fixed untriggered downtimes. Unsupported actions return an error. Read the compatibility matrix before using this branch.
+Supported actions include passive results, acknowledgements without sending an acknowledgement notification, enabling/disabling checks and notifications, scheduling checks, comments and fixed untriggered downtimes. Unsupported actions return an error. Read the compatibility matrix before using this branch.
+
+## Native notifications and periods
+
+The engine executes host/service notification commands from contacts and Shinken notificationways. It supports problem/recovery messages, state options, first delays, notification intervals, contact periods, suppression during acknowledgements or fixed downtime, and suppression of service alerts while their host is down. Dynamic output/contact/state macros pass through environment variables so plugin output cannot become shell syntax. The supplied container example disables notifications globally; set enable_notifications=1 only after configuring and testing your delivery commands.
+
+A command exit status of zero records a successful delivery. Failed commands are reported on stderr and retried, with a minimum retry spacing of one second. A command must return nonzero when delivery fails. SMTP/SMS/webhook transport remains the responsibility of your configured executable. No mail or messages are sent by the test suite: it uses local files.
+
+Weekly timeperiod definitions accept multiple ranges per day, exclusions and use_timezone with an IANA timezone such as Europe/Paris. Empty periods prevent automatic checks. Calendar/date exceptions are retained but rejected when referenced by an executed check or notification. Forced checks can bypass the time window.
 
 ## Verify
 
@@ -59,6 +67,7 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace --all-targets
 cargo build --locked -p shinken-rs
 python3 rust/tests/smoke.py target/debug/shinken-rs
+python3 rust/tests/notifications-smoke.py target/debug/shinken-rs
 ```
 
 Python is used only by the black-box test harness. CI additionally installs the pinned upstream Thruk client for interoperability tests, builds the rootless container and executes its installed monitoring plugins.

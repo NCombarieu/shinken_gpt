@@ -28,8 +28,13 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Check locked dependencies
+        id: lock
         run: cargo fetch --locked
+      - name: Resolve changed dependencies for diagnostics
+        if: "!cancelled() && steps.lock.outcome == 'failure'"
+        run: cargo generate-lockfile
       - name: Formatting gate
+        if: "!cancelled()"
         run: cargo fmt --all -- --check
       - name: Collect canonical formatting
         if: "!cancelled()"
@@ -61,6 +66,7 @@ jobs:
         run: |
           target/debug/shinken-rs config-check etc/shinken.cfg
           python3 rust/tests/smoke.py target/debug/shinken-rs
+          python3 rust/tests/notifications-smoke.py target/debug/shinken-rs
       - name: Save canonical sources and dependency lock for review
         if: "!cancelled()"
         uses: actions/upload-artifact@v4

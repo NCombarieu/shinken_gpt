@@ -48,7 +48,7 @@ def run_suite(binary):
         objects = root / "objects" / "nested"
         objects.mkdir(parents=True)
         main = root / "main.cfg"
-        main.write_text("cfg_dir=objects\nresource_file=resource.cfg\ninterval_length=1\n"
+        main.write_text("cfg_dir=objects\nresource_file=resource.cfg\ninterval_length=1\nenable_notifications=0\n"
                         "service_check_timeout=0.2\nhost_check_timeout=0.2\nmax_plugins_output_length=256\n")
         (root / "resource.cfg").write_text("$USER1$=/bin\n$ROOT$=" + temp + "\n")
         os.symlink(root / "objects", objects / "cycle")

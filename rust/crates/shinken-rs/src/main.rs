@@ -137,6 +137,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
             let scheduler = engine.clone();
             tasks.spawn(async move { scheduler.run_forever().await });
+            let notifier = engine.clone();
+            tasks.spawn(async move { notifier.run_notifications_forever().await });
             if let Some(path) = state_file.clone() {
                 let engine = engine.clone();
                 tasks.spawn(async move {

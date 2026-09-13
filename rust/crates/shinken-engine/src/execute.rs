@@ -109,8 +109,8 @@ fn substitute(text: &str, macros: &Attributes) -> Result<String, String> {
     result.push_str(rest);
     Ok(result)
 }
-fn render(config: &MonitoringConfig, d: &Definition) -> Result<String, String> {
-    let parts = arguments(&d.check.command);
+fn render(config: &MonitoringConfig, d: &Definition, reference: &str, extra: &Attributes) -> Result<(String, Attributes), String> {
+    let parts = arguments(reference);
     let command = config
         .commands
         .get(&parts[0])
@@ -144,6 +144,7 @@ fn render(config: &MonitoringConfig, d: &Definition) -> Result<String, String> {
             }
         }
     }
+    for name in extra.keys() { macros.insert(name.clone(), name.clone()); }
     let mut line = command.command_line.clone();
     let mut seen = BTreeSet::new();
     for _ in 0..32 {
@@ -152,12 +153,48 @@ fn render(config: &MonitoringConfig, d: &Definition) -> Result<String, String> {
         }
         let next = substitute(&line, &macros)?;
         if next == line {
-            return Ok(line.replace("$$", "$"));
+            return Ok(dynamic_environment(&line.replace("$$", "$"), extra));
         }
         line = next;
     }
     Err("command macro expansion exceeds 32 levels".into())
 }
+
+// Dynamic values travel through environment variables so plugin output cannot become shell code.
+fn dynamic_environment(line:&str,extra:&Attributes)->(String,Attributes){
+    let mut environment=Attributes::new();let mut names=Attributes::new();
+    for (i,(key,value)) in extra.iter().enumerate(){
+        let name=format!("SHINKEN_MACRO_{i}");environment.insert(name.clone(),value.clone());names.insert(key.clone(),name);
+    }
+    let mut output=String::new();let mut rest=line;let mut quote=0;
+    while !rest.is_empty(){
+        let c=rest.chars().next().expect("nonempty input");rest=&rest[c.len_utf8()..];
+        if c=='\\'&&quote!=1{
+            output.push(c);
+            if let Some(c)=rest.chars().next(){output.push(c);rest=&rest[c.len_utf8()..];}
+            continue;
+        }
+        if c=='$'{
+            if let Some(end)=rest.find('$'){
+                let key=format!("{}{}{}",'$',&rest[..end],'$');
+                if let Some(name)=names.get(&key){
+                    let expansion=format!("{}{{{}}}",'$',name);
+                    match quote {
+                        1=>output.push_str(&format!("'\"{expansion}\"'")),
+                        2=>output.push_str(&expansion),
+                        _=>output.push_str(&format!("\"{expansion}\"")),
+                    }
+                    rest=&rest[end+1..];continue;
+                }
+            }
+        }
+        if c=='\''&&quote!=2{quote=if quote==1{0}else{1};}
+        if c=='"'&&quote!=1{quote=if quote==2{0}else{2};}
+        output.push(c);
+    }
+    (output,environment)
+}
+
 struct ProcessGroup(Pid);
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
@@ -180,13 +217,17 @@ async fn drain(mut reader: impl AsyncRead + Unpin, limit: usize) -> io::Result<(
     Ok((bytes, truncated))
 }
 pub(crate) async fn run(config: &MonitoringConfig, d: &Definition) -> PluginResult {
+    run_with(config,d,&d.check.command,&Attributes::new(),d.check.timeout_ms).await
+}
+pub(crate) async fn run_with(config: &MonitoringConfig, d: &Definition, reference: &str, extra: &Attributes, timeout_ms: u64) -> PluginResult {
     let started = Instant::now();
-    let line = match render(config, d) {
+    let (line, environment) = match render(config, d, reference, extra) {
         Ok(v) => v,
         Err(e) => return PluginResult::failure(e, 0.0),
     };
     let mut process = std::process::Command::new("/bin/sh");
     process
+        .envs(environment)
         .arg("-c")
         .arg(line)
         .stdin(Stdio::null())
@@ -211,7 +252,7 @@ pub(crate) async fn run(config: &MonitoringConfig, d: &Definition) -> PluginResu
     let group = ProcessGroup(Pid::from_raw(pid));
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take().expect("piped stderr");
-    let result = time::timeout(Duration::from_millis(d.check.timeout_ms), async {
+    let result = time::timeout(Duration::from_millis(timeout_ms), async {
         tokio::try_join!(
             child.wait(),
             drain(stdout, config.max_output_bytes),
@@ -226,7 +267,7 @@ pub(crate) async fn run(config: &MonitoringConfig, d: &Definition) -> PluginResu
             let _ = child.kill().await;
             let _ = child.wait().await;
             PluginResult::failure(
-                format!("check timed out after {} ms", d.check.timeout_ms),
+                format!("command timed out after {timeout_ms} ms"),
                 elapsed,
             )
         }

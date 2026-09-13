@@ -8,6 +8,10 @@ use std::{
     path::{Path, PathBuf},
 };
 use thiserror::Error;
+mod timeperiod;
+pub use timeperiod::TimePeriods;
+mod notification;
+pub use notification::{ContactNotifications, NotificationConfig, NotificationRoute, option_for};
 
 pub type Attributes = BTreeMap<String, String>;
 
@@ -263,6 +267,7 @@ pub struct CommandConfig {
 }
 #[derive(Clone, Debug)]
 pub struct HostConfig {
+    pub notification: NotificationConfig,
     pub name: String,
     pub address: String,
     pub check: CheckConfig,
@@ -270,6 +275,7 @@ pub struct HostConfig {
 }
 #[derive(Clone, Debug)]
 pub struct ServiceConfig {
+    pub notification: NotificationConfig,
     pub host_name: String,
     pub description: String,
     pub check: CheckConfig,
@@ -277,6 +283,10 @@ pub struct ServiceConfig {
 }
 #[derive(Clone, Debug)]
 pub struct MonitoringConfig {
+    pub notification_routes: BTreeMap<String, ContactNotifications>,
+    pub enable_notifications: bool,
+    pub notification_timeout_ms: u64,
+    pub periods: TimePeriods,
     pub commands: BTreeMap<String, CommandConfig>,
     pub hosts: BTreeMap<String, HostConfig>,
     pub services: Vec<ServiceConfig>,
@@ -468,6 +478,10 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
         ));
     }
     let mut model = MonitoringConfig {
+        notification_routes: BTreeMap::new(),
+        enable_notifications: flag(&loaded.settings, "enable_notifications", true)?,
+        notification_timeout_ms: (positive(value(&loaded.settings, "notification_timeout", "30"), "notification_timeout", false)? * 1000.0).round() as u64,
+        periods: TimePeriods::build(&resolved, &loaded.settings)?,
         commands: BTreeMap::new(),
         hosts: BTreeMap::new(),
         services: Vec::new(),
@@ -506,6 +520,7 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
             "host" => {
                 let name = required(a, "host_name")?.to_owned();
                 let host = HostConfig {
+                    notification: NotificationConfig::build(a, interval_length, true, &model.periods)?,
                     name: name.clone(),
                     address: value(a, "address", &name).to_owned(),
                     check: check(a, &loaded.settings, interval_length, true)?,
@@ -538,29 +553,7 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
                     return Err(semantic(format!("duplicate contactgroup {name}")));
                 }
             }
-            "timeperiod" => {
-                if value(a, "timeperiod_name", "") == "24x7" {
-                    let days = [
-                        "monday",
-                        "tuesday",
-                        "wednesday",
-                        "thursday",
-                        "friday",
-                        "saturday",
-                        "sunday",
-                    ];
-                    if days.iter().any(|day| value(a, day, "") != "00:00-24:00")
-                        || a.keys().any(|key| {
-                            !days.contains(&key.as_str())
-                                && !["timeperiod_name", "name", "alias", "register", "use"]
-                                    .contains(&key.as_str())
-                        })
-                    {
-                        return Err(semantic("24x7 must cover every day without exceptions"));
-                    }
-                }
-            }
-            "service" | "servicegroup" => {}
+            "service" | "servicegroup" | "timeperiod" | "notificationway" => {}
             _ => {
                 unsupported.insert(kind.to_string());
             }
@@ -636,6 +629,7 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
                 return Err(semantic(format!("duplicate service {host}/{description}")));
             }
             model.services.push(ServiceConfig {
+                notification: NotificationConfig::build(a, interval_length, false, &model.periods)?,
                 host_name: host.clone(),
                 description: description.to_owned(),
                 check: check(a, &loaded.settings, interval_length, false)?,
@@ -701,6 +695,7 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
         }
     }
     model.contactgroups = contactgroups.clone();
+    model.notification_routes = notification::routes(&resolved, &model.contacts, &model.commands, &model.periods)?;
     for (name, c, a) in model
         .hosts
         .values()
@@ -737,14 +732,15 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
                 c.command
             )));
         }
-        if !["", "24x7"].contains(&value(a, "check_period", "")) {
-            return Err(semantic(format!("{name}: check_period {} is not supported yet; refusing to run outside the configured period",value(a,"check_period",""))));
-        }
+        model.periods.validate_use(value(a, "check_period", ""), value(a, "use_timezone", ""))?;
     }
     for h in model.hosts.values_mut() {
         expand_contacts(&mut h.attributes, &contactgroups);
     }
     for s in &mut model.services {
+        if !s.attributes.contains_key("contacts") && !s.attributes.contains_key("contact_groups") {
+            s.attributes.insert("contacts".into(), value(&model.hosts[&s.host_name].attributes, "contacts", "").into());
+        }
         expand_contacts(&mut s.attributes, &contactgroups);
     }
     if !unsupported.is_empty() {
@@ -753,7 +749,7 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
             unsupported.into_iter().collect::<Vec<_>>().join(", ")
         ));
     }
-    model.warnings.push("Notifications, event handlers, dependency logic and flapping detection are not implemented in this alpha.".to_owned());
+    model.warnings.push("Escalations, event handlers, dependency logic and flapping detection are not implemented in this alpha.".to_owned());
     model
         .services
         .sort_by(|a, b| (&a.host_name, &a.description).cmp(&(&b.host_name, &b.description)));

@@ -92,6 +92,11 @@ impl Engine {
         args: &[&str],
         stamp: u64,
     ) -> Result<(), EngineError> {
+        if ["ENABLE_NOTIFICATIONS", "DISABLE_NOTIFICATIONS"].contains(&name) {
+            count(args, 0)?;
+            state.notifications_enabled = Some(name == "ENABLE_NOTIFICATIONS");
+            return Ok(());
+        }
         let global = match name {
             "START_EXECUTING_HOST_CHECKS" => Some((&mut state.host_checks, true)),
             "STOP_EXECUTING_HOST_CHECKS" => Some((&mut state.host_checks, false)),
@@ -137,6 +142,7 @@ impl Engine {
             return Ok(());
         }
         let supported = [
+            "ENABLE_HOST_NOTIFICATIONS", "DISABLE_HOST_NOTIFICATIONS", "ENABLE_SVC_NOTIFICATIONS", "DISABLE_SVC_NOTIFICATIONS",
             "PROCESS_HOST_CHECK_RESULT",
             "PROCESS_SERVICE_CHECK_RESULT",
             "ENABLE_HOST_CHECK",
@@ -167,6 +173,10 @@ impl Engine {
         }
         let (key, args) = self.target(name, args)?;
         match name {
+            "ENABLE_HOST_NOTIFICATIONS" | "DISABLE_HOST_NOTIFICATIONS" | "ENABLE_SVC_NOTIFICATIONS" | "DISABLE_SVC_NOTIFICATIONS" => {
+                count(args, 0)?;
+                state.objects.get_mut(&key).expect("known key").notification.enabled = Some(name.starts_with("ENABLE"));
+            }
             "PROCESS_HOST_CHECK_RESULT" | "PROCESS_SERVICE_CHECK_RESULT" => {
                 if args.len() < 2 {
                     return Err(invalid("expected return code and plugin output"));

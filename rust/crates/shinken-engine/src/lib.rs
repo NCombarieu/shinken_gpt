@@ -3,6 +3,7 @@ mod commands;
 mod execute;
 mod server;
 mod tables;
+mod notifications;
 pub use server::UnixEndpoint;
 
 use serde::{Deserialize, Serialize};
@@ -41,6 +42,7 @@ pub struct Engine {
 }
 #[derive(Clone)]
 struct Definition {
+    notification: shinken_config::NotificationConfig,
     host: String,
     service: Option<String>,
     check: CheckConfig,
@@ -48,6 +50,8 @@ struct Definition {
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Runtime {
+    #[serde(default)]
+    notification: notifications::NotificationState,
     status: ServiceStatus,
     output: String,
     long_output: String,
@@ -76,6 +80,7 @@ struct Runtime {
 impl Runtime {
     fn new(check: &CheckConfig) -> Self {
         Self {
+            notification: notifications::NotificationState::default(),
             status: ServiceStatus::new(check.max_attempts),
             output: "PENDING".into(),
             long_output: String::new(),
@@ -131,6 +136,8 @@ struct LogEntry {
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Snapshot {
+    #[serde(default)]
+    notifications_enabled: Option<bool>,
     version: u32,
     objects: BTreeMap<String, Runtime>,
     comments: Vec<Comment>,
@@ -183,6 +190,7 @@ impl Engine {
             definitions.insert(
                 host_key(&h.name),
                 Definition {
+                    notification: h.notification.clone(),
                     host: h.name.clone(),
                     service: None,
                     check: h.check.clone(),
@@ -194,6 +202,7 @@ impl Engine {
             definitions.insert(
                 service_key(&s.host_name, &s.description),
                 Definition {
+                    notification: s.notification.clone(),
                     host: s.host_name.clone(),
                     service: Some(s.description.clone()),
                     check: s.check.clone(),
@@ -206,6 +215,7 @@ impl Engine {
             .map(|(k, d)| (k.clone(), Runtime::new(&d.check)))
             .collect();
         let started = now_ms() / 1000;
+        let notifications_enabled = Some(config.enable_notifications);
         let host_checks = config.execute_host_checks;
         let service_checks = config.execute_service_checks;
         let passive_hosts = config.accept_passive_host_checks;
@@ -216,6 +226,7 @@ impl Engine {
             max_concurrent,
             started,
             state: Arc::new(RwLock::new(Snapshot {
+                notifications_enabled,
                 version: 1,
                 objects,
                 comments: Vec::new(),
@@ -285,6 +296,7 @@ impl Engine {
         state.service_checks = saved.service_checks;
         state.passive_hosts = saved.passive_hosts;
         state.passive_services = saved.passive_services;
+        state.notifications_enabled = saved.notifications_enabled;
         Ok(())
     }
     pub async fn save(&self, path: &Path) -> Result<(), EngineError> {
@@ -365,6 +377,14 @@ impl Engine {
             return None;
         }
         r.executing = true;
+        let period = definition.attributes.get("check_period").map_or("", String::as_str);
+        let zone = definition.attributes.get("use_timezone").map_or("", String::as_str);
+        if !r.force && !self.config.periods.allows(period, zone, now / 1000) {
+            r.executing = false;
+            r.next_check_ms = self.config.periods.next_opening(period, zone, now / 1000)
+                .map_or(now.saturating_add(86_400_000), |t| t.saturating_mul(1000));
+            return None;
+        }
         r.force = false;
         r.latency = if r.next_check_ms > 0 {
             now.saturating_sub(r.next_check_ms) as f64 / 1000.0
@@ -401,6 +421,9 @@ impl Engine {
             return;
         };
         let previous = r.status;
+        if previous.state == CheckState::Ok && result.code != 0 {
+            r.notification.problem_since_ms = at.saturating_mul(1000);
+        }
         let next = CheckState::from_plugin_status(i32::from(result.code));
         r.status = r.status.apply_result(next);
         if passive {

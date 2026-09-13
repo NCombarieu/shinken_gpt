@@ -161,6 +161,12 @@ fn object_row(d: &Definition, r: &Runtime, state: &Snapshot, key: &str, engine: 
         put(&mut row, &format!("{name}_expanded"), value);
     }
     put(&mut row, "check_command", &d.check.command);
+    put(&mut row, "notifications_enabled", u8::from(r.notification.enabled.unwrap_or(d.notification.enabled)));
+    put(&mut row, "last_notification", r.notification.last_notification);
+    put(&mut row, "current_notification_number", r.notification.number);
+    put(&mut row, "in_notification_period", u8::from(engine.config.periods.allows(
+        &d.notification.period, a.get("use_timezone").map_or("", String::as_str), now_ms() / 1000,
+    )));
     put(
         &mut row,
         "check_interval",
@@ -222,7 +228,11 @@ fn object_row(d: &Definition, r: &Runtime, state: &Snapshot, key: &str, engine: 
     put(&mut row, "perf_data", &r.perf_data);
     put(&mut row, "execution_time", r.execution_time);
     put(&mut row, "latency", r.latency);
-    put(&mut row, "in_check_period", 1);
+    put(&mut row, "in_check_period", u8::from(engine.config.periods.allows(
+        a.get("check_period").map_or("", String::as_str),
+        a.get("use_timezone").map_or("", String::as_str),
+        now_ms() / 1000,
+    )));
     for (i, name) in [
         "last_time_ok",
         "last_time_warning",
@@ -493,6 +503,7 @@ impl Engine {
                 put(&mut r, "program_start", self.started);
                 put(&mut r, "last_command_check", state.last_command_check);
                 put(&mut r, "interval_length", self.config.interval_length);
+                put(&mut r, "enable_notifications", u8::from(state.notifications_enabled.unwrap_or(self.config.enable_notifications)));
                 put(&mut r, "check_external_commands", 1);
                 put(&mut r, "execute_host_checks", u8::from(state.host_checks));
                 put(
@@ -606,6 +617,13 @@ impl Engine {
                     for (k, v) in a {
                         if r.get(k).is_some_and(Value::is_string) {
                             put(&mut r, k, v);
+                        }
+                    }
+                    if let Some(routes) = self.config.notification_routes.get(name) {
+                        for (kind, routes) in [("host", &routes.host), ("service", &routes.service)] {
+                            put(&mut r, &format!("{kind}_notifications_enabled"), u8::from(routes.iter().any(|r| r.enabled)));
+                            put(&mut r, &format!("{kind}_notification_commands"), routes.iter().map(|r| &r.command).collect::<Vec<_>>());
+                            put(&mut r, &format!("in_{kind}_notification_period"), u8::from(routes.iter().any(|r| self.config.periods.allows(&r.period, "", now_ms() / 1000))));
                         }
                     }
                     put(
