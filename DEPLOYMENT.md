@@ -184,3 +184,37 @@ redondante avec celle de Thruk (double authentification pour l'instant) —
 
 L'ancien reverse_proxy vers `127.0.0.1:8081` (broker Shinken) n'est plus
 utilisé, mais le port reste dispo si la stack Shinken est relancée.
+
+## Mise à jour (2026-09-13, suite) : page inaccessible, double auth + port 8443 qui fuit
+
+Deux bugs corrigés après la bascule vers Naemon/Thruk :
+
+1. **Retiré le `basic_auth` Caddy redondant.** Le double niveau
+   d'authentification (Caddy + Thruk) provoquait des re-demandes de mot de
+   passe en boucle côté navigateur (les requêtes AJAX de Thruk ne
+   renvoyaient pas systématiquement l'auth Caddy). Thruk a sa propre
+   authentification par utilisateur (`etc/htpasswd` du site OMD), donc une
+   seule couche suffit — même pattern que `portail.ncombarieu.fr`.
+
+2. **Le vrai bug bloquant** : la page de login de Thruk (`login.cgi`)
+   redirigeait vers `https://shinken.ncombarieu.fr:8443/...` — le port
+   *interne au conteneur* (mappé uniquement sur `127.0.0.1:8443` côté
+   hôte), jamais ouvert publiquement. Un vrai navigateur ne pouvait donc
+   jamais charger la page de login. Cause : l'Apache "système" de l'OMD
+   (`etc/apache/proxy-port.conf`) construit ses URLs de redirection à
+   partir du header `X-Forwarded-Port` s'il est déjà présent dans la
+   requête, sinon de son propre `SERVER_PORT`. Fix : forcer explicitement
+   les bons headers côté Caddy plutôt que de laisser Apache deviner :
+
+   ```caddy
+   reverse_proxy https://127.0.0.1:8443 {
+       header_up X-Forwarded-Port "443"
+       header_up X-Forwarded-Proto "https"
+       transport http {
+           tls_insecure_skip_verify
+       }
+   }
+   ```
+
+Config finale de `/etc/caddy/sites/shinken.ncombarieu.fr.caddy` : plus de
+`basic_auth`, juste le `redir /` + `reverse_proxy` ci-dessus.
