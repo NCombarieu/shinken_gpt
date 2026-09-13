@@ -218,3 +218,27 @@ Deux bugs corrigés après la bascule vers Naemon/Thruk :
 
 Config finale de `/etc/caddy/sites/shinken.ncombarieu.fr.caddy` : plus de
 `basic_auth`, juste le `redir /` + `reverse_proxy` ci-dessus.
+
+## Mise à jour (2026-09-13, suite 2) : URL "/demo/thruk/" visible
+
+Retiré le `redir / /demo/thruk/ 302` (redirection HTTP visible, changeait
+la barre d'adresse) au profit d'un `rewrite / /demo/thruk/` (réécriture
+interne, transparente pour le navigateur) dans
+`/etc/caddy/sites/shinken.ncombarieu.fr.caddy`. Le premier chargement de
+`https://shinken.ncombarieu.fr/` reste donc sur cette URL.
+
+Tenté de renommer le site OMD "demo" en "shinken" (`omd mv demo shinken`)
+pour faire disparaître complètement `/demo/` des URLs internes de Thruk :
+échoue avec `OSError: Device or resource busy`, parce que le volume
+persistant est monté directement à la racine du site
+(`/opt/omd/sites/demo`), et `omd mv` fait un `os.rename()` qui ne peut pas
+déplacer un point de montage. Un vrai renommage demanderait de sortir les
+données du volume, refaire le rename hors mount, recréer un volume nommé
+`shinken`, ET rejouer l'enregistrement système du site (utilisateur Linux,
+alias Apache global) qui ne vit pas dans le volume persistant — trop
+risqué à chaud pour un gain purement cosmétique. Laissé tel quel : une
+fois dans Thruk, les liens internes de l'appli pointent toujours vers
+`/demo/thruk/...` (c'est `url_prefix` dans `etc/thruk/thruk.conf`, pas un
+redirect Caddy). À refaire proprement plus tard si besoin, en construisant
+une image avec `SITENAME=shinken` au build (mécanisme documenté par
+l'image `consol/omd-labs-debian`) plutôt qu'en renommant un site existant.
