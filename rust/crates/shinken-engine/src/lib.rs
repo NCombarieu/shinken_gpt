@@ -395,7 +395,9 @@ fn render_command(
     for _ in 0..8 {
         let expanded = resource_macros
             .iter()
-            .fold(line.clone(), |current, (name, value)| current.replace(name, value));
+            .fold(line.clone(), |current, (name, value)| {
+                current.replace(name, value)
+            });
         if expanded == line {
             break;
         }
