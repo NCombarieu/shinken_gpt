@@ -329,7 +329,10 @@ fn encode_rows(rows: &[Row], query: &Query) -> Vec<u8> {
             let value = if query.output_format == OutputFormat::WrappedJson {
                 json!({"columns": columns, "data": values})
             } else if query.column_headers {
-                json!([Value::Array(columns.into_iter().map(Value::String).collect()), values])
+                json!([
+                    Value::Array(columns.into_iter().map(Value::String).collect()),
+                    values
+                ])
             } else {
                 Value::Array(values)
             };
