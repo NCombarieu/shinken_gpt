@@ -175,17 +175,18 @@ impl Engine {
             .ok_or_else(|| EngineError::UnknownCommand(command_name.to_owned()))?;
         let command_line = render_command(command, host, arguments, &self.config.resource_macros);
         let started = std::time::Instant::now();
-        let child = Command::new("/bin/sh")
-            .arg("-c")
-            .arg(command_line)
-            .output();
+        let child = Command::new("/bin/sh").arg("-c").arg(command_line).output();
         let output = time::timeout(Duration::from_secs(60), child)
             .await
             .map_err(|_| EngineError::UnknownCommand("check timeout".to_owned()))?
             .map_err(EngineError::Bind)?;
         let state = CheckState::from_plugin_status(output.status.code().unwrap_or(3));
-        let mut text = String::from_utf8_lossy(&output.stdout).trim_end().to_owned();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim_end().to_owned();
+        let mut text = String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr)
+            .trim_end()
+            .to_owned();
         if !stderr.is_empty() {
             if !text.is_empty() {
                 text.push_str(" | ");
@@ -237,7 +238,12 @@ impl Engine {
         };
         let rows: Vec<_> = rows
             .into_iter()
-            .filter(|row| query.filters.iter().all(|filter| matches_filter(row, filter)))
+            .filter(|row| {
+                query
+                    .filters
+                    .iter()
+                    .all(|filter| matches_filter(row, filter))
+            })
             .take(query.limit.unwrap_or(usize::MAX))
             .collect();
         let body = encode_rows(&rows, query);
@@ -280,12 +286,18 @@ impl Engine {
                     ("host_name", json!(service.definition.host_name)),
                     ("description", json!(service.definition.description)),
                     ("state", json!(numeric_state(service.status.state))),
-                    ("state_type", json!(numeric_state_type(service.status.state_type))),
+                    (
+                        "state_type",
+                        json!(numeric_state_type(service.status.state_type)),
+                    ),
                     ("current_attempt", json!(service.status.attempt)),
                     ("max_check_attempts", json!(service.status.max_attempts)),
                     ("plugin_output", json!(service.output)),
                     ("last_check", json!(service.last_check)),
-                    ("execution_time", json!(service.last_execution_millis as f64 / 1000.0)),
+                    (
+                        "execution_time",
+                        json!(service.last_execution_millis as f64 / 1000.0),
+                    ),
                 ])
             })
             .collect()
@@ -302,7 +314,10 @@ fn row<const N: usize>(entries: [(&str, Value); N]) -> Row {
 }
 
 fn status_row() -> Row {
-    row([("program_version", json!(env!("CARGO_PKG_VERSION"))), ("num_hosts", json!(0))])
+    row([
+        ("program_version", json!(env!("CARGO_PKG_VERSION"))),
+        ("num_hosts", json!(0)),
+    ])
 }
 
 fn encode_rows(rows: &[Row], query: &Query) -> Vec<u8> {

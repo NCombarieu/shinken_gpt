@@ -298,18 +298,24 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
             "command" => {
                 let name = required(&directives, "command_name", "command")?;
                 let command_line = required(&directives, "command_line", "command")?;
-                commands.insert(name.to_owned(), CommandConfig {
-                    name: name.to_owned(),
-                    command_line: command_line.to_owned(),
-                });
+                commands.insert(
+                    name.to_owned(),
+                    CommandConfig {
+                        name: name.to_owned(),
+                        command_line: command_line.to_owned(),
+                    },
+                );
             }
             "host" if directive_value_from(&directives, "register") != Some("0") => {
                 let name = required(&directives, "host_name", "host")?;
                 let address = directive_value_from(&directives, "address").unwrap_or(name);
-                hosts.insert(name.to_owned(), HostConfig {
-                    name: name.to_owned(),
-                    address: address.to_owned(),
-                });
+                hosts.insert(
+                    name.to_owned(),
+                    HostConfig {
+                        name: name.to_owned(),
+                        address: address.to_owned(),
+                    },
+                );
             }
             "service" if directive_value_from(&directives, "register") != Some("0") => {
                 let host_names = match directive_value_from(&directives, "host_name") {
@@ -388,7 +394,9 @@ fn resolved_directives<'a>(
     if let Some(parent_name) = directive_value(object, "use") {
         let key = (object.kind.as_str(), parent_name);
         if !visiting.insert(key) {
-            return Err(LoadError::Semantic(format!("cyclic template use: {parent_name}")));
+            return Err(LoadError::Semantic(format!(
+                "cyclic template use: {parent_name}"
+            )));
         }
         let parent = templates.get(&key).ok_or_else(|| {
             LoadError::Semantic(format!("unknown {} template: {parent_name}", object.kind))
@@ -405,11 +413,7 @@ fn resolved_directives<'a>(
     Ok(directives)
 }
 
-fn required<'a>(
-    directives: &'a [Directive],
-    name: &str,
-    kind: &str,
-) -> Result<&'a str, LoadError> {
+fn required<'a>(directives: &'a [Directive], name: &str, kind: &str) -> Result<&'a str, LoadError> {
     directive_value_from(directives, name)
         .ok_or_else(|| LoadError::Semantic(format!("{kind} requires {name}")))
 }
