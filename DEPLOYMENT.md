@@ -338,3 +338,45 @@ Deux bugs distincts, tous deux corrigés :
 guillaume (sans effet direct sur ce point précis vu l'absence de colonne
 Livestatus, mais cohérent avec le contact "admin" préexistant et utile
 si d'autres fonctionnalités Thruk s'appuient dessus plus tard).
+
+## Mise à jour (2026-09-13, suite 4) : procédure d'exploitation — appliquer une conf modifiée
+
+**Fichiers `.cfg` sous `etc/`** (host, service, template, contact...) : pas
+de rebuild nécessaire, `./etc` est monté en bind-mount (`compose.yaml`).
+Éditer le fichier puis relancer l'arbiter suffit — il relit sa config au
+démarrage et la redistribue lui-même à tous les autres daemons :
+
+```sh
+podman restart shinken_arbiter_1
+```
+
+**Code Python** (`shinken/*.py`, `modules/*.py`) : là il faut rebuild
+l'image (copiée dedans au build) :
+
+```sh
+podman-compose build
+podman-compose up -d --force-recreate
+```
+
+### Reload/Restart depuis Thruk (côté exploitant, sans toucher au serveur)
+
+Les commandes `reload-shinken`/`restart-shinken` (`etc/commands/`)
+pointaient vers `/etc/init.d/shinken reload|restart` — un script qui
+n'existe pas dans ce déploiement conteneurisé (chaque daemon est son
+propre container, pas de service SysV unique). Le bouton "Reload"/
+"Restart" de Thruk (page Process Info, commandes `RELOAD_CONFIG`/
+`RESTART_PROGRAM`) échouait donc silencieusement.
+
+Corrigé : ces deux commandes font maintenant `pkill -TERM -f
+shinken-arbiter`. Shinken n'a pas de reload à chaud façon SIGHUP (aucun
+handler dans `shinken/daemon.py`), donc "reload" et "restart" reviennent
+de toute façon à la même chose ici : tuer le process arbiter fait sortir
+tini (PID 1 du container), et `restart: unless-stopped` dans
+`compose.yaml` relance le container tout seul, qui relit `etc/` et
+redistribue la config aux autres daemons. Testé via `RELOAD_CONFIG` en
+Livestatus brut : le container arbiter redémarre bien (~14s après la
+commande).
+
+Donc pour l'admin supervision au quotidien : ajouter un template
+d'hôte, sauvegarder, puis cliquer "Reload" dans Thruk (Process Info) —
+ou `podman restart shinken_arbiter_1` en ligne de commande, équivalent.
