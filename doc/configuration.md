@@ -91,11 +91,17 @@ C'est le **poller** qui exécute les plugins, depuis son propre container
 (`shinken_poller_1`) — pas depuis votre poste ni depuis l'hôte directement.
 Trois conséquences concrètes :
 
-1. **ICMP (ping) est bloqué volontairement.** `compose.yaml` retire toutes
-   les capacités (`cap_drop: ALL`), y compris `CAP_NET_RAW`. `check_ping`,
-   `check_icmp`, et donc le `check_host_alive` par défaut (qui appelle
-   `check_ping`), **ne fonctionneront jamais** tels quels. Remplacer le
-   `check_command` d'un host par un check TCP/HTTP :
+1. **ICMP (ping) est bloqué par défaut, réautorisé seulement sur le poller.**
+   `compose.yaml` retire toutes les capacités par défaut (`cap_drop: ALL`),
+   mais le service `poller` (celui qui exécute réellement les plugins)
+   ajoute `cap_add: [NET_RAW]` — donc `check_ping`/`check_icmp` fonctionnent
+   normalement (voir `etc/hosts/localhost.cfg`, host `KIKI`). Les autres
+   daemons (arbiter, scheduler, broker, reactionner, receiver) restent sans
+   aucune capacité réseau spéciale, `NET_RAW` n'est ajoutée qu'au strict
+   nécessaire.
+
+   Pour un check "est-ce que le service répond" plutôt que "est-ce que l'IP
+   répond au ping", un check TCP/HTTP reste plus pertinent :
 
     ```ini
     check_command    check_tcp!443

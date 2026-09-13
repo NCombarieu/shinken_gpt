@@ -37,6 +37,8 @@ services:
   poller:
     <<: *shinken
     command: ["poller"]
+    cap_add:
+      - NET_RAW
 
   reactionner:
     <<: *shinken
