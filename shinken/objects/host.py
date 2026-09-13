@@ -704,6 +704,11 @@ class Host(six.with_metaclass(AutoSlots, SchedulingItem)):
             self.address = self.host_name
         if hasattr(self, 'host_name') and not hasattr(self, 'alias'):
             self.alias = self.host_name
+        # Unlike Service (which does this for service_description),
+        # display_name always had a '' default and nothing ever fell back
+        # to host_name -> Livestatus/Thruk showed a blank host column.
+        if getattr(self, 'display_name', '') == '':
+            self.display_name = getattr(self, 'host_name', '')
 
 
     # Check is required prop are set:
