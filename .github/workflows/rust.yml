@@ -1,23 +1,25 @@
 name: Rust
-
 on:
   push:
-    branches:
-      - rewrite/rust-core
+    branches: [rewrite/rust-core]
   pull_request:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "rust/**"
+      - "Containerfile.rust"
+      - "compose.rust.yaml"
       - ".github/workflows/rust.yml"
-
 permissions:
   contents: read
-
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -25,6 +27,74 @@ jobs:
           toolchain: 1.85.0
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace --all-targets
+      - name: Resolve dependencies (bootstrap only until Cargo.lock is committed)
+        run: |
+          if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
+      - name: Formatting gate
+        run: cargo fmt --all -- --check
+      - name: Collect canonical formatting
+        if: "!cancelled()"
+        run: cargo fmt --all
+      - name: Clippy
+        if: "!cancelled()"
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Unit tests
+        if: "!cancelled()"
+        run: cargo test --locked --workspace --all-targets
+      - name: Build standalone executable
+        id: build
+        if: "!cancelled()"
+        run: cargo build --locked -p shinken-rs
+      - name: Install upstream Thruk client dependencies
+        if: "!cancelled() && steps.build.outcome == 'success'"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libcpanel-json-xs-perl libio-socket-ip-perl
+          mkdir -p /tmp/thruk-client/Monitoring/Livestatus
+          ref=8525096bf12a47c7b1774f40ed8ca13835fd3965
+          for path in Livestatus.pm Livestatus/INET.pm Livestatus/UNIX.pm; do
+            curl --fail --location --retry 3 "https://raw.githubusercontent.com/sni/thruk/$ref/lib/Monitoring/$path" -o "/tmp/thruk-client/Monitoring/$path"
+          done
+      - name: Real daemon, plugins and upstream Thruk client
+        if: "!cancelled() && steps.build.outcome == 'success'"
+        env:
+          THRUK_PERL_LIB: /tmp/thruk-client
+        run: python3 rust/tests/smoke.py target/debug/shinken-rs
+      - name: Save canonical sources and dependency lock for review
+        if: "!cancelled()"
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-canonical-sources
+          path: |
+            Cargo.lock
+            rust/crates/**/*.rs
+      - name: Save Linux executable
+        if: "!cancelled() && steps.build.outcome == 'success'"
+        uses: actions/upload-artifact@v4
+        with:
+          name: shinken-rs-linux-x86_64-debug
+          path: target/debug/shinken-rs
+  container:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build rootless container
+        run: |
+          podman --version
+          podman build -f Containerfile.rust -t localhost/shinken-rs:test .
+      - name: Execute installed monitoring plugins without Python
+        run: |
+          podman run --rm --entrypoint /bin/sh localhost/shinken-rs:test -c 'test ! -e /usr/bin/python3 && test -x /usr/lib/nagios/plugins/check_dummy'
+          podman run --rm localhost/shinken-rs:test config-check /etc/shinken/shinken.cfg
+          podman run --rm localhost/shinken-rs:test run /etc/shinken/shinken.cfg --once > /tmp/once.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/once.json"))
+          assert data["hosts"][1][1] == 0, data
+          services = {r[1]: r for r in data["services"][1:]}
+          assert services["Native check"][2] == 0, data
+          assert services["Example alert"][2] == 2, data
+          assert services["Passive input"][4] == 0, data
+          PY

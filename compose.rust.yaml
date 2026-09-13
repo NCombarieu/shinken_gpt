@@ -1,15 +1,17 @@
 services:
-  shinken-rs:
+  engine:
     build:
       context: .
       dockerfile: Containerfile.rust
-    command:
-      - run
-      - /etc/shinken/shinken.cfg
-      - --livestatus-tcp
-      - 0.0.0.0:6557
+    image: localhost/shinken-rs:dev
+    init: true
     ports:
       - "127.0.0.1:6557:6557"
     volumes:
-      - ./etc:/etc/shinken:ro
-      - ./libexec:/var/lib/shinken/libexec:ro
+      - ./rust/examples/minimal:/etc/shinken:ro,Z
+      - rust-state:/var/lib/shinken
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  rust-state:

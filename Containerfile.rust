@@ -1,11 +1,19 @@
 FROM rust:1.85-bookworm AS build
 WORKDIR /src
-COPY Cargo.toml rust-toolchain.toml ./
-COPY rust ./rust
-RUN cargo build --release --package shinken-rs
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY rust/crates ./rust/crates
+RUN cargo build --locked --release -p shinken-rs
 
 FROM debian:bookworm-slim
-RUN useradd --system --create-home --uid 10001 shinken
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends monitoring-plugins-basic ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home --home-dir /var/lib/shinken shinken \
+    && mkdir -p /run/shinken /etc/shinken \
+    && chown shinken:shinken /run/shinken /var/lib/shinken
 COPY --from=build /src/target/release/shinken-rs /usr/local/bin/shinken-rs
-USER shinken
+COPY rust/examples/minimal/ /etc/shinken/
+USER 10001:10001
+EXPOSE 6557
 ENTRYPOINT ["shinken-rs"]
+CMD ["run", "/etc/shinken/shinken.cfg", "--livestatus-unix", "/run/shinken/live.sock", "--livestatus-tcp", "0.0.0.0:6557", "--state-file", "/var/lib/shinken/state.json"]

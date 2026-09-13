@@ -7,8 +7,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+serde.workspace = true
 shinken-model = { path = "../shinken-model" }
 
 [lints]
 workspace = true
-

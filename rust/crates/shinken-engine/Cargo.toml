@@ -7,6 +7,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+nix.workspace = true
+tempfile.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 shinken-config = { path = "../shinken-config" }
@@ -18,4 +20,3 @@ tokio.workspace = true
 
 [lints]
 workspace = true
-

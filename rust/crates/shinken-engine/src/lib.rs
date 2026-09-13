@@ -1,518 +1,248 @@
-//! Standalone monitoring engine: execution, state and Livestatus serving.
+//! Native monitoring runtime; configuration and Livestatus are independent crates.
+mod commands;
+mod execute;
+mod server;
+mod tables;
+pub use server::UnixEndpoint;
 
-use std::{
-    collections::BTreeMap,
-    path::Path,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
-use serde_json::{json, Value};
-use shinken_config::{CommandConfig, HostConfig, MonitoringConfig, ServiceConfig};
+use std::{collections::{BTreeMap, VecDeque}, fs, io::Write, path::Path, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
+use serde::{Deserialize, Serialize};
+use shinken_config::{Attributes, CheckConfig, MonitoringConfig};
 use shinken_core::ServiceStatus;
-use shinken_livestatus::{fixed16_response, parse_query, OutputFormat, Query, ResponseHeader};
 use shinken_model::{CheckState, StateType};
 use thiserror::Error;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{TcpListener, TcpStream, UnixListener, UnixStream},
-    process::Command,
-    sync::RwLock,
-    task::JoinSet,
-    time,
-};
-
-#[derive(Clone)]
-pub struct Engine {
-    config: Arc<MonitoringConfig>,
-    services: Arc<RwLock<Vec<ServiceRuntime>>>,
-}
-
-#[derive(Clone, Debug)]
-struct ServiceRuntime {
-    definition: ServiceConfig,
-    status: ServiceStatus,
-    output: String,
-    last_check: u64,
-    last_execution_millis: u64,
-}
+use tokio::{sync::RwLock, task::JoinSet, time};
 
 #[derive(Debug, Error)]
 pub enum EngineError {
-    #[error("unknown command {0}")]
-    UnknownCommand(String),
-    #[error("service {0} references unknown host")]
-    UnknownHost(String),
-    #[error("cannot bind Livestatus socket: {0}")]
-    Bind(#[from] std::io::Error),
+    #[error("{0}")]
+    Invalid(String),
+    #[error("I/O: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("retention: {0}")]
+    Retention(#[from] serde_json::Error),
+    #[error("check task failed: {0}")]
+    Task(#[from] tokio::task::JoinError),
 }
-
-impl Engine {
-    #[must_use]
-    pub fn new(config: MonitoringConfig) -> Self {
-        let services = config
-            .services
-            .iter()
-            .cloned()
-            .map(|definition| ServiceRuntime {
-                status: ServiceStatus::new(definition.max_check_attempts),
-                definition,
-                output: "PENDING".to_owned(),
-                last_check: 0,
-                last_execution_millis: 0,
-            })
-            .collect();
+#[derive(Clone)]
+pub struct Engine {
+    config: Arc<MonitoringConfig>,
+    definitions: Arc<BTreeMap<String, Definition>>,
+    state: Arc<RwLock<Snapshot>>,
+    max_concurrent: usize,
+    started: u64,
+}
+#[derive(Clone)]
+struct Definition {
+    host: String,
+    service: Option<String>,
+    check: CheckConfig,
+    attributes: Attributes,
+}
+#[derive(Clone, Serialize, Deserialize)]
+struct Runtime {
+    status: ServiceStatus,
+    output: String,
+    long_output: String,
+    perf_data: String,
+    last_check: u64,
+    next_check_ms: u64,
+    last_state_change: u64,
+    last_hard_state_change: u64,
+    last_state: u8,
+    hard_state: u8,
+    last_hard_state: u8,
+    last_times: [u64;4],
+    execution_time: f64,
+    latency: f64,
+    check_type: u8,
+    active: bool,
+    passive: bool,
+    acknowledgement: u8,
+    #[serde(skip)]
+    executing: bool,
+    #[serde(skip)]
+    force: bool,
+    #[serde(skip)]
+    generation: u64,
+}
+impl Runtime {
+    fn new(check: &CheckConfig) -> Self {
         Self {
-            config: Arc::new(config),
-            services: Arc::new(RwLock::new(services)),
+            status: ServiceStatus::new(check.max_attempts), output:"PENDING".into(),
+            long_output:String::new(),perf_data:String::new(),last_check:0,next_check_ms:0,
+            last_state_change:0,last_hard_state_change:0,last_state:0,hard_state:0,last_hard_state:0,
+            last_times:[0;4],execution_time:0.0,latency:0.0,check_type:0,
+            active:check.active,passive:check.passive,acknowledgement:0,executing:false,force:false,generation:0,
         }
     }
-
-    /// Execute all configured active service checks concurrently.
-    pub async fn run_all_checks(&self) {
-        let count = self.services.read().await.len();
-        let mut tasks = JoinSet::new();
-        for index in 0..count {
-            let engine = self.clone();
-            tasks.spawn(async move { engine.run_service(index).await });
+}
+#[derive(Clone, Serialize, Deserialize)]
+struct Comment {
+    id:u64,key:String,author:String,comment:String,entry_time:u64,persistent:bool,entry_type:u8,
+}
+#[derive(Clone, Serialize, Deserialize)]
+struct Downtime {
+    id:u64,key:String,author:String,comment:String,entry_time:u64,start_time:u64,end_time:u64,
+}
+#[derive(Clone, Serialize, Deserialize)]
+struct LogEntry {
+    time:u64,key:String,state:u8,state_type:String,attempt:u32,output:String,
+}
+#[derive(Clone, Serialize, Deserialize)]
+struct Snapshot {
+    version:u32,
+    objects:BTreeMap<String,Runtime>,
+    comments:Vec<Comment>,
+    downtimes:Vec<Downtime>,
+    log:VecDeque<LogEntry>,
+    next_id:u64,
+    host_checks:bool,
+    service_checks:bool,
+    passive_hosts:bool,
+    passive_services:bool,
+    last_command_check:u64,
+}
+pub(crate) fn host_key(host:&str)->String {format!("H:{host}")}
+pub(crate) fn service_key(host:&str,service:&str)->String {format!("S:{host}\0{service}")}
+pub(crate) fn now_ms()->u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0,|d|u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+pub(crate) fn numeric(state:CheckState)->u8 {
+    match state {CheckState::Ok=>0,CheckState::Warning=>1,CheckState::Critical=>2,CheckState::Unknown=>3}
+}
+pub(crate) fn members(a:&Attributes,key:&str)->Vec<String> {
+    a.get(key).into_iter().flat_map(|v|v.split(',')).map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect()
+}
+impl Engine {
+    pub fn new(config:MonitoringConfig,max_concurrent:usize)->Result<Self,EngineError> {
+        if !(1..=1024).contains(&max_concurrent) {return Err(EngineError::Invalid("concurrency must be between 1 and 1024".into()));}
+        let mut definitions=BTreeMap::new();
+        for h in config.hosts.values() {
+            definitions.insert(host_key(&h.name),Definition{host:h.name.clone(),service:None,check:h.check.clone(),attributes:h.attributes.clone()});
         }
-        while tasks.join_next().await.is_some() {}
+        for s in &config.services {
+            definitions.insert(service_key(&s.host_name,&s.description),Definition{host:s.host_name.clone(),service:Some(s.description.clone()),check:s.check.clone(),attributes:s.attributes.clone()});
+        }
+        let objects=definitions.iter().map(|(k,d)|(k.clone(),Runtime::new(&d.check))).collect();
+        let started=now_ms()/1000;
+        Ok(Self{config:Arc::new(config),definitions:Arc::new(definitions),max_concurrent,started,
+            state:Arc::new(RwLock::new(Snapshot{version:1,objects,comments:Vec::new(),downtimes:Vec::new(),log:VecDeque::new(),next_id:1,host_checks:true,service_checks:true,passive_hosts:true,passive_services:true,last_command_check:started}))})
     }
-
-    /// Execute checks that have reached their configured check interval.
-    pub async fn run_due_checks(&self) {
-        let now = unix_seconds();
-        let due: Vec<_> = self
-            .services
-            .read()
-            .await
-            .iter()
-            .enumerate()
-            .filter_map(|(index, service)| {
-                let interval = service.definition.check_interval_seconds;
-                (service.last_check == 0 || now.saturating_sub(service.last_check) >= interval)
-                    .then_some(index)
-            })
-            .collect();
-        let mut tasks = JoinSet::new();
-        for index in due {
-            let engine = self.clone();
-            tasks.spawn(async move { engine.run_service(index).await });
-        }
-        while tasks.join_next().await.is_some() {}
-    }
-
-    /// Run the scheduling loop until the process receives Ctrl-C.
-    pub async fn run_forever(&self) {
-        let mut tick = time::interval(Duration::from_secs(1));
-        loop {
-            tick.tick().await;
-            self.run_due_checks().await;
-        }
-    }
-
-    pub async fn serve_tcp(&self, address: &str) -> Result<(), EngineError> {
-        let listener = TcpListener::bind(address).await?;
-        loop {
-            let (stream, _) = listener.accept().await?;
-            let engine = self.clone();
-            tokio::spawn(async move { engine.handle_tcp(stream).await });
-        }
-    }
-
-    pub async fn serve_unix(&self, path: impl AsRef<Path>) -> Result<(), EngineError> {
-        let path = path.as_ref();
-        if path.exists() {
-            std::fs::remove_file(path)?;
-        }
-        let listener = UnixListener::bind(path)?;
-        loop {
-            let (stream, _) = listener.accept().await?;
-            let engine = self.clone();
-            tokio::spawn(async move { engine.handle_unix(stream).await });
-        }
-    }
-
-    async fn run_service(&self, index: usize) {
-        let definition = match self.services.read().await.get(index).cloned() {
-            Some(service) => service.definition,
-            None => return,
-        };
-        let result = self.execute(&definition).await;
-        let mut services = self.services.write().await;
-        let Some(service) = services.get_mut(index) else {
-            return;
-        };
-        service.last_check = unix_seconds();
-        match result {
-            Ok((state, output, elapsed)) => {
-                service.status = service.status.apply_result(state);
-                service.output = output;
-                service.last_execution_millis = elapsed;
-            }
-            Err(error) => {
-                service.status = service.status.apply_result(CheckState::Unknown);
-                service.output = format!("UNKNOWN: {error}");
-                service.last_execution_millis = 0;
+    pub async fn restore(&self,path:&Path)->Result<(),EngineError> {
+        let bytes=match fs::read(path) {Ok(v)=>v,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(()),Err(e)=>return Err(e.into())};
+        if bytes.len()>64*1024*1024 {return Err(EngineError::Invalid("retention exceeds 64 MiB".into()));}
+        let mut saved:Snapshot=serde_json::from_slice(&bytes)?;
+        if saved.version!=1 {return Err(EngineError::Invalid("unsupported retention version".into()));}
+        let mut state=self.state.write().await;
+        for (key,current) in &mut state.objects {
+            if let Some(mut old)=saved.objects.remove(key) {
+                old.status.max_attempts=current.status.max_attempts;
+                old.status.attempt=old.status.attempt.clamp(1,old.status.max_attempts);
+                old.next_check_ms=now_ms();
+                *current=old;
             }
         }
+        state.comments=saved.comments.into_iter().filter(|c|c.persistent&&self.definitions.contains_key(&c.key)).collect();
+        state.downtimes=saved.downtimes.into_iter().filter(|d|d.end_time>now_ms()/1000&&self.definitions.contains_key(&d.key)).collect();
+        state.log=saved.log.into_iter().rev().take(10_000).collect::<Vec<_>>().into_iter().rev().collect();
+        state.next_id=saved.next_id.max(state.comments.iter().map(|c|c.id).chain(state.downtimes.iter().map(|d|d.id)).max().unwrap_or(0).saturating_add(1));
+        state.host_checks=saved.host_checks;state.service_checks=saved.service_checks;
+        state.passive_hosts=saved.passive_hosts;state.passive_services=saved.passive_services;
+        Ok(())
     }
-
-    async fn execute(
-        &self,
-        service: &ServiceConfig,
-    ) -> Result<(CheckState, String, u64), EngineError> {
-        let host = self
-            .config
-            .hosts
-            .get(&service.host_name)
-            .ok_or_else(|| EngineError::UnknownHost(service.host_name.clone()))?;
-        let (command_name, arguments) = split_command(&service.check_command);
-        let command = self
-            .config
-            .commands
-            .get(command_name)
-            .ok_or_else(|| EngineError::UnknownCommand(command_name.to_owned()))?;
-        let command_line = render_command(command, host, arguments, &self.config.resource_macros);
-        let started = std::time::Instant::now();
-        let child = Command::new("/bin/sh").arg("-c").arg(command_line).output();
-        let output = time::timeout(Duration::from_secs(60), child)
-            .await
-            .map_err(|_| EngineError::UnknownCommand("check timeout".to_owned()))?
-            .map_err(EngineError::Bind)?;
-        let state = CheckState::from_plugin_status(output.status.code().unwrap_or(3));
-        let mut text = String::from_utf8_lossy(&output.stdout)
-            .trim_end()
-            .to_owned();
-        let stderr = String::from_utf8_lossy(&output.stderr)
-            .trim_end()
-            .to_owned();
-        if !stderr.is_empty() {
-            if !text.is_empty() {
-                text.push_str(" | ");
+    pub async fn save(&self,path:&Path)->Result<(),EngineError> {
+        let snapshot=self.state.read().await.clone();
+        let parent=path.parent().filter(|p|!p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        let mut file=tempfile::NamedTempFile::new_in(parent)?;
+        serde_json::to_writer(&mut file,&snapshot)?;
+        file.flush()?;file.as_file().sync_all()?;
+        file.persist(path).map_err(|e|EngineError::Io(e.error))?;
+        fs::File::open(parent)?.sync_all()?;
+        Ok(())
+    }
+    /// Bounded one-shot execution, including hosts. Passive-only objects remain pending.
+    pub async fn run_all_checks(&self)->Result<(),EngineError> {
+        let keys:Vec<_>=self.definitions.keys().cloned().collect();
+        let mut tasks=JoinSet::new();
+        for key in keys {
+            if tasks.len()>=self.max_concurrent {
+                if let Some(result)=tasks.join_next().await {result?;}
             }
-            text.push_str(&stderr);
+            if let Some(generation)=self.claim(&key,true).await {
+                let engine=self.clone();
+                tasks.spawn(async move {engine.run_check(key,generation).await});
+            }
         }
-        if text.is_empty() {
-            text = state_name(state).to_owned();
-        }
-        let elapsed = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        Ok((state, text, elapsed))
+        while let Some(result)=tasks.join_next().await {result?;}
+        Ok(())
     }
-
-    async fn handle_tcp(&self, stream: TcpStream) {
-        let _ = self.handle_connection(stream).await;
-    }
-
-    async fn handle_unix(&self, stream: UnixStream) {
-        let _ = self.handle_connection(stream).await;
-    }
-
-    async fn handle_connection<S>(&self, stream: S) -> Result<(), std::io::Error>
-    where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-    {
-        let mut reader = BufReader::new(stream);
-        let mut request = String::new();
+    pub async fn run_forever(&self)->Result<(),EngineError> {
+        let mut tick=time::interval(Duration::from_millis(100));
+        tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+        let mut tasks=JoinSet::new();
         loop {
-            let mut line = String::new();
-            if reader.read_line(&mut line).await? == 0 || line == "\n" || line == "\r\n" {
-                break;
+            tokio::select! {
+                result=tasks.join_next(),if !tasks.is_empty()=>{if let Some(result)=result{result?;}},
+                _=tick.tick()=>{
+                    for key in self.definitions.keys() {
+                        if tasks.len()>=self.max_concurrent {break;}
+                        if let Some(generation)=self.claim(key,false).await {
+                            let engine=self.clone();let key=key.clone();
+                            tasks.spawn(async move {engine.run_check(key,generation).await});
+                        }
+                    }
+                }
             }
-            request.push_str(&line);
-        }
-        let mut stream = reader.into_inner();
-        let response = match parse_query(&request) {
-            Ok(query) => self.render_query(&query).await,
-            Err(error) => format!("400 {error}\n").into_bytes(),
-        };
-        stream.write_all(&response).await
-    }
-
-    async fn render_query(&self, query: &Query) -> Vec<u8> {
-        let rows = match query.table.as_str() {
-            "hosts" => self.host_rows().await,
-            "services" => self.service_rows().await,
-            "status" => vec![status_row()],
-            _ => Vec::new(),
-        };
-        let rows: Vec<_> = rows
-            .into_iter()
-            .filter(|row| {
-                query
-                    .filters
-                    .iter()
-                    .all(|filter| matches_filter(row, filter))
-            })
-            .take(query.limit.unwrap_or(usize::MAX))
-            .collect();
-        let body = encode_rows(&rows, query);
-        if query.response_header == ResponseHeader::Fixed16 {
-            fixed16_response(200, &body)
-        } else {
-            body
         }
     }
-
-    async fn host_rows(&self) -> Vec<Row> {
-        let services = self.services.read().await;
-        self.config
-            .hosts
-            .values()
-            .map(|host| {
-                let state = services
-                    .iter()
-                    .filter(|service| service.definition.host_name == host.name)
-                    .map(|service| numeric_state(service.status.state))
-                    .max()
-                    .unwrap_or(0);
-                row([
-                    ("name", json!(host.name)),
-                    ("host_name", json!(host.name)),
-                    ("address", json!(host.address)),
-                    ("state", json!(state)),
-                ])
-            })
-            .collect()
+    async fn claim(&self,key:&str,once:bool)->Option<u64> {
+        let definition=&self.definitions[key];
+        let mut state=self.state.write().await;
+        let global=if definition.service.is_some(){state.service_checks}else{state.host_checks};
+        let r=state.objects.get_mut(key)?;
+        let now=now_ms();
+        let due=once||(now>=r.next_check_ms&&(r.last_check==0||r.next_check_ms>0));
+        if r.executing||!due||definition.check.command.is_empty()||(!(r.active&&global)&&!r.force) {return None;}
+        r.executing=true;r.force=false;
+        r.latency=if r.next_check_ms>0 {now.saturating_sub(r.next_check_ms) as f64/1000.0}else{0.0};
+        Some(r.generation)
     }
-
-    async fn service_rows(&self) -> Vec<Row> {
-        self.services
-            .read()
-            .await
-            .iter()
-            .map(|service| {
-                row([
-                    ("host_name", json!(service.definition.host_name)),
-                    ("description", json!(service.definition.description)),
-                    ("state", json!(numeric_state(service.status.state))),
-                    (
-                        "state_type",
-                        json!(numeric_state_type(service.status.state_type)),
-                    ),
-                    ("current_attempt", json!(service.status.attempt)),
-                    ("max_check_attempts", json!(service.status.max_attempts)),
-                    ("plugin_output", json!(service.output)),
-                    ("last_check", json!(service.last_check)),
-                    (
-                        "execution_time",
-                        json!(service.last_execution_millis as f64 / 1000.0),
-                    ),
-                ])
-            })
-            .collect()
-    }
-}
-
-type Row = BTreeMap<String, Value>;
-
-fn row<const N: usize>(entries: [(&str, Value); N]) -> Row {
-    entries
-        .into_iter()
-        .map(|(key, value)| (key.to_owned(), value))
-        .collect()
-}
-
-fn status_row() -> Row {
-    row([
-        ("program_version", json!(env!("CARGO_PKG_VERSION"))),
-        ("num_hosts", json!(0)),
-    ])
-}
-
-fn encode_rows(rows: &[Row], query: &Query) -> Vec<u8> {
-    let columns = if query.columns.is_empty() {
-        rows.first()
-            .map(|row| row.keys().cloned().collect())
-            .unwrap_or_default()
-    } else {
-        query.columns.clone()
-    };
-    match query.output_format {
-        OutputFormat::Json | OutputFormat::WrappedJson => {
-            let values: Vec<_> = rows
-                .iter()
-                .map(|row| {
-                    Value::Array(
-                        columns
-                            .iter()
-                            .map(|column| row.get(column).cloned().unwrap_or(Value::Null))
-                            .collect(),
-                    )
-                })
-                .collect();
-            let value = if query.output_format == OutputFormat::WrappedJson {
-                json!({"columns": columns, "data": values})
-            } else if query.column_headers {
-                json!([
-                    Value::Array(columns.into_iter().map(Value::String).collect()),
-                    values
-                ])
-            } else {
-                Value::Array(values)
-            };
-            serde_json::to_vec(&value).unwrap_or_else(|_| b"[]".to_vec())
+    async fn run_check(&self,key:String,generation:u64) {
+        let d=&self.definitions[&key];
+        let result=execute::run(&self.config,d).await;
+        let mut state=self.state.write().await;
+        if let Some(r)=state.objects.get_mut(&key) {
+            r.executing=false;
+            if r.generation!=generation {return;}
         }
-        OutputFormat::Csv | OutputFormat::Python => rows
-            .iter()
-            .map(|row| {
-                let values: Vec<_> = columns
-                    .iter()
-                    .map(|column| stringify_value(row.get(column)))
-                    .collect();
-                values.join(";") + "\n"
-            })
-            .collect::<String>()
-            .into_bytes(),
+        self.apply_result(&mut state,&key,result,false,now_ms()/1000);
     }
-}
-
-fn stringify_value(value: Option<&Value>) -> String {
-    match value {
-        Some(Value::String(value)) => value.replace('\n', "\\n"),
-        Some(value) => value.to_string(),
-        None => String::new(),
-    }
-}
-
-fn matches_filter(row: &Row, filter: &str) -> bool {
-    let mut parts = filter.split_whitespace();
-    let Some(column) = parts.next() else {
-        return true;
-    };
-    let Some(operator) = parts.next() else {
-        return true;
-    };
-    let value = parts.collect::<Vec<_>>().join(" ");
-    let actual = stringify_value(row.get(column));
-    match operator {
-        "=" => actual == value,
-        "!=" => actual != value,
-        ">=" => actual >= value,
-        "<=" => actual <= value,
-        ">" => actual > value,
-        "<" => actual < value,
-        _ => true,
-    }
-}
-
-fn split_command(command: &str) -> (&str, Vec<&str>) {
-    let mut parts = command.split('!');
-    (parts.next().unwrap_or_default(), parts.collect())
-}
-
-fn render_command(
-    command: &CommandConfig,
-    host: &HostConfig,
-    arguments: Vec<&str>,
-    resource_macros: &std::collections::HashMap<String, String>,
-) -> String {
-    let mut line = command
-        .command_line
-        .replace("$HOSTNAME$", &host.name)
-        .replace("$HOSTADDRESS$", &host.address);
-    for (index, argument) in arguments.into_iter().enumerate() {
-        line = line.replace(&format!("$ARG{}$", index + 1), argument);
-    }
-    for _ in 0..8 {
-        let expanded = resource_macros
-            .iter()
-            .fold(line.clone(), |current, (name, value)| {
-                current.replace(name, value)
-            });
-        if expanded == line {
-            break;
+    fn apply_result(&self,state:&mut Snapshot,key:&str,mut result:execute::PluginResult,passive:bool,at:u64) {
+        let d=&self.definitions[key];
+        if d.service.is_none()&&!passive {result.code=if result.code==0{0}else{1};}
+        let Some(r)=state.objects.get_mut(key) else{return;};
+        let previous=r.status;
+        let next=CheckState::from_plugin_status(i32::from(result.code));
+        r.status=r.status.apply_result(next);
+        if passive {r.status.state_type=StateType::Hard;r.status.attempt=1;r.generation=r.generation.wrapping_add(1);}
+        let changed=previous.state!=r.status.state||r.last_check==0;
+        if changed {
+            r.last_state=numeric(previous.state);r.last_state_change=at;
+            if r.acknowledgement==1||next==CheckState::Ok {r.acknowledgement=0;}
         }
-        line = expanded;
-    }
-    line
-}
-
-fn unix_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs())
-}
-
-const fn numeric_state(state: CheckState) -> u8 {
-    match state {
-        CheckState::Ok => 0,
-        CheckState::Warning => 1,
-        CheckState::Critical => 2,
-        CheckState::Unknown => 3,
-    }
-}
-
-const fn numeric_state_type(state_type: StateType) -> u8 {
-    match state_type {
-        StateType::Soft => 0,
-        StateType::Hard => 1,
-    }
-}
-
-const fn state_name(state: CheckState) -> &'static str {
-    match state {
-        CheckState::Ok => "OK",
-        CheckState::Warning => "WARNING",
-        CheckState::Critical => "CRITICAL",
-        CheckState::Unknown => "UNKNOWN",
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use shinken_config::{CommandConfig, HostConfig, MonitoringConfig, ServiceConfig};
-    use shinken_livestatus::parse_query;
-
-    use super::{render_command, Engine};
-
-    #[test]
-    fn renders_standard_host_and_argument_macros() {
-        let command = CommandConfig {
-            name: "check_ping".into(),
-            command_line: "check_ping -H $HOSTADDRESS$ -w $ARG1$".into(),
-        };
-        let host = HostConfig {
-            name: "edge".into(),
-            address: "192.0.2.10".into(),
-        };
-        assert_eq!(
-            render_command(&command, &host, vec!["100,20%"], &HashMap::new()),
-            "check_ping -H 192.0.2.10 -w 100,20%"
-        );
-    }
-
-    #[tokio::test]
-    async fn executes_a_check_and_exposes_it_to_livestatus() {
-        let engine = Engine::new(MonitoringConfig {
-            commands: HashMap::from([(
-                "check_dummy".into(),
-                CommandConfig {
-                    name: "check_dummy".into(),
-                    command_line: "printf 'healthy'; exit 0".into(),
-                },
-            )]),
-            hosts: HashMap::from([(
-                "edge".into(),
-                HostConfig {
-                    name: "edge".into(),
-                    address: "192.0.2.10".into(),
-                },
-            )]),
-            services: vec![ServiceConfig {
-                host_name: "edge".into(),
-                description: "dummy".into(),
-                check_command: "check_dummy".into(),
-                max_check_attempts: 1,
-                check_interval_seconds: 60,
-            }],
-            resource_macros: HashMap::new(),
-        });
-        engine.run_all_checks().await;
-        let query = parse_query("GET services\nColumns: host_name description state plugin_output\nOutputFormat: json\n\n").unwrap();
-        let response = engine.render_query(&query).await;
-        assert_eq!(response, br#"[["edge","dummy",0,"healthy"]]"#);
+        if r.status.state_type==StateType::Hard&&r.hard_state!=numeric(next) {
+            r.last_hard_state=r.hard_state;r.hard_state=numeric(next);r.last_hard_state_change=at;
+        }
+        r.last_times[usize::from(result.code.min(3))]=at;
+        r.last_check=at;r.output=result.output.clone();r.long_output=result.long_output;
+        r.perf_data=result.perf_data;r.execution_time=result.elapsed;r.check_type=u8::from(passive);
+        let interval=if r.status.state_type==StateType::Soft {d.check.retry_ms}else{d.check.interval_ms};
+        r.next_check_ms=if interval==0 {0}else{now_ms().saturating_add(interval)};
+        if changed||previous.state_type!=r.status.state_type {
+            state.log.push_back(LogEntry{time:at,key:key.into(),state:result.code,state_type:if r.status.state_type==StateType::Hard{"HARD"}else{"SOFT"}.into(),attempt:r.status.attempt,output:result.output});
+            if state.log.len()>10_000 {state.log.pop_front();}
+        }
+        if next==CheckState::Ok {state.comments.retain(|c|c.key!=key||c.entry_type!=4||c.persistent);}
     }
 }

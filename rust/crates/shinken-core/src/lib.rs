@@ -2,7 +2,7 @@
 
 use shinken_model::{CheckState, StateType};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ServiceStatus {
     pub state: CheckState,
     pub state_type: StateType,
@@ -28,7 +28,7 @@ impl ServiceStatus {
         if state == CheckState::Ok {
             return Self::new(self.max_attempts);
         }
-        if state != self.state || self.state_type == StateType::Hard {
+        if self.state == CheckState::Ok {
             return Self {
                 state,
                 state_type: if self.max_attempts <= 1 {
@@ -43,7 +43,7 @@ impl ServiceStatus {
         let attempt = self.attempt.saturating_add(1).min(self.max_attempts);
         Self {
             state,
-            state_type: if attempt >= self.max_attempts {
+            state_type: if self.state_type == StateType::Hard || attempt >= self.max_attempts {
                 StateType::Hard
             } else {
                 StateType::Soft
@@ -68,6 +68,8 @@ mod tests {
         assert_eq!((second.state_type, second.attempt), (StateType::Soft, 2));
         let third = second.apply_result(CheckState::Critical);
         assert_eq!((third.state_type, third.attempt), (StateType::Hard, 3));
+        assert_eq!(third.apply_result(CheckState::Critical), third);
+        assert_eq!(third.apply_result(CheckState::Warning).state_type, StateType::Hard);
     }
 
     #[test]
