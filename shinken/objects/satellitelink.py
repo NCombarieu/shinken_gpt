@@ -24,7 +24,7 @@
 
 import time
 
-from shinken.imports import cpickle
+from shinken.safepickle import SafeUnpickler
 from shinken.util import get_obj_name_two_args_and_void
 from shinken.objects.item import Item, Items
 from shinken.property import BoolProp, IntegerProp, StringProp, ListProp, DictProp, AddrProp
@@ -381,7 +381,7 @@ class SatelliteLink(Item):
             # hands back raw pickle bytes here. str(tab) on Python 3 bytes
             # just mangled them and made this call always fail silently
             # into the bare except below.
-            tab = cpickle.loads(tab)
+            tab = SafeUnpickler.loads(tab)
             # Protect against bad return
             if not isinstance(tab, list):
                 self.con = None

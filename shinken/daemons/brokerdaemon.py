@@ -34,6 +34,7 @@ from multiprocessing import active_children
 from collections import deque
 
 from shinken.imports import cpickle as cPickle
+from shinken.safepickle import SafeUnpickler
 from shinken.satellite import BaseSatellite
 from shinken.property import PathProp, IntegerProp
 from shinken.util import sort_by_ids, get_memory, parse_memory_expr, free_memory
@@ -355,8 +356,8 @@ class Broker(BaseSatellite):
                     try:
                         _t = base64.b64decode(tmp_broks)
                         _t = zlib.decompress(_t)
-                        tmp_broks = cPickle.loads(_t)
-                    except (TypeError, zlib.error, cPickle.PickleError) as exp:
+                        tmp_broks = SafeUnpickler.loads(_t)
+                    except (TypeError, ValueError, zlib.error, cPickle.PickleError) as exp:
                         logger.error('Cannot load broks data from %s : %s',
                                      links[sched_id]['name'], exp)
                         links[sched_id]['con'] = None

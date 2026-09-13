@@ -28,6 +28,7 @@ from shinken.imports import StringIO as cStringIO
 import tempfile
 import traceback
 from shinken.imports import cpickle as cPickle
+from shinken.safepickle import SafeUnpickler
 
 import threading
 
@@ -896,7 +897,7 @@ class Scheduler(object):
 
                     # now go the cpickle pass, and catch possible errors from it
                     try:
-                        results = cPickle.loads(results)
+                        results = SafeUnpickler.loads(results)
                     except Exception as exp:
                         logger.error('Cannot load passive results from satellite %s : %s',
                                      p['name'], str(exp))
@@ -931,7 +932,7 @@ class Scheduler(object):
                     # Before ask a call that can be long, do a simple ping to be sure it is alive
                     con.get('ping')
                     results = con.get('get_returns', {'sched_id': self.instance_id}, wait='long')
-                    results = cPickle.loads(results)
+                    results = SafeUnpickler.loads(results)
                     nb_received = len(results)
                     self.nb_check_received += nb_received
                     logger.debug("Received %d passive results", nb_received)

@@ -27,6 +27,7 @@ import signal
 import time
 import traceback
 from shinken.imports import cpickle as cPickle
+from shinken.safepickle import SafeUnpickler
 import zlib
 import base64
 
@@ -200,25 +201,6 @@ class IForArbiter(IArb):
         logger.debug("Arbiter wants me to wait for a new configuration")
         self.app.sched.die()
         super(IForArbiter, self).wait_new_conf()
-
-
-
-'''
-class Injector(Interface):
-    # A broker ask us broks
-    def inject(self, bincode):
-
-        # first we need to get a real code object
-        import marshal
-        print "Calling Inject mode"
-        code = marshal.loads(bincode)
-        result = None
-        exec code
-        try:
-            return result
-        except NameError as exp:
-            return None
-'''
 
 
 
@@ -398,7 +380,7 @@ class Shinken(BaseSatellite):
                           statsd_pattern=statsd_pattern)
 
         t0 = time.time()
-        conf = cPickle.loads(conf_raw)
+        conf = SafeUnpickler.loads(conf_raw)
         logger.debug("Conf received at %d. Unserialized in %d secs", t0, time.time() - t0)
 
         if harakiri_threshold is not None:

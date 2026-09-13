@@ -27,6 +27,14 @@ try:
 except ImportError:
     import pickle as cpickle
 
+# Python 2 module names that can still show up inside a pickle stream
+# (either from an old payload or from cPickle.dumps() itself choosing the
+# historical name for a builtin) but no longer exist under that name.
+_PY2_MODULE_ALIASES = {
+    'copy_reg': 'copyreg',
+    '__builtin__': 'builtins',
+}
+
 
 # Unpickle while rejecting arbitrary globals so crafted payloads cannot execute
 # external code. Based on the historical Graphite/carbon implementation.
@@ -50,8 +58,12 @@ class _RestrictedUnpickler(cpickle.Unpickler):
             raise ValueError('Attempting to unpickle unsafe class %s/%s' %
                              (module, name))
 
-        __import__(module)
-        return getattr(sys.modules[module], name)
+        # Pickle streams (including ones produced by our own cPickle.dumps
+        # calls elsewhere) can reference the Python 2 module names for
+        # these -- they no longer exist under those names in Python 3.
+        real_module = _PY2_MODULE_ALIASES.get(module, module)
+        __import__(real_module)
+        return getattr(sys.modules[real_module], name)
 
 
 class SafeUnpickler(object):

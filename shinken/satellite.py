@@ -51,6 +51,7 @@ else:
 import os
 import time
 from shinken.imports import cpickle as cPickle
+from shinken.safepickle import SafeUnpickler
 import traceback
 import zlib
 import base64
@@ -761,7 +762,7 @@ class Satellite(BaseSatellite):
                     # Explicit pickle load
                     tmp = base64.b64decode(tmp)
                     tmp = zlib.decompress(tmp)
-                    tmp = cPickle.loads(tmp)
+                    tmp = SafeUnpickler.loads(tmp)
                     logger.debug("Ask actions to %d, got %d", sched_id, len(tmp))
                     # We 'tag' them with sched_id and put into queue for workers
                     # REF: doc/shinken-action-queues.png (2)

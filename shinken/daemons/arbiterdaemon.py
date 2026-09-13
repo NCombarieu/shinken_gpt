@@ -29,6 +29,7 @@ import socket
 import traceback
 from shinken.imports import StringIO as cStringIO
 from shinken.imports import cpickle as cPickle
+from shinken.safepickle import SafeUnpickler
 import json
 
 from shinken.objects.config import Config
@@ -610,7 +611,7 @@ class Arbiter(Daemon):
         conf = self.new_conf
         if not conf:
             return
-        conf = cPickle.loads(conf)
+        conf = SafeUnpickler.loads(conf)
         self.new_conf = None
         self.cur_conf = conf
         self.conf = conf
