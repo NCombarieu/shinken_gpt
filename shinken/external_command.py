@@ -310,6 +310,12 @@ class ExternalCommandManager:
             {'global': False, 'args': ['service']},
         'RESTART_PROGRAM':
             {'global': True, 'internal': True, 'args': []},
+        # Thruk's own "Restart the Monitoring process" button
+        # (cmd_typ=13, share/thruk/templates/cmd/cmd_typ_13.tt) sends the
+        # literal command name "RESTART_PROCESS", not "RESTART_PROGRAM" --
+        # alias it so that button actually does something.
+        'RESTART_PROCESS':
+            {'global': True, 'internal': True, 'args': []},
         'RELOAD_CONFIG':
             {'global': True, 'internal': True, 'args': []},
         'SAVE_STATE_INFORMATION':
@@ -1656,6 +1662,11 @@ class ExternalCommandManager:
             return
         # Ok here the command succeed, we can now wait our death
         naglog_result('info', "%s" % (e.output))
+
+    # Alias for Thruk's "Restart the Monitoring process" button, which
+    # sends this exact command name instead of RESTART_PROGRAM.
+    def RESTART_PROCESS(self):
+        self.RESTART_PROGRAM()
 
     # RELOAD_CONFIG
     def RELOAD_CONFIG(self):

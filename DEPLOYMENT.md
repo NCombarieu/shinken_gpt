@@ -380,3 +380,21 @@ commande).
 Donc pour l'admin supervision au quotidien : ajouter un template
 d'hôte, sauvegarder, puis cliquer "Reload" dans Thruk (Process Info) —
 ou `podman restart shinken_arbiter_1` en ligne de commande, équivalent.
+
+## Mise à jour (2026-09-13, suite 5) : bouton "Restart" de Thruk sans effet
+
+Le bouton "Restart the Monitoring process" de Thruk (Process Info,
+`cmd_typ=13`) envoie littéralement la commande `RESTART_PROCESS`
+(`share/thruk/templates/cmd/cmd_typ_13.tt`), pas `RESTART_PROGRAM`.
+Shinken (`shinken/external_command.py`) ne reconnaissait que
+`RESTART_PROGRAM`/`RELOAD_CONFIG` -> le clic ne faisait rigoureusement
+rien (aucune erreur visible, la commande est juste absente du
+dictionnaire de commandes reconnues). Ajouté `RESTART_PROCESS` comme
+alias direct de `RESTART_PROGRAM`. Testé via Livestatus brut : le
+container arbiter redémarre bien après la commande.
+
+Rappel important lié : le fichier `.cfg` doit avoir été modifié **avant**
+le dernier redémarrage de l'arbiter pour être pris en compte -- éditer
+un fichier puis interroger Thruk sans avoir relancé/rechargé
+l'arbiter (bouton Reload/Restart, ou `podman restart shinken_arbiter_1`)
+ne change rien, logique mais facile à oublier.
