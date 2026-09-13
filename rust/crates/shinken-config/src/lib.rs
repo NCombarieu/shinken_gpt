@@ -242,7 +242,8 @@ fn collect_cfg_files(directory: &Path, files: &mut BTreeSet<PathBuf>) -> Result<
         let path = entry.path();
         if file_type.is_dir() {
             collect_cfg_files(&path, files)?;
-        } else if file_type.is_file() && path.extension().is_some_and(|extension| extension == "cfg")
+        } else if file_type.is_file()
+            && path.extension().is_some_and(|extension| extension == "cfg")
         {
             files.insert(path);
         }
