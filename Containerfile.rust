@@ -1,0 +1,11 @@
+FROM rust:1.85-bookworm AS build
+WORKDIR /src
+COPY Cargo.toml rust-toolchain.toml ./
+COPY rust ./rust
+RUN cargo build --release --package shinken-rs
+
+FROM debian:bookworm-slim
+RUN useradd --system --create-home --uid 10001 shinken
+COPY --from=build /src/target/release/shinken-rs /usr/local/bin/shinken-rs
+USER shinken
+ENTRYPOINT ["shinken-rs"]

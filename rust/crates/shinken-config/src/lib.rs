@@ -4,7 +4,7 @@
 //! duplicates and ordering are part of the compatibility corpus.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -29,6 +29,36 @@ pub struct ObjectDefinition {
 pub struct LoadedConfig {
     pub files: Vec<PathBuf>,
     pub objects: Vec<ObjectDefinition>,
+    pub resource_macros: HashMap<String, String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MonitoringConfig {
+    pub commands: HashMap<String, CommandConfig>,
+    pub hosts: HashMap<String, HostConfig>,
+    pub services: Vec<ServiceConfig>,
+    pub resource_macros: HashMap<String, String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommandConfig {
+    pub name: String,
+    pub command_line: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HostConfig {
+    pub name: String,
+    pub address: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ServiceConfig {
+    pub host_name: String,
+    pub description: String,
+    pub check_command: String,
+    pub max_check_attempts: u32,
+    pub check_interval_seconds: u64,
 }
 
 #[derive(Debug, Error)]
@@ -40,6 +70,8 @@ pub enum LoadError {
     },
     #[error(transparent)]
     Parse(#[from] ParseError),
+    #[error("invalid monitoring definition: {0}")]
+    Semantic(String),
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -210,10 +242,201 @@ pub fn load_config_tree(main_config: impl AsRef<Path>) -> Result<LoadedConfig, L
 
     let files: Vec<_> = files.into_iter().collect();
     let mut objects = Vec::new();
+    let mut resource_macros = HashMap::new();
     for path in &files {
-        objects.extend(parse_objects(path, &read_to_string(path)?)?);
+        let input = read_to_string(path)?;
+        resource_macros.extend(parse_resource_macros(&input));
+        if input.lines().any(is_definition_line) {
+            objects.extend(parse_objects(path, &input)?);
+        }
     }
-    Ok(LoadedConfig { files, objects })
+    Ok(LoadedConfig {
+        files,
+        objects,
+        resource_macros,
+    })
+}
+
+/// Turn parsed Nagios/Shinken objects into the subset required by the first
+/// standalone Rust engine. `use` inheritance is resolved before extraction.
+pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig, LoadError> {
+    let templates: HashMap<_, _> = loaded
+        .objects
+        .iter()
+        .filter_map(|object| {
+            directive_value(object, "name").map(|name| ((object.kind.as_str(), name), object))
+        })
+        .collect();
+    let mut commands = HashMap::new();
+    let mut hosts = HashMap::new();
+    let mut services = Vec::new();
+    let mut hostgroups = HashMap::new();
+
+    for object in &loaded.objects {
+        if object.kind == "hostgroup" {
+            let directives = resolved_directives(object, &templates, &mut HashSet::new())?;
+            if let (Some(name), Some(members)) = (
+                directive_value_from(&directives, "hostgroup_name"),
+                directive_value_from(&directives, "members"),
+            ) {
+                hostgroups.insert(
+                    name.to_owned(),
+                    members
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|member| !member.is_empty())
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>(),
+                );
+            }
+        }
+    }
+
+    for object in &loaded.objects {
+        let directives = resolved_directives(object, &templates, &mut HashSet::new())?;
+        match object.kind.as_str() {
+            "command" => {
+                let name = required(&directives, "command_name", "command")?;
+                let command_line = required(&directives, "command_line", "command")?;
+                commands.insert(name.to_owned(), CommandConfig {
+                    name: name.to_owned(),
+                    command_line: command_line.to_owned(),
+                });
+            }
+            "host" if directive_value_from(&directives, "register") != Some("0") => {
+                let name = required(&directives, "host_name", "host")?;
+                let address = directive_value_from(&directives, "address").unwrap_or(name);
+                hosts.insert(name.to_owned(), HostConfig {
+                    name: name.to_owned(),
+                    address: address.to_owned(),
+                });
+            }
+            "service" if directive_value_from(&directives, "register") != Some("0") => {
+                let host_names = match directive_value_from(&directives, "host_name") {
+                    Some(host_names) => host_names
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|name| !name.is_empty())
+                        .map(str::to_owned)
+                        .collect(),
+                    None => directive_value_from(&directives, "hostgroup_name")
+                        .and_then(|group| hostgroups.get(group))
+                        .cloned()
+                        .unwrap_or_default(),
+                };
+                if host_names.is_empty() {
+                    continue;
+                }
+                let description = required(&directives, "service_description", "service")?;
+                let check_command = required(&directives, "check_command", "service")?;
+                let max_check_attempts = directive_value_from(&directives, "max_check_attempts")
+                    .map(parse_u32)
+                    .transpose()?
+                    .unwrap_or(3);
+                let check_interval_seconds = directive_value_from(&directives, "check_interval")
+                    .map(parse_interval_seconds)
+                    .transpose()?
+                    .unwrap_or(60);
+                for host_name in host_names {
+                    services.push(ServiceConfig {
+                        host_name,
+                        description: description.to_owned(),
+                        check_command: check_command.to_owned(),
+                        max_check_attempts,
+                        check_interval_seconds,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(MonitoringConfig {
+        commands,
+        hosts,
+        services,
+        resource_macros: loaded.resource_macros.clone(),
+    })
+}
+
+fn is_definition_line(line: &&str) -> bool {
+    let line = line.trim_start();
+    line.starts_with("define ") || line.starts_with("define\t")
+}
+
+fn parse_resource_macros(input: &str) -> HashMap<String, String> {
+    input
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+                return None;
+            }
+            let (name, value) = line.split_once('=')?;
+            let name = name.trim();
+            (name.starts_with('$') && name.ends_with('$'))
+                .then(|| (name.to_owned(), value.trim().to_owned()))
+        })
+        .collect()
+}
+
+fn resolved_directives<'a>(
+    object: &'a ObjectDefinition,
+    templates: &HashMap<(&'a str, &'a str), &'a ObjectDefinition>,
+    visiting: &mut HashSet<(&'a str, &'a str)>,
+) -> Result<Vec<Directive>, LoadError> {
+    let mut directives = Vec::new();
+    if let Some(parent_name) = directive_value(object, "use") {
+        let key = (object.kind.as_str(), parent_name);
+        if !visiting.insert(key) {
+            return Err(LoadError::Semantic(format!("cyclic template use: {parent_name}")));
+        }
+        let parent = templates.get(&key).ok_or_else(|| {
+            LoadError::Semantic(format!("unknown {} template: {parent_name}", object.kind))
+        })?;
+        directives.extend(resolved_directives(parent, templates, visiting)?);
+        visiting.remove(&key);
+    }
+    for directive in &object.directives {
+        if directive.name != "use" {
+            directives.retain(|existing| existing.name != directive.name);
+            directives.push(directive.clone());
+        }
+    }
+    Ok(directives)
+}
+
+fn required<'a>(
+    directives: &'a [Directive],
+    name: &str,
+    kind: &str,
+) -> Result<&'a str, LoadError> {
+    directive_value_from(directives, name)
+        .ok_or_else(|| LoadError::Semantic(format!("{kind} requires {name}")))
+}
+
+fn directive_value(object: &ObjectDefinition, name: &str) -> Option<&str> {
+    directive_value_from(&object.directives, name)
+}
+
+fn directive_value_from<'a>(directives: &'a [Directive], name: &str) -> Option<&'a str> {
+    directives
+        .iter()
+        .rev()
+        .find(|directive| directive.name == name)
+        .map(|directive| directive.value.as_str())
+}
+
+fn parse_u32(value: &str) -> Result<u32, LoadError> {
+    value
+        .parse()
+        .map_err(|_| LoadError::Semantic(format!("invalid max_check_attempts: {value}")))
+}
+
+fn parse_interval_seconds(value: &str) -> Result<u64, LoadError> {
+    let minutes: u64 = value
+        .parse()
+        .map_err(|_| LoadError::Semantic(format!("invalid check_interval: {value}")))?;
+    Ok(minutes.saturating_mul(60).max(1))
 }
 
 fn resolve_path(base: &Path, value: &str) -> PathBuf {
@@ -260,9 +483,11 @@ fn read_to_string(path: &Path) -> Result<String, LoadError> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{collections::HashMap, fs};
 
-    use super::{load_config_tree, parse_objects, Directive, ObjectDefinition};
+    use super::{
+        build_monitoring_config, load_config_tree, parse_objects, Directive, ObjectDefinition,
+    };
 
     #[test]
     fn preserves_order_duplicates_values_and_source_lines() {
@@ -351,5 +576,32 @@ define service {
         let loaded = load_config_tree(temp.path().join("main.cfg")).unwrap();
         assert_eq!(loaded.files.len(), 3);
         assert_eq!(loaded.objects.len(), 3);
+    }
+
+    #[test]
+    fn resolves_service_templates_and_builds_an_executable_model() {
+        let objects = parse_objects(
+            "objects.cfg",
+            "define command {\n command_name check_dummy\n command_line printf 'OK'\n}\n\
+             define host {\n host_name edge\n address 192.0.2.10\n}\n\
+             define service {\n name generic\n register 0\n max_check_attempts 5\n}\n\
+             define service {\n use generic\n host_name edge\n service_description ping\n check_command check_dummy\n}\n",
+        )
+        .unwrap();
+        let model = build_monitoring_config(&super::LoadedConfig {
+            files: Vec::new(),
+            objects,
+            resource_macros: HashMap::new(),
+        })
+        .unwrap();
+        assert_eq!(model.hosts["edge"].address, "192.0.2.10");
+        assert_eq!(model.services[0].max_check_attempts, 5);
+        assert_eq!(model.commands["check_dummy"].command_line, "printf 'OK'");
+    }
+
+    #[test]
+    fn preserves_resource_macros_without_parsing_them_as_objects() {
+        let macros = super::parse_resource_macros("$USER1$=/opt/plugins\n# comment\n");
+        assert_eq!(macros["$USER1$"], "/opt/plugins");
     }
 }

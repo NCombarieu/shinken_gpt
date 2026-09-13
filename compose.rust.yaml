@@ -1,0 +1,15 @@
+services:
+  shinken-rs:
+    build:
+      context: .
+      dockerfile: Containerfile.rust
+    command:
+      - run
+      - /etc/shinken/shinken.cfg
+      - --livestatus-tcp
+      - 0.0.0.0:6557
+    ports:
+      - "127.0.0.1:6557:6557"
+    volumes:
+      - ./etc:/etc/shinken:ro
+      - ./libexec:/var/lib/shinken/libexec:ro
