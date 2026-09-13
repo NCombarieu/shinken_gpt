@@ -1,5 +1,11 @@
 # Déploiement de Shinken sur ce serveur
 
+!!! information "Journal, pas référence"
+    Ce fichier est le **journal chronologique** du déploiement sur ce
+    serveur précis (commandes exactes, dates, tâtonnements inclus). Pour une
+    doc de référence propre et à jour (installation, configuration, Thruk,
+    dépannage), voir [`doc/`](doc/README.md) — c'est elle qui fait foi.
+
 Procédure suivie pour faire tourner ce fork (branche `modernize/podman-python3`)
 sur ce serveur et l'exposer sur `https://shinken.ncombarieu.fr`.
 

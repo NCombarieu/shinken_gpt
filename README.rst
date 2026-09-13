@@ -1,117 +1,56 @@
 ===================================
-Presentation of the Shinken project
+Shinken (Python 3 / Podman fork)
 ===================================
 
-Welcome to the Shinken project.
+This is a fork of `Shinken <https://github.com/naparuba/shinken>`_, a
+Nagios-compatible monitoring framework written in Python. The upstream
+project stayed on Python 2; this fork (branch ``modernize/podman-python3``)
+ports the core, its six daemons, and a real Livestatus module to
+**Python 3.11+**, and runs entirely as **Podman containers**.
 
-.. image:: https://api.travis-ci.org/naparuba/shinken.svg?branch=master
-  :target: https://travis-ci.org/naparuba/shinken
+Shinken stays backwards-compatible with the Nagios configuration format
+and plugins.
 
+Documentation
+=============
 
-Shinken is a modern, Nagios compatible monitoring framework, written in
-Python. Its main goal is to give users a flexible architecture for
-their monitoring system that is designed to scale to large environments.
+Full documentation lives in `doc/ <doc/README.md>`_:
 
-Shinken is backwards-compatible with the Nagios configuration standard
-and plugins. It works on any operating system and architecture that
-supports Python, which includes Windows, GNU/Linux and FreeBSD.
+* `doc/presentation.md <doc/presentation.md>`_ — what Shinken is, and what
+  this fork changes
+* `doc/installation.md <doc/installation.md>`_ — clone, build, run
+* `doc/configuration.md <doc/configuration.md>`_ — hosts, services,
+  templates, and the container-specific networking gotchas
+* `doc/livestatus-thruk.md <doc/livestatus-thruk.md>`_ — wiring up a real
+  web UI (Thruk) via the Livestatus module
+* `doc/exploitation.md <doc/exploitation.md>`_ — day-to-day operations
+  (reload, force check, acknowledge, downtime)
+* `doc/depannage.md <doc/depannage.md>`_ — real bugs already found and
+  fixed in this fork
 
-Requirements
-============
+``DEPLOYMENT.md`` at the repo root is a chronological deployment journal
+for one specific server, kept for its detailed troubleshooting history —
+``doc/`` is the up-to-date reference.
 
-See the `Documentation`__ 
+Quick start
+===========
 
-__ https://shinken.readthedocs.org/en/latest/02_gettingstarted/installations/shinken-installation.html#requirements
+.. code-block:: bash
 
-There are mandatory and conditional requirements for the installation
-methods which are described below.
+  git clone git@github.com:NCombarieu/shinken_gpt.git
+  cd shinken_gpt
+  git checkout modernize/podman-python3
+  sudo pip install podman-compose   # if not already available
+  podman-compose build
+  podman-compose up -d
 
+See `doc/installation.md <doc/installation.md>`_ for prerequisites and
+verification steps.
 
-Installing Shinken
-==================
+Upstream
+========
 
-See the `Documentation`__ 
+The original project: https://github.com/naparuba/shinken
 
-__ https://shinken.readthedocs.org/en/latest/02_gettingstarted/installations/shinken-installation.html
-
-
-
-Update
-------
-
-Launch:
-
-  python setup.py install --update
-
-It will only update the shinken lib and scripts, but won't touch your current configuration
-
-
-Running
--------
-
-Shinken is installed with `init.d` scripts, enables them at boot time and starts them right after the install process ends. Based on your linux distro you only need to do:
-
-  chkconfig --add shinken
-  chkconfig shinken on
-
-or :
-
-  update-rc.d shinken defaults 20
-
-
-
-Where is the configuration?
-===========================
-
-The configuration is on the directory, `/etc/shinken`.
-
-
-Where are the logs?
-===================
-
-Logs are in /var/log/shinken
-(what did you expect?)
-
-
-I got a bug, how to launch the daemons in debug mode?
-=====================================================
-
-You only need to launch:
-
-  /etc/init.d/shinken -d start
-
-Debug logs will be based on the log directory (/var/log/shinken)
-
-
-I switched from Nagios, do I need to change my existing Nagios configuration?
-=============================================================================
-
-No, there is no need to change the existing configuration - unless
-you want to add some new hosts and services. Once you are comfortable
-with Shinken you can start to use its unique and powerful features.
-
-
-Learn more about how to use and configure Shinken
-=================================================
-
-Jump to the Shinken documentation__.
-
-__ https://shinken.readthedocs.org/en/latest/
-
-
-If you find a bug
-================================
-
-Bugs are tracked in the `issue list on GitHub`__ . Always search for existing issues before filing a new one (use the search field at the top of the page).
-When filing a new bug, please remember to include:
-
-*	A helpful title - use descriptive keywords in the title and body so others can find your bug (avoiding duplicates).
-*	Steps to reproduce the problem, with actual vs. expected results
-*	Shinken version (or if you're pulling directly from the Git repo, your current commit SHA - use git rev-parse HEAD)
-*	OS version
-*	If the problem happens with specific code, link to test files (`gist.github.com`__  is a great place to upload code).
-*	Screenshots are very helpful if you're seeing an error message or a UI display problem. (Just drag an image into the issue description field to include it).
-
-__ https://github.com/naparuba/shinken/issues/
-__ https://gist.github.com/
-
+Bugs specific to this fork's Python 3 / container port should be filed
+against ``NCombarieu/shinken_gpt``, not upstream.
