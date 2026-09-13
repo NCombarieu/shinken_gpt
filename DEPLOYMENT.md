@@ -398,3 +398,103 @@ le dernier redémarrage de l'arbiter pour être pris en compte -- éditer
 un fichier puis interroger Thruk sans avoir relancé/rechargé
 l'arbiter (bouton Reload/Restart, ou `podman restart shinken_arbiter_1`)
 ne change rien, logique mais facile à oublier.
+
+## Mise à jour (2026-09-13, suite 6) : superviser l'hôte (ce serveur) en SSH
+
+Objectif : un check `check_by_ssh` qui se connecte depuis le poller
+container vers **ce serveur lui-même** (pas un autre container), avec
+une clef SSH dédiée restreinte à une seule commande.
+
+### 1. Joindre l'hôte depuis un container (podman rootless)
+
+Ni l'IP publique du serveur, ni la gateway du bridge podman
+(`podman network inspect shinken_default`) ne fonctionnent pour ça :
+
+```sh
+podman exec shinken_poller_1 /usr/lib/nagios/plugins/check_ssh 158.69.204.23   # refused
+podman exec shinken_poller_1 /usr/lib/nagios/plugins/check_ssh 10.89.0.1      # refused
+```
+
+Le nom qui marche, spécifique à Podman (>= 4.7), équivalent de
+`host.docker.internal` : **`host.containers.internal`**.
+
+```sh
+podman exec shinken_poller_1 /usr/lib/nagios/plugins/check_ssh host.containers.internal
+# SSH OK - OpenSSH_9.9 (protocol 2.0)
+```
+
+### 2. `check_by_ssh` a besoin du client `ssh` système
+
+`nagios-plugins-basic`/`monitoring-plugins-basic` ne fournit qu'un
+wrapper : `check_by_ssh` exécute en interne le binaire `ssh`, absent de
+l'image de base. Ajouté `openssh-client` au `Containerfile`.
+
+### 3. Clef SSH dédiée, restreinte côté serveur (pas côté client)
+
+Génération et restriction (compte `noel` existant, pas de compte
+dédié — clef à usage unique quand même) :
+
+```sh
+ssh-keygen -t ed25519 -f etc/ssh_keys/shinken_monitoring -N "" -C "shinken-monitoring-cpu-check"
+```
+
+Dans `~/.ssh/authorized_keys` du compte cible :
+
+```
+command="/home/noel/bin/check_cpu_nagios.sh 80 95",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... shinken-monitoring-cpu-check
+```
+
+**Important** : ne jamais interpoler `$SSH_ORIGINAL_COMMAND` dans le
+`command=` forcé sans l'échapper -- ça réintroduit une injection shell
+et annule tout l'intérêt de la restriction. Ici la commande est
+totalement figée (arguments compris) ; whatever `check_by_ssh -C "..."`
+envoie est ignoré côté serveur.
+
+Le script forcé (`~/bin/check_cpu_nagios.sh`) lit `/proc/stat` sur 1s et
+sort au format Nagios standard (`OK/WARNING/CRITICAL` + perfdata).
+
+### 4. Permissions du fichier de clef : `podman unshare`, pas `chmod`/`chown` classique
+
+Deux pièges, dans cet ordre :
+
+1. `ssh`/`check_by_ssh` **refusent** une clef privée lisible par le
+   groupe/other (`chmod 644` "too open") -- il faut du `600`.
+2. Mais `600` doit appartenir au **bon UID vu depuis l'intérieur du
+   container**, qui n'est PAS le même UID que sur l'hôte : Podman
+   rootless remappe les UID (`user namespace`). Un simple `chown 10001`
+   depuis l'hôte cible le mauvais UID réel. La bonne commande :
+
+```sh
+podman unshare chown 10001:10001 etc/ssh_keys/shinken_monitoring
+podman unshare chmod 600 etc/ssh_keys/shinken_monitoring
+```
+
+`podman unshare cat /proc/self/uid_map` donne le mapping exact si besoin
+de vérifier (ici : uid conteneur 1-65536 -> uid hôte 589824+).
+
+**Cette étape est à refaire après tout `podman-compose up -d
+--force-recreate` ou `down`+`up`** -- chaque nouvelle instance de
+conteneur re-remappe l'espace de noms utilisateur, et un ancien fichier
+peut redevenir `Permission denied` (souvent avec besoin d'un
+`podman restart` du poller juste après le chown pour que le montage
+reprenne bien la nouvelle info).
+
+### 5. Piège de config sans rapport avec SSH : les parenthèses
+
+`service_description` refuse les caractères `(` et `)`
+(`My service_description got the character ( that is not allowed`).
+`CPU (SSH)` fait planter l'arbiter en boucle au chargement (bail out
+total, pas un rejet silencieux de CE SEUL service) -- `CPU via SSH`
+à la place. Facile à confondre avec un vrai bug SSH puisque l'arbiter
+crash-loope juste après avoir teste le check SSH par coincidence de
+timing.
+
+### Résultat
+
+```
+this-vps;CPU via SSH;0;CPU OK - 22% used
+```
+
+Command : `check_by_ssh_cpu` (`etc/commands/check_by_ssh.cfg`), host
+`this-vps` -> `host.containers.internal` (`etc/hosts/this-vps.cfg`),
+service dans `etc/services/this-vps.cfg`.

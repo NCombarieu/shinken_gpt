@@ -19,7 +19,7 @@ ENV PYTHONUNBUFFERED=1 \
     SHINKEN_CONFIG=/etc/shinken
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libcurl4 nagios-plugins-basic nagios-nrpe-plugin tini \
+    && apt-get install -y --no-install-recommends libcurl4 nagios-plugins-basic nagios-nrpe-plugin openssh-client tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 shinken \
     && useradd --uid 10001 --gid shinken --home-dir /var/lib/shinken --create-home shinken \
