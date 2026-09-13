@@ -359,8 +359,12 @@ fn stringify_value(value: Option<&Value>) -> String {
 
 fn matches_filter(row: &Row, filter: &str) -> bool {
     let mut parts = filter.split_whitespace();
-    let Some(column) = parts.next() else { return true };
-    let Some(operator) = parts.next() else { return true };
+    let Some(column) = parts.next() else {
+        return true;
+    };
+    let Some(operator) = parts.next() else {
+        return true;
+    };
     let value = parts.collect::<Vec<_>>().join(" ");
     let actual = stringify_value(row.get(column));
     match operator {
