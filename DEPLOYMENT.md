@@ -242,3 +242,71 @@ fois dans Thruk, les liens internes de l'appli pointent toujours vers
 redirect Caddy). À refaire proprement plus tard si besoin, en construisant
 une image avec `SITENAME=shinken` au build (mécanisme documenté par
 l'image `consol/omd-labs-debian`) plutôt qu'en renommant un site existant.
+
+## Mise à jour (2026-09-13, correction majeure) : retour à Shinken + vrai Livestatus
+
+**Le diagnostic "le poller est bloqué à jamais" (mise à jour du 2026-09-13
+plus haut) était faux.** Le vrai bug : `BaseModule._main()`
+(`shinken/basemodule.py`) appelait `shinken.http_daemon.daemon_inst.shutdown()`
+dans le processus forké d'un module externe, ce qui bloque indéfiniment en
+attendant des threads qui n'existent que dans le process parent — exactement
+la même classe de bug déjà corrigée pour `Worker` dans `shinken/worker.py`
+(commit du jour sur cette branche), juste jamais appliquée à
+`BaseModule`. Un simple test resté sans interruption pendant plus de
+4 minutes a confirmé que les checks Shinken s'exécutent bel et bien tout
+seuls (le service Load a changé de valeur après ~240s, correspondant au
+`check_interval` configuré) — mon impatience à redémarrer les containers
+la veille avait empêché ce délai de s'écouler.
+
+Ce fix de fork, plus le vrai module Livestatus de Shinken
+(`shinken-monitoring/mod-livestatus`, jamais inclus dans ce repo mais
+distribué séparément comme tous les modules shinken.io — voir
+`modules/livestatus/`), portés ensemble en Python 3, permettent à
+**`shinken.ncombarieu.fr` de servir maintenant le vrai Shinken via Thruk**,
+plus Naemon. La stack Naemon/OMD (container `omd-thruk`) reste utilisée
+uniquement comme distribution Thruk/Apache — sa configuration
+(`etc/thruk/thruk.conf`) pointe son backend Livestatus vers
+`broker:50000` (le vrai Shinken), pas vers son propre Naemon local.
+
+### Bugs corrigés pour faire fonctionner Livestatus + les commandes externes
+
+- `shinken/basemodule.py` : fix fork/HTTP-shutdown ci-dessus (déblocage de
+  **tous** les modules externes, pas que Livestatus).
+- `shinken/util.py` : `safe_print()` et `get_customs_values()` avaient des
+  restes Python 2 (`str.decode()`, `dict.values()` non sérialisable JSON).
+- `shinken/objects/satellitelink.py` : `get_external_commands()` faisait
+  `cpickle.loads(str(tab))` sur des bytes Python 3 → exception avalée
+  silencieusement par un `except:` nu → les commandes externes (force
+  check, ack, downtime) envoyées par Thruk/Livestatus n'arrivaient jamais
+  au scheduler. Le format réel de `tab` est du pickle brut (pas de
+  base64/zlib comme pour `get_broks`).
+- `shinken/daemons/brokerdaemon.py` : le Broker n'avait **jamais** de
+  méthode `get_external_commands()` (Poller/Reactionner l'ont
+  gratuitement via `Satellite`/`BaseSatellite`, le Broker a sa propre
+  hiérarchie de classes qui ne l'hérite pas). Ajoutée, même pattern que
+  `shinken/satellite.py`.
+- `modules/livestatus/` : nombreux restes Python 2 corrigés (`raise "x", y`,
+  `.__func__` sur méthodes non liées, bytes/str aux limites socket,
+  hack `__bases__` runtime remplacé par un vrai héritage direct de
+  `queue.LifoQueue`).
+- `etc/contacts/webteam.cfg` : ajout de contacts réels `noel`/`guillaume`
+  (groupe `admins`) — sans ça, le filtrage `AuthUser` de Livestatus cache
+  tout aux comptes qui ne sont pas des contacts Shinken exacts.
+
+### Vérifié de bout en bout sur le vrai Shinken
+
+`GET hosts`/`GET services` (bruts et via Thruk), `SCHEDULE_FORCED_SVC_CHECK`,
+`SCHEDULE_SVC_DOWNTIME`, `ACKNOWLEDGE_SVC_PROBLEM` — tous confirmés
+fonctionnels (résultats de checks frais, downtime visible dans
+`scheduled_downtime_depth`, commandes loguées par l'arbiter).
+
+### Configuration Livestatus
+
+- `etc/modules/livestatus.cfg` : module `livestatus`, port TCP 50000,
+  sous-module `logstore-null` (pas de logs historiques nécessaires).
+- `etc/brokers/broker-master.cfg` : `modules livestatus,status-webui`.
+- `compose.yaml` : port `127.0.0.1:50000:50000` publié sur le broker.
+- Le container `omd-thruk` a été rattaché au réseau podman du compose
+  Shinken (`podman network connect` ne marche pas avec le mode réseau
+  "pasta" par défaut de podman rootless — il a fallu recréer le
+  container avec `--network shinken_default` dès le `podman run`).
