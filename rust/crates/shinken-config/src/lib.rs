@@ -482,7 +482,11 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
         execute_host_checks: flag(&loaded.settings, "execute_host_checks", true)?,
         execute_service_checks: flag(&loaded.settings, "execute_service_checks", true)?,
         accept_passive_host_checks: flag(&loaded.settings, "accept_passive_host_checks", true)?,
-        accept_passive_service_checks: flag(&loaded.settings, "accept_passive_service_checks", true)?,
+        accept_passive_service_checks: flag(
+            &loaded.settings,
+            "accept_passive_service_checks",
+            true,
+        )?,
     };
     let mut groups = BTreeMap::new();
     let mut contactgroups: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -537,7 +541,13 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
             "timeperiod" => {
                 if value(a, "timeperiod_name", "") == "24x7" {
                     let days = [
-                        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+                        "monday",
+                        "tuesday",
+                        "wednesday",
+                        "thursday",
+                        "friday",
+                        "saturday",
+                        "sunday",
                     ];
                     if days.iter().any(|day| value(a, day, "") != "00:00-24:00")
                         || a.keys().any(|key| {

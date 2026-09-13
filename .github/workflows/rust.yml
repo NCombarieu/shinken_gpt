@@ -27,9 +27,8 @@ jobs:
           toolchain: 1.85.0
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Resolve dependencies (bootstrap only until Cargo.lock is committed)
-        run: |
-          if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
+      - name: Check locked dependencies
+        run: cargo fetch --locked
       - name: Formatting gate
         run: cargo fmt --all -- --check
       - name: Collect canonical formatting
@@ -99,4 +98,20 @@ jobs:
           assert services["Native check"][2] == 0, data
           assert services["Example alert"][2] == 2, data
           assert services["Passive input"][4] == 0, data
+          PY
+      - name: Rootless daemon lifecycle and retained state
+        run: |
+          trap 'podman logs rust-smoke; podman rm -f rust-smoke >/dev/null' EXIT
+          podman run -d --name rust-smoke -p 127.0.0.1::6557 localhost/shinken-rs:test
+          port=$(podman port rust-smoke 6557/tcp | awk -F: '{print $NF}')
+          python3 rust/tests/container-smoke.py "$port"
+          podman stop --time 10 rust-smoke
+          test "$(podman inspect --format '{{.State.ExitCode}}' rust-smoke)" = 0
+          podman cp rust-smoke:/var/lib/shinken/state.json /tmp/retained.json
+          python3 - <<'PY'
+          import json
+          state = json.load(open("/tmp/retained.json"))
+          assert state["version"] == 1
+          assert len(state["objects"]) == 4
+          assert state["objects"]["H:localhost"]["last_check"] > 0
           PY

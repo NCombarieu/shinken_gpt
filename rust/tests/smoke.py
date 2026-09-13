@@ -140,6 +140,8 @@ def run_suite(binary):
             assert query("GET services\nColumns: scheduled_downtime_depth\nFilter: description = passive") == [[1]]
             assert query("GET comments\nColumns: author comment") == [["alice", "investigating"]]
             assert len(query("GET downtimes\nColumns: id")) == 1
+            command(f"DISABLE_SVC_CHECK;edge;load\nCOMMAND [{int(time.time())}] INVENTED", success=False)
+            assert query("GET services\nColumns: active_checks_enabled\nFilter: description = load") == [[1]]
             command("DISABLE_SVC_CHECK;edge;load")
             command("DISABLE_PASSIVE_SVC_CHECKS;edge;passive")
             command("PROCESS_SERVICE_CHECK_RESULT;edge;passive;0;ignored", success=False)
