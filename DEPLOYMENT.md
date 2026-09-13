@@ -116,3 +116,71 @@ podman-compose up -d              # relancer
 Pour changer le mot de passe : régénérer un hash avec
 `caddy hash-password`, l'éditer dans le fichier `.caddy` ci-dessus, puis
 `sudo systemctl reload caddy`.
+
+## Mise à jour (2026-09-13) : bug bloquant + bascule vers Naemon/Thruk
+
+En configurant quelques services de test sur le host `localhost`, découverte
+d'un bug dans ce fork : le poller ne relance plus jamais ses tentatives de
+connexion au scheduler après les 2-3 premiers essais au démarrage (boucle
+`do_mainloop` dans `shinken/satellite.py`, processus vivant mais inactif,
+aucune erreur loguée même en `DEBUG`). Résultat : aucun check ne s'exécute
+jamais, host et services restent bloqués en `PENDING` indéfiniment. Cohérent
+avec l'état du fork : les commits du jour sur cette branche portent
+justement sur la stabilisation du transport distribué Python 3
+(`fix: complete Python 3 distributed transport`, etc.) — pas encore
+résolu au moment de ce déploiement.
+
+Suite à une demande de brancher Thruk (interface web) sur ce Shinken :
+Thruk ne parle que le protocole MK Livestatus, que ce fork n'implémente pas
+(seuls deux scripts utilitaires dans `contrib/livestatus/`, pas de module
+broker). Plutôt que de porter ce module ou attendre le fix du poller,
+**`shinken.ncombarieu.fr` sert maintenant Naemon + Thruk + Livestatus**
+(image `consol/omd-labs-debian`, site OMD "demo"), qui fonctionne
+réellement (checks exécutés, résultats corrects, confirmé via
+`unixcat tmp/run/live`).
+
+La stack Shinken de ce repo n'est pas supprimée : conteneurs et volumes sont
+conservés, juste arrêtés (`podman-compose stop` dans `~/shinken_gpt`), au
+cas où le bug se règle plus tard côté fork.
+
+### Stack Naemon/Thruk (hors de ce repo, infra serveur)
+
+```sh
+podman volume create omd-thruk-site
+podman run -d --name omd-thruk \
+  -p 127.0.0.1:8443:443 -p 127.0.0.1:8082:80 \
+  -v omd-thruk-site:/omd/sites/demo \
+  -v ~/omd-thruk/ansible_dropin:/root/ansible_dropin:Z \
+  --cap-add=NET_RAW \
+  --restart unless-stopped \
+  docker.io/consol/omd-labs-debian:latest
+```
+
+- `--cap-add=NET_RAW` : nécessaire pour `check_icmp`/`check-host-alive`
+  (contrairement au compose Shinken, pas de `cap_drop: ALL` ici).
+- Le drop-in Ansible (`~/omd-thruk/ansible_dropin/playbook.yml`) fixe le mot
+  de passe `omdadmin` au démarrage (sinon mot de passe aléatoire, cf. doc de
+  l'image).
+- Config Naemon custom dans le volume nommé :
+  `etc/naemon/conf.d/localhost.cfg` (host `localhost` + 4 services : Load,
+  Disk /, Users, HTTP Thruk) et `etc/naemon/conf.d/contacts.cfg`
+  (contactgroup `admins` = noel + guillaume). Reload : `su - demo -c "omd
+  reload naemon"` dans le conteneur.
+- Comptes ajoutés dans `etc/htpasswd` du site (`htpasswd -b etc/htpasswd
+  <user> <pass>`) : `omdadmin`, `noel`, `guillaume`.
+- Forcer un check immédiat (au lieu d'attendre l'étalement initial, jusqu'à
+  10 min) : écrire dans `tmp/run/naemon.cmd`, ex. `[<epoch>]
+  SCHEDULE_FORCED_SVC_CHECK;localhost;Load;<epoch>`.
+
+### Caddy
+
+`shinken.ncombarieu.fr` fait maintenant : `basic_auth` (noel/guillaume,
+même mot de passe que leur compte Thruk) → redirection `/` vers
+`/demo/thruk/` → `reverse_proxy https://127.0.0.1:8443` avec
+`tls_insecure_skip_verify` (Apache du site OMD force HTTPS avec un
+certificat auto-signé, uniquement en loopback). La `basic_auth` Caddy est
+redondante avec celle de Thruk (double authentification pour l'instant) —
+à simplifier plus tard si la double confirmation gêne.
+
+L'ancien reverse_proxy vers `127.0.0.1:8081` (broker Shinken) n'est plus
+utilisé, mais le port reste dispo si la stack Shinken est relancée.
