@@ -310,3 +310,31 @@ fonctionnels (résultats de checks frais, downtime visible dans
   Shinken (`podman network connect` ne marche pas avec le mode réseau
   "pasta" par défaut de podman rootless — il a fallu recréer le
   container avec `--network shinken_default` dès le `podman run`).
+
+## Mise à jour (2026-09-13, suite 3) : hostname et check command absents dans Thruk
+
+Deux bugs distincts, tous deux corrigés :
+
+1. **Hostname absent** : `Host.display_name` restait toujours `''` dans
+   Shinken (contrairement à `Service`, qui a un vrai fallback vers
+   `service_description` dans `service.py`). Ajouté le même fallback vers
+   `host_name` dans `Host.fill_predictive_missing_parameters()`
+   (`shinken/objects/host.py`).
+
+2. **"Check Command" absent des pages de détail Thruk** : masqué par
+   `show_full_commandline = 1` dans `etc/thruk/thruk.conf`, qui ne montre
+   la commande qu'aux utilisateurs ayant le rôle Thruk
+   `authorized_for_configuration_information` — un rôle géré côté Thruk
+   (cgi.cfg/contactgroups), pas quelque chose que Livestatus expose (pas
+   de colonne `is_admin` pour les contacts dans ce module, c'est une
+   extension Nagios/Shinken hors du schéma MK Livestatus standard).
+   Plutôt que de construire tout un mapping de rôles pour 2 utilisateurs,
+   passé `show_full_commandline = 2` (visible pour tout le monde) —
+   `share/thruk/lib/Thruk/Authentication/User.pm`'s
+   `check_show_command_line_permissions()` retourne vrai immédiatement
+   dans ce cas, sans vérifier de rôle.
+
+`etc/contacts/webteam.cfg` a aussi reçu `is_admin 1` sur noel et
+guillaume (sans effet direct sur ce point précis vu l'absence de colonne
+Livestatus, mais cohérent avec le contact "admin" préexistant et utile
+si d'autres fonctionnalités Thruk s'appuient dessus plus tard).
