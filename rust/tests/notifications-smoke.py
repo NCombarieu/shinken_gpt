@@ -35,6 +35,8 @@ with tempfile.TemporaryDirectory(prefix="rust-notify-") as temp:
     objects += object_cfg("service", host_name="edge", service_description="closed",
         active_checks_enabled="0", notifications_enabled="1", notification_interval="0",
         notification_period="none")
+    objects += object_cfg("service", host_name="edge", service_description="repeat",
+        active_checks_enabled="0", notifications_enabled="1", notification_interval="0.5")
     cfg.write_text(objects)
     log = root / "daemon.log"
     def start():
@@ -105,6 +107,14 @@ with tempfile.TemporaryDirectory(prefix="rust-notify-") as temp:
         wait_lines(3)
         assert lines()[2] == "RECOVERY|edge|passive|OK|operator|recovered"
         assert not marker.exists()
+        command("PROCESS_SERVICE_CHECK_RESULT;edge;repeat;2;repeat problem")
+        eventually(lambda: len([line for line in lines() if "|repeat|" in line]) >= 2)
+        now = int(time.time())
+        command(f"SCHEDULE_SVC_DOWNTIME;edge;repeat;{now-1};{now+600};1;0;601;operator;quiet")
+        time.sleep(0.3)
+        before = len(lines())
+        time.sleep(1.3)
+        assert len(lines()) == before, "downtime did not suppress repeated notifications"
     finally:
         proc.terminate()
         assert proc.wait(timeout=10) == 0, log.read_text()

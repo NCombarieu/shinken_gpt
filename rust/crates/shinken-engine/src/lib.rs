@@ -1,9 +1,9 @@
 //! Native monitoring runtime; configuration and Livestatus are independent crates.
 mod commands;
 mod execute;
+mod notifications;
 mod server;
 mod tables;
-mod notifications;
 pub use server::UnixEndpoint;
 
 use serde::{Deserialize, Serialize};
@@ -377,11 +377,20 @@ impl Engine {
             return None;
         }
         r.executing = true;
-        let period = definition.attributes.get("check_period").map_or("", String::as_str);
-        let zone = definition.attributes.get("use_timezone").map_or("", String::as_str);
+        let period = definition
+            .attributes
+            .get("check_period")
+            .map_or("", String::as_str);
+        let zone = definition
+            .attributes
+            .get("use_timezone")
+            .map_or("", String::as_str);
         if !r.force && !self.config.periods.allows(period, zone, now / 1000) {
             r.executing = false;
-            r.next_check_ms = self.config.periods.next_opening(period, zone, now / 1000)
+            r.next_check_ms = self
+                .config
+                .periods
+                .next_opening(period, zone, now / 1000)
                 .map_or(now.saturating_add(86_400_000), |t| t.saturating_mul(1000));
             return None;
         }

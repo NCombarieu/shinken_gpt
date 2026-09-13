@@ -142,7 +142,10 @@ impl Engine {
             return Ok(());
         }
         let supported = [
-            "ENABLE_HOST_NOTIFICATIONS", "DISABLE_HOST_NOTIFICATIONS", "ENABLE_SVC_NOTIFICATIONS", "DISABLE_SVC_NOTIFICATIONS",
+            "ENABLE_HOST_NOTIFICATIONS",
+            "DISABLE_HOST_NOTIFICATIONS",
+            "ENABLE_SVC_NOTIFICATIONS",
+            "DISABLE_SVC_NOTIFICATIONS",
             "PROCESS_HOST_CHECK_RESULT",
             "PROCESS_SERVICE_CHECK_RESULT",
             "ENABLE_HOST_CHECK",
@@ -173,9 +176,17 @@ impl Engine {
         }
         let (key, args) = self.target(name, args)?;
         match name {
-            "ENABLE_HOST_NOTIFICATIONS" | "DISABLE_HOST_NOTIFICATIONS" | "ENABLE_SVC_NOTIFICATIONS" | "DISABLE_SVC_NOTIFICATIONS" => {
+            "ENABLE_HOST_NOTIFICATIONS"
+            | "DISABLE_HOST_NOTIFICATIONS"
+            | "ENABLE_SVC_NOTIFICATIONS"
+            | "DISABLE_SVC_NOTIFICATIONS" => {
                 count(args, 0)?;
-                state.objects.get_mut(&key).expect("known key").notification.enabled = Some(name.starts_with("ENABLE"));
+                state
+                    .objects
+                    .get_mut(&key)
+                    .expect("known key")
+                    .notification
+                    .enabled = Some(name.starts_with("ENABLE"));
             }
             "PROCESS_HOST_CHECK_RESULT" | "PROCESS_SERVICE_CHECK_RESULT" => {
                 if args.len() < 2 {

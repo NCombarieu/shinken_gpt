@@ -21,6 +21,8 @@ To use your configuration, change the configuration bind mount in `compose.rust.
 
 ## Build and run directly on Linux
 
+Successful Rust CI runs also publish the tested container executable as the artifact `shinken-rs-linux-x86_64-release`. After extracting it, run `chmod +x shinken-rs`. It targets x86_64 Linux with glibc; this is a development artifact, not a published stable release.
+
 Install Rust 1.85 and your monitoring plugins, then:
 
 ```sh

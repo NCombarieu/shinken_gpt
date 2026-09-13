@@ -11,7 +11,7 @@ use thiserror::Error;
 mod timeperiod;
 pub use timeperiod::TimePeriods;
 mod notification;
-pub use notification::{ContactNotifications, NotificationConfig, NotificationRoute, option_for};
+pub use notification::{option_for, ContactNotifications, NotificationConfig, NotificationRoute};
 
 pub type Attributes = BTreeMap<String, String>;
 
@@ -480,7 +480,12 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
     let mut model = MonitoringConfig {
         notification_routes: BTreeMap::new(),
         enable_notifications: flag(&loaded.settings, "enable_notifications", true)?,
-        notification_timeout_ms: (positive(value(&loaded.settings, "notification_timeout", "30"), "notification_timeout", false)? * 1000.0).round() as u64,
+        notification_timeout_ms: (positive(
+            value(&loaded.settings, "notification_timeout", "30"),
+            "notification_timeout",
+            false,
+        )? * 1000.0)
+            .round() as u64,
         periods: TimePeriods::build(&resolved, &loaded.settings)?,
         commands: BTreeMap::new(),
         hosts: BTreeMap::new(),
@@ -520,7 +525,12 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
             "host" => {
                 let name = required(a, "host_name")?.to_owned();
                 let host = HostConfig {
-                    notification: NotificationConfig::build(a, interval_length, true, &model.periods)?,
+                    notification: NotificationConfig::build(
+                        a,
+                        interval_length,
+                        true,
+                        &model.periods,
+                    )?,
                     name: name.clone(),
                     address: value(a, "address", &name).to_owned(),
                     check: check(a, &loaded.settings, interval_length, true)?,
@@ -695,7 +705,8 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
         }
     }
     model.contactgroups = contactgroups.clone();
-    model.notification_routes = notification::routes(&resolved, &model.contacts, &model.commands, &model.periods)?;
+    model.notification_routes =
+        notification::routes(&resolved, &model.contacts, &model.commands, &model.periods)?;
     for (name, c, a) in model
         .hosts
         .values()
@@ -732,14 +743,19 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
                 c.command
             )));
         }
-        model.periods.validate_use(value(a, "check_period", ""), value(a, "use_timezone", ""))?;
+        model
+            .periods
+            .validate_use(value(a, "check_period", ""), value(a, "use_timezone", ""))?;
     }
     for h in model.hosts.values_mut() {
         expand_contacts(&mut h.attributes, &contactgroups);
     }
     for s in &mut model.services {
         if !s.attributes.contains_key("contacts") && !s.attributes.contains_key("contact_groups") {
-            s.attributes.insert("contacts".into(), value(&model.hosts[&s.host_name].attributes, "contacts", "").into());
+            s.attributes.insert(
+                "contacts".into(),
+                value(&model.hosts[&s.host_name].attributes, "contacts", "").into(),
+            );
         }
         expand_contacts(&mut s.attributes, &contactgroups);
     }

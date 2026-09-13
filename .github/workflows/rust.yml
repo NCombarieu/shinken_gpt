@@ -28,11 +28,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Check locked dependencies
-        id: lock
         run: cargo fetch --locked
-      - name: Resolve changed dependencies for diagnostics
-        if: "!cancelled() && steps.lock.outcome == 'failure'"
-        run: cargo generate-lockfile
       - name: Formatting gate
         if: "!cancelled()"
         run: cargo fmt --all -- --check
@@ -121,3 +117,9 @@ jobs:
           assert len(state["objects"]) == 4
           assert state["objects"]["H:localhost"]["last_check"] > 0
           PY
+          podman cp rust-smoke:/usr/local/bin/shinken-rs /tmp/shinken-rs
+      - name: Save tested Linux release executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: shinken-rs-linux-x86_64-release
+          path: /tmp/shinken-rs
