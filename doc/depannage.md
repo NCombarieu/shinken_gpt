@@ -76,6 +76,29 @@ le nom de la commande envoyée est bien reconnu par
 pour son bouton "Restart", alors que seul `RESTART_PROGRAM` existait dans le
 code : ajouté comme alias.
 
+## Restes de Python 2 qui plantent seulement si le code path est atteint
+
+Trois bugs trouvés lors d'un audit ciblé (grep sur les patterns Python 2
+classiques), jamais rencontrés en usage normal car les fonctions
+concernées n'avaient jamais été exercées jusque-là :
+
+- `shinken/external_command.py` : `CHANGE_SVC_MODATTR` /
+  `CHANGE_HOST_MODATTR` / `CHANGE_CONTACT_MODATTR` faisaient `long(value)`
+  — `long` n'existe pas en Python 3 (`NameError`). → `int(value)`.
+- `shinken/discovery/discoverymanager.py` : `get_uuid()` retombait sur
+  `sys.maxint` (renommé `sys.maxsize`) si le module `uuid` était absent.
+- `modules/livestatus/module.py` : le handler d'exception d'une lecture de
+  queue interrompue référençait `os.errno.EINTR`, qui n'existe plus —
+  le code cassait *pendant la gestion d'une autre erreur*, masquant
+  l'erreur d'origine. `errno` était déjà importé dans le fichier, juste
+  inutilisé pour ça.
+
+!!! information "Méthode pour en trouver d'autres"
+    `grep -rn "\.iteritems(\|\.itervalues(\|basestring\|sys\.maxint\|os\.errno\|raw_input(\|__metaclass__" shinken/ modules/ --include="*.py"`
+    couvre les patterns Python 2 les plus fréquents. La plupart des faux
+    positifs viennent de shims déjà en place (`basestring = str` etc.) —
+    vérifier l'import avant de conclure à un bug.
+
 ## Régression de sécurité : désérialisation pickle non protégée
 
 `shinken/safepickle.py` (`SafeUnpickler`) existe précisément pour rejeter
