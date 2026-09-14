@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (C) 2009-2012:
 #    Camille, VACQUIE
 #    Romain, FORLOT, romain.forlot@sydel.fr
@@ -25,26 +25,13 @@
 # need to be activated. For Safekit, add a proxy into snmpd conf to
 # include its mib into the master agent netsnmp.
 #
-# For SNMPv3 we created a default user using the command :
-# net-snmp-config --create-snmpv3-user -a "mypassword" myuser
-# Here the user name is myuser and his password is mypassword
-#
 ###############################################################
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-### modules import
-import netsnmp
 import optparse
-import re
 
-##########
-#  menu  #
-##########
+import netsnmp
 
 parser = optparse.OptionParser('%prog [options] -H HOSTADRESS -C SNMPCOMMUNITYREAD -O ARG1 -V SNMPVERSION -l SNMPSECNAME -L SNMPSECLEVEL -p SNMPAUTHPROTO -x SNMPAUTHPASS')
-
-# user name and password are defined in /var/lib/net-snmp/snmpd.conf
 parser.add_option("-H", "--hostname", dest="hostname", help="Hostname to scan")
 parser.add_option("-C", "--community", dest="community", help="Community to scan (default:public)")
 parser.add_option("-O", "--os", dest="os", help="OS from scanned host")
@@ -54,89 +41,60 @@ parser.add_option("-L", "--level", dest="snmpv3_level", help="Security level for
 parser.add_option("-p", "--authproto", dest="snmpv3_auth", help="Authentication protocol for snmpv3(default:MD5)")
 parser.add_option("-x", "--authpass", dest="snmpv3_auth_pass", help="Authentication password for snmpv3(default:monpassword)")
 
-
-opts, args = parser.parse_args()
+opts, _args = parser.parse_args()
 
 hostname = opts.hostname
-os = opts.os
+operating_system = opts.os
 
-clSolution_by_os = { 'aix' : 'hacmp',
-       'linux': 'safekit',
-     }
+cl_solution_by_os = {
+    'aix': 'hacmp',
+    'linux': 'safekit',
+}
 
-if not opts.hostname:
+if not hostname:
     parser.error("Requires one host and its os to scan (option -H)")
-
-if not opts.os:
+if not operating_system:
     parser.error("Requires the os host(option -O)")
 
-if opts.community:
-    community = opts.community
-else:
-    community = 'public'
+community = opts.community or 'public'
+version = opts.version or 1
+snmpv3_user = opts.snmpv3_user or 'myuser'
+snmpv3_level = opts.snmpv3_level or 'authNoPriv'
+snmpv3_auth = opts.snmpv3_auth or 'MD5'
+snmpv3_auth_pass = opts.snmpv3_auth_pass or 'mypassword'
 
-if opts.version:
-    version = opts.version
-else:
-    version = 1
-
-if opts.snmpv3_user:
-    snmpv3_user = opts.snmpv3_user
-else:
-    snmpv3_user = 'myuser'
-
-if opts.snmpv3_level:
-    snmpv3_level = opts.snmpv3_level
-else:
-    snmpv3_level = 'authNoPriv'
-
-if opts.snmpv3_auth:
-    snmpv3_auth = opts.snmpv3_auth
-else:
-    snmpv3_auth = 'MD5'
-
-if opts.snmpv3_auth_pass:
-    snmpv3_auth_pass = opts.snmpv3_auth_pass
-else:
-    snmpv3_auth_pass = 'mypassword'
-
-oid_safekit_moduleName = ".1.3.6.1.4.1.107.175.10.1.1.2"
-oid_hacmp_clusterName = ".1.3.6.1.4.1.2.3.1.2.1.5.1.2"
+oid_safekit_module_name = ".1.3.6.1.4.1.107.175.10.1.1.2"
+oid_hacmp_cluster_name = ".1.3.6.1.4.1.2.3.1.2.1.5.1.2"
 
 
-##############
-#  functions #
-##############
-
-### Search for cluster solution, between safekit or hacmp, presents on the target
 def get_cluster_discovery(oid):
-    name= netsnmp.Varbind(oid)
-    result = netsnmp.snmpwalk(name, Version=version, DestHost=hostname, Community=community, SecName=snmpv3_user, SecLevel=snmpv3_level, AuthProto=snmpv3_auth, AuthPass=snmpv3_auth_pass)
-    nameList = list(result)
-    return nameList
-
-### format the modules list and display them on the standard output
-def get_cluster_discovery_output(list):
-    names = []
-    if list :
-        for elt in list:
-            names.append(elt)
-        print("%s::%s=1"%(hostname, clSolution)# To add tag)
-        print("%s::_%s_modules=%s"%(hostname, clSolution, ','.join(names))# Host macros by Safekit modules)
-    else :
-        print("%s::%s=0"%(hostname, clSolution)# No cluster detected)
-
-###############
-#  execution  #
-###############
-
-scan = []
-clSolution = clSolution_by_os[os]
+    name = netsnmp.Varbind(oid)
+    result = netsnmp.snmpwalk(
+        name,
+        Version=version,
+        DestHost=hostname,
+        Community=community,
+        SecName=snmpv3_user,
+        SecLevel=snmpv3_level,
+        AuthProto=snmpv3_auth,
+        AuthPass=snmpv3_auth_pass,
+    )
+    return list(result)
 
 
-scan = get_cluster_discovery(oid_hacmp_clusterName)
+def get_cluster_discovery_output(values):
+    if values:
+        names = list(values)
+        print("%s::%s=1" % (hostname, cl_solution))
+        print("%s::_%s_modules=%s" % (hostname, cl_solution, ','.join(names)))
+    else:
+        print("%s::%s=0" % (hostname, cl_solution))
+
+
+cl_solution = cl_solution_by_os[operating_system]
+scan = get_cluster_discovery(oid_hacmp_cluster_name)
 if not scan:
-    scan = get_cluster_discovery(oid_safekit_moduleName)
-    clSolution = 'safekit'
+    scan = get_cluster_discovery(oid_safekit_module_name)
+    cl_solution = 'safekit'
 
 get_cluster_discovery_output(scan)

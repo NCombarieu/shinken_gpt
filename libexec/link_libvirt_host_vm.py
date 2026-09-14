@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (C) 2012:
 #    Thibault Cohen, thibault.cohen@savoirfairelinux.com
 #
@@ -18,83 +18,67 @@
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-This program use libvirt to put host parent-child relations in a json one so it
-can be loaded in hot_dependencies_arbiter module
+This program uses libvirt to put host parent-child relations in a JSON file so it
+can be loaded in hot_dependencies_arbiter module.
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import timeit
-import os
-import sys
+import json
 import optparse
 import signal
+import sys
 
 import libvirt
+
 
 class TimeoutException(Exception):
     pass
 
-# Try to load json (2.5 and higer) or simplejson if failed (python2.4)
-try:
-    import json
-except ImportError:
-    # For old Python version, load simple json
-    try:
-        import simplejson as json
-    except ImportError:
-        raise SystemExit("Error: you need the json or simplejson module "
-                         "for this script")
 
 VERSION = '0.1'
 
 
 def main(uris, output_file, ignore):
-
     def timeout_handler(signum, frame):
         raise TimeoutException()
 
-    ignored_doms = []
-    r = []
-
-    if ignore:
-        ignored_doms = ignore.split(",")
+    ignored_doms = ignore.split(",") if ignore else []
+    relationships = []
 
     for uri in uris.split(","):
         signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(10) # triger alarm in 10 seconds
+        signal.alarm(10)
         try:
             conn = libvirt.openReadOnly(uri)
-        except libvirt.libvirtError as e:
-            print("Libvirt connection error: `%s'" % e.message.replace("\r", ""))
+        except libvirt.libvirtError as exc:
+            print("Libvirt connection error: `%s'" % str(exc).replace("\r", ""))
             print("Let's try next URI")
             continue
         except TimeoutException:
-            print("Libvirt Request timeout")
+            print("Libvirt request timeout")
             print("Let's try next URI")
             continue
-        except Exception as e:
-            print("Unknown Error: %s" % str(e))
+        except Exception as exc:
+            print("Unknown error: %s" % exc)
             print("Let's try next URI...")
             continue
+        finally:
+            signal.alarm(0)
 
         hypervisor = conn.getHostname()
         # List all VM (stopped and started)
-        for dom in [conn.lookupByName(name) for name in conn.listDefinedDomains()]\
-                        + [conn.lookupByID(vmid) for vmid in conn.listDomainsID()]:
+        domains = ([conn.lookupByName(name) for name in conn.listDefinedDomains()] +
+                   [conn.lookupByID(vmid) for vmid in conn.listDomainsID()])
+        for dom in domains:
             domain_name = dom.name()
             if domain_name in ignored_doms:
                 continue
-            v = (('host', hypervisor.strip()), ('host', domain_name.strip()))
-            r.append(v)
+            relationships.append((('host', hypervisor.strip()),
+                                  ('host', domain_name.strip())))
 
-    r = set(r)
-    r = list(r)
-    jsonmappingfile = open(output_file, 'w')
-    try:
-        json.dump(r, jsonmappingfile)
-    finally:
-        jsonmappingfile.close()
+        conn.close()
+
+    with open(output_file, 'w', encoding='utf-8') as jsonmappingfile:
+        json.dump(list(set(relationships)), jsonmappingfile)
 
 
 if __name__ == "__main__":
@@ -105,7 +89,7 @@ if __name__ == "__main__":
                       help="Path of the generated json mapping file.\n"
                       "Default: /tmp/libvirt_mapping_file.json")
     parser.add_option("-u", "--uris", dest='uris',
-                      help="Libvirt URIS separated by comma")
+                      help="Libvirt URIs separated by comma")
     parser.add_option("-i", "--ignore", dest='ignore',
                       default=None,
                       help="Ignore hosts (separated by comma)\n"

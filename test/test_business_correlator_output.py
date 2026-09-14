@@ -22,11 +22,11 @@
 # This file is used to test business rules output based on template expansion.
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import absolute_import
 import time
 from shinken_test import unittest, ShinkenTest, time_hacker
 from shinken.macroresolver import MacroResolver
+from six.moves import range
 
 
 class TestBusinesscorrelOutput(ShinkenTest):

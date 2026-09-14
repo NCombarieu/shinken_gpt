@@ -22,10 +22,11 @@
 # This file is used to test host- and service-downtimes.
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 from shinken.objects.serviceescalation import Serviceescalation
+from six.moves import range
 
 class TestEscalations(ShinkenTest):
 
@@ -555,7 +556,7 @@ class TestEscalations(ShinkenTest):
         # We check that we really raise the notif number too
         self.assertGreater(svc.current_notification_number, cnn)
         cnn = svc.current_notification_number
-
+        
         # Ok we should have one notification
         next_notifications = list(svc.notifications_in_progress.values())
         print("LEN", len(next_notifications))

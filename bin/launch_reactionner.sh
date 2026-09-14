@@ -23,8 +23,8 @@
 
 
 DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+BIN="$DIR"
 ETC="$DIR"/../etc
 
 echo "Launching Reactionner (which sends notifications)"
-"$BIN"/shinken_reactionner.py -d -c "$ETC"/daemons/reactionnerd.ini
+"$BIN"/shinken-reactionner.py -d -c "$ETC"/daemons/reactionnerd.ini

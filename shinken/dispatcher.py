@@ -30,12 +30,10 @@
  dead one to the spare
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import time
 import random
 
-from shinken.util import alive_then_spare_then_deads
+from shinken.util import alive_then_spare_then_deads, my_sort
 from shinken.log import logger
 
 # Always initialize random :)
@@ -43,7 +41,7 @@ random.seed()
 
 
 # Dispatcher Class
-class Dispatcher(object):
+class Dispatcher:
 
     # Load all elements, set them as not assigned
     # and add them to elements, so loop will be easier :)
@@ -120,7 +118,7 @@ class Dispatcher(object):
     # checks alive elements
     def check_alive(self):
         for elt in self.elements:
-            # print("Updating elements", elt.get_name(), elt.__dict__)
+            # print "Updating elements", elt.get_name(), elt.__dict__
             elt.update_infos()
 
             # Not alive needs new need_conf
@@ -133,7 +131,7 @@ class Dispatcher(object):
             # If not me, but not the master too
             if arb != self.arbiter and arb.spare:
                 arb.update_infos()
-                # print("Arb", arb.get_name(), "alive?", arb.alive, arb.__dict__)
+                # print "Arb", arb.get_name(), "alive?", arb.alive, arb.__dict__
 
 
     # Check if all active items are still alive
@@ -203,8 +201,10 @@ class Dispatcher(object):
                     for kind in ('reactionner', 'poller', 'broker', 'receiver'):
                         # We must have the good number of satellite or we are not happy
                         # So we are sure to raise a dispatch every loop a satellite is missing
-                        if (len(r.to_satellites_managed_by[kind][cfg_id]) < r.get_nb_of_must_have_satellites(kind)):
-                            logger.warning("Missing satellite %s for configuration %d:" % (kind, cfg_id))
+                        if (len(r.to_satellites_managed_by[kind][cfg_id])
+                                < r.get_nb_of_must_have_satellites(kind)):
+                            logger.warning("Missing satellite %s for configuration %d:",
+                                           kind, cfg_id)
 
                             # TODO: less violent! Must only resent to who need?
                             # must be caught by satellite who sees that
@@ -225,8 +225,8 @@ class Dispatcher(object):
                                                r.get_name(), kind, satellite.get_name())
                                 continue
                             if not satellite.alive or (
-                                    satellite.reachable and not
-                                    satellite.do_i_manage(cfg_id, push_flavor)):
+                                    satellite.reachable
+                                    and not satellite.do_i_manage(cfg_id, push_flavor)):
                                 logger.warning('[%s] The %s %s seems to be down, '
                                                'I must re-dispatch its role to someone else.',
                                                r.get_name(), kind, satellite.get_name())
@@ -260,7 +260,7 @@ class Dispatcher(object):
                 # If element has a conf, I do not care, it's a good dispatch
                 # If dead: I do not ask it something, it won't respond..
                 if elt.conf is None and elt.reachable:
-                    # print("Ask", elt.get_name() , 'if it got conf')
+                    # print "Ask", elt.get_name() , 'if it got conf'
                     if elt.have_conf():
                         logger.warning("The element %s have a conf and should "
                                        "not have one! I ask it to idle now",
@@ -270,7 +270,7 @@ class Dispatcher(object):
                         # I do not care about order not send or not. If not,
                         # The next loop will resent it
                     # else:
-                    #    print("No conf")
+                    #    print "No conf"
 
         # I ask satellites which sched_id they manage. If I do not agree, I ask
         # them to remove it
@@ -283,7 +283,7 @@ class Dispatcher(object):
                 if len(cfg_ids) != 0:
                     id_to_delete = []
                     for cfg_id in cfg_ids:
-                        # DBG print(kind, ":", satellite.get_name(), "manage cfg id:", cfg_id)
+                        # DBG print kind, ":", satellite.get_name(), "manage cfg id:", cfg_id
                         # Ok, we search for realms that have the conf
                         for r in self.realms:
                             if cfg_id in r.confs:
@@ -324,8 +324,11 @@ class Dispatcher(object):
 
         # Now we sort the scheds so we take master, then spare
         # the dead, but we do not care about them
-        scheds = alive_then_spare_then_deads(scheds)
+        scheds = my_sort(scheds, alive_then_spare_then_deads)
         scheds.reverse()  # pop is last, I need first
+
+        print_sched = [s.get_name() for s in scheds]
+        print_sched.reverse()
 
         return scheds
 
@@ -408,7 +411,7 @@ class Dispatcher(object):
                             'accept_passive_unknown_check_results':
                                 sched.accept_passive_unknown_check_results,
                             'harakiri_threshold': sched.harakiri_threshold,
-                            # shinken.io part
+                            # shiken.io part
                             'api_key': self.conf.api_key,
                             'secret': self.conf.secret,
                             'http_proxy': self.conf.http_proxy,
@@ -470,7 +473,7 @@ class Dispatcher(object):
             if self.dispatch_ok:
                 for sched in self.schedulers.items.values():
                     if sched.conf is None:
-                        # print("Tagging sched", sched.get_name(),)
+                        # print "Tagging sched", sched.get_name(),
                         # "so it do not ask anymore for conf"
                         sched.need_conf = False
 
@@ -485,123 +488,120 @@ class Dispatcher(object):
                     # flavor if the push number of this configuration send to a scheduler
                     flavor = cfg.push_flavor
                     for kind in ('reactionner', 'poller', 'broker', 'receiver'):
-                        if not r.to_satellites_need_dispatch[kind][cfg_id]:
-                            continue
-                        cfg_for_satellite_part = r.to_satellites[kind][cfg_id]
+                        if r.to_satellites_need_dispatch[kind][cfg_id]:
+                            cfg_for_satellite_part = r.to_satellites[kind][cfg_id]
 
-                        # make copies of potential_react list for sort
-                        satellites = []
-                        for satellite in r.get_potential_satellites_by_type(kind):
-                            satellites.append(satellite)
-                        satellites = alive_then_spare_then_deads(satellites)
+                            # make copies of potential_react list for sort
+                            satellites = []
+                            for satellite in r.get_potential_satellites_by_type(kind):
+                                satellites.append(satellite)
+                            satellites = my_sort(satellites, alive_then_spare_then_deads)
 
-                        # Only keep alive Satellites and reachable ones
-                        satellites = [s for s in satellites if s.alive and s.reachable]
+                            # Only keep alive Satellites and reachable ones
+                            satellites = [s for s in satellites if s.alive and s.reachable]
 
-                        # If we got a broker, we make the list to pop a new
-                        # item first for each scheduler, so it will smooth the load
-                        # But the spare must stay at the end ;)
-                        # WARNING : skip this if we are in a complet broker link realm
-                        if kind == "broker" and not r.broker_complete_links:
-                            nospare = [s for s in satellites if not s.spare]
-                            # Should look over the list, not over
-                            if len(nospare) != 0:
-                                idx = cfg_id % len(nospare)
-                                spares = [s for s in satellites if s.spare]
-                                new_satellites = nospare[idx:]
-                                for _b in nospare[: -idx + 1]:
-                                    if _b not in new_satellites:
-                                        new_satellites.append(_b)
-                                satellites = new_satellites
-                                satellites.extend(spares)
+                            # If we got a broker, we make the list to pop a new
+                            # item first for each scheduler, so it will smooth the load
+                            # But the spare must stay at the end ;)
+                            # WARNING : skip this if we are in a complet broker link realm
+                            if kind == "broker" and not r.broker_complete_links:
+                                nospare = [s for s in satellites if not s.spare]
+                                # Should look over the list, not over
+                                if len(nospare) != 0:
+                                    idx = cfg_id % len(nospare)
+                                    spares = [s for s in satellites if s.spare]
+                                    new_satellites = nospare[idx:]
+                                    for _b in nospare[: -idx + 1]:
+                                        if _b not in new_satellites:
+                                            new_satellites.append(_b)
+                                    satellites = new_satellites
+                                    satellites.extend(spares)
 
-                        # Dump the order where we will send conf
-                        satellite_string = "[%s] Dispatching %s satellite with order: " % (
-                            r.get_name(), kind)
-                        for satellite in satellites:
-                            satellite_string += '%s (spare:%s), ' % (
-                                satellite.get_name(), satellite.spare
-                            )
-                        logger.info(satellite_string)
+                            # Dump the order where we will send conf
+                            satellite_string = "[%s] Dispatching %s satellite with order: " % (
+                                r.get_name(), kind)
+                            for satellite in satellites:
+                                satellite_string += '%s (spare:%s), ' % (
+                                    satellite.get_name(), str(satellite.spare))
+                            logger.info(satellite_string)
 
-                        # Now we dispatch cfg to every one ask for it
-                        nb_cfg_sent = 0
-                        for satellite in satellites:
-                            # Send only if we need, and if we can
-                            if (nb_cfg_sent < r.get_nb_of_must_have_satellites(kind) and
-                                    satellite.alive):
-                                satellite.cfg['schedulers'][cfg_id] = cfg_for_satellite_part
-                                if satellite.manage_arbiters:
-                                    satellite.cfg['arbiters'] = arbiters_cfg
+                            # Now we dispatch cfg to every one ask for it
+                            nb_cfg_sent = 0
+                            for satellite in satellites:
+                                # Send only if we need, and if we can
+                                if (nb_cfg_sent < r.get_nb_of_must_have_satellites(kind) and
+                                        satellite.alive):
+                                    satellite.cfg['schedulers'][cfg_id] = cfg_for_satellite_part
+                                    if satellite.manage_arbiters:
+                                        satellite.cfg['arbiters'] = arbiters_cfg
 
-                                # Brokers should have poller/reactionners links too
-                                if kind == "broker":
-                                    r.fill_broker_with_poller_reactionner_links(satellite)
+                                    # Brokers should have poller/reactionners links too
+                                    if kind == "broker":
+                                        r.fill_broker_with_poller_reactionner_links(satellite)
 
-                                is_sent = False
-                                # Maybe this satellite already got this configuration,
-                                # so skip it
-                                if satellite.do_i_manage(cfg_id, flavor):
-                                    logger.info('[%s] Skipping configuration %d send '
-                                                'to the %s %s: it already got it',
-                                                r.get_name(), cfg_id, kind,
-                                                satellite.get_name())
-                                    is_sent = True
-                                else:  # ok, it really need it :)
-                                    logger.info('[%s] Trying to send configuration to %s %s',
-                                                r.get_name(), kind, satellite.get_name())
-                                    is_sent = satellite.put_conf(satellite.cfg)
+                                    is_sent = False
+                                    # Maybe this satellite already got this configuration,
+                                    # so skip it
+                                    if satellite.do_i_manage(cfg_id, flavor):
+                                        logger.info('[%s] Skipping configuration %d send '
+                                                    'to the %s %s: it already got it',
+                                                    r.get_name(), cfg_id, kind,
+                                                    satellite.get_name())
+                                        is_sent = True
+                                    else:  # ok, it really need it :)
+                                        logger.info('[%s] Trying to send configuration to %s %s',
+                                                    r.get_name(), kind, satellite.get_name())
+                                        is_sent = satellite.put_conf(satellite.cfg)
 
-                                if is_sent:
-                                    satellite.active = True
-                                    logger.info('[%s] Dispatch OK of configuration %s to %s %s',
-                                                r.get_name(), cfg_id, kind,
-                                                satellite.get_name())
-                                    # We change the satellite configuration, update our data
-                                    satellite.known_conf_managed_push(cfg_id, flavor)
+                                    if is_sent:
+                                        satellite.active = True
+                                        logger.info('[%s] Dispatch OK of configuration %s to %s %s',
+                                                    r.get_name(), cfg_id, kind,
+                                                    satellite.get_name())
+                                        # We change the satellite configuration, update our data
+                                        satellite.known_conf_managed_push(cfg_id, flavor)
 
-                                    nb_cfg_sent += 1
-                                    r.to_satellites_managed_by[kind][cfg_id].append(satellite)
+                                        nb_cfg_sent += 1
+                                        r.to_satellites_managed_by[kind][cfg_id].append(satellite)
 
-                                    # If we got a broker, the conf_id must be sent to only ONE
-                                    # broker in a classic realm.
-                                    if kind == "broker" and not r.broker_complete_links:
-                                        break
+                                        # If we got a broker, the conf_id must be sent to only ONE
+                                        # broker in a classic realm.
+                                        if kind == "broker" and not r.broker_complete_links:
+                                            break
 
-                                    # If receiver, we must send the hostnames
-                                    # of this configuration
-                                    if kind == 'receiver':
-                                        hnames = [h.get_name() for h in cfg.hosts]
-                                        logger.debug("[%s] Sending %s hostnames to the "
-                                                     "receiver %s",
-                                                     r.get_name(), len(hnames),
-                                                     satellite.get_name())
-                                        satellite.push_host_names({'sched_id': cfg_id, 'hnames': hnames})
-                        # else:
-                        #    #I've got enough satellite, the next ones are considered spares
-                        if nb_cfg_sent == r.get_nb_of_must_have_satellites(kind):
-                            logger.info("[%s] OK, no more %s sent need", r.get_name(), kind)
-                            r.to_satellites_need_dispatch[kind][cfg_id] = False
+                                        # If receiver, we must send the hostnames
+                                        # of this configuration
+                                        if kind == 'receiver':
+                                            hnames = [h.get_name() for h in cfg.hosts]
+                                            logger.debug("[%s] Sending %s hostnames to the "
+                                                         "receiver %s",
+                                                         r.get_name(), len(hnames),
+                                                         satellite.get_name())
+                                            satellite.push_host_names(cfg_id, hnames)
+                            # else:
+                            #    #I've got enough satellite, the next ones are considered spares
+                            if nb_cfg_sent == r.get_nb_of_must_have_satellites(kind):
+                                logger.info("[%s] OK, no more %s sent need", r.get_name(), kind)
+                                r.to_satellites_need_dispatch[kind][cfg_id] = False
 
             # And now we dispatch receivers. It's easier, they need ONE conf
             # in all their life :)
             for r in self.realms:
                 for rec in r.receivers:
-                    if not rec.need_conf:
-                        continue
-                    logger.info('[%s] Trying to send configuration to receiver %s',
-                                r.get_name(), rec.get_name())
-                    is_sent = False
-                    if rec.reachable:
-                        is_sent = rec.put_conf(rec.cfg)
-                    else:
-                        logger.info('[%s] Skyping configuration sent to offline receiver %s',
+                    if rec.need_conf:
+                        logger.info('[%s] Trying to send configuration to receiver %s',
                                     r.get_name(), rec.get_name())
-                    if is_sent:
-                        rec.active = True
-                        rec.need_conf = False
-                        logger.info('[%s] Dispatch OK of configuration to receiver %s',
-                                    r.get_name(), rec.get_name())
-                    else:
-                        logger.error('[%s] Dispatching failed for receiver %s',
-                                     r.get_name(), rec.get_name())
+                        is_sent = False
+                        if rec.reachable:
+                            is_sent = rec.put_conf(rec.cfg)
+                        else:
+                            logger.info('[%s] Skyping configuration sent to offline receiver %s',
+                                        r.get_name(), rec.get_name())
+                        if is_sent:
+                            rec.active = True
+                            rec.need_conf = False
+                            logger.info('[%s] Dispatch OK of configuration to receiver %s',
+                                        r.get_name(), rec.get_name())
+                        else:
+                            logger.error('[%s] Dispatching failed for receiver %s',
+                                         r.get_name(), rec.get_name())

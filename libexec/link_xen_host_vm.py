@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # /usr/local/shinken/libexec/link_xen_host_vm.py
@@ -18,33 +18,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import sys
-import XenAPI
-from string import split
-import shutil
+import json
 import optparse
+import shutil
+import sys
 
-# Try to load json (2.5 and higer) or simplejson if failed (python2.4)
-try:
-    import json
-except ImportError:
-    # For old Python version, load
-    # simple json (it can be hard json?! It's 2 functions guy!)
-    try:
-        import simplejson as json
-    except ImportError:
-        sys.exit("Error: you need the json or simplejson module for this script")
+import XenAPI
 
 VERSION = '0.1'
 
-# Split and clean the rules from a string to a list
+
 def _split_rules(rules):
     return [r.strip() for r in rules.split('|')]
 
 
-# Apply all rules on the objects names
 def _apply_rules(name, rules):
     if 'nofqdn' in rules:
         name = name.split(' ', 1)[0]
@@ -54,82 +41,84 @@ def _apply_rules(name, rules):
     return name
 
 
-def create_all_links(res,rules):
-    r = []
-    for host in res:
-        for vm in res[host]:
-            # First we apply rules on the names
-            host_name = _apply_rules(host,rules)
-            vm_name = _apply_rules(vm,rules)
-            v = (('host', host_name), ('host', vm_name))
-            r.append(v)
-    return r
+def create_all_links(res, rules):
+    links = []
+    for host, vms in res.items():
+        for vm in vms:
+            host_name = _apply_rules(host, rules)
+            vm_name = _apply_rules(vm, rules)
+            links.append((('host', host_name), ('host', vm_name)))
+    return links
 
-def write_output(path,r):
+
+def write_output(path, links):
     try:
-        f = open(path + '.tmp', 'wb')
-        buf = json.dumps(r)
-        f.write(buf)
-        f.close()
+        with open(path + '.tmp', 'w', encoding='utf-8') as handle:
+            json.dump(links, handle)
         shutil.move(path + '.tmp', path)
         print("File %s wrote" % path)
-    except IOError as exp:
+    except OSError as exp:
         sys.exit("Error writing the file %s: %s" % (path, exp))
 
+
 def con_poolmaster(xs, user, password):
-  try:
-    s = XenAPI.Session("http://%s" % xs)
-    s.xenapi.login_with_password(user,password)
-    return s
-  except XenAPI.Failure as msg:
-     if  msg.details[0] == "HOST_IS_SLAVE":
-        host = msg.details[1]
-        s = XenAPI.Session("http://%s" % host)
-        s.xenapi.login_with_password(user, password)
-        return s
-     else:
-        print("Error: pool con:",  xs, sys.exc_info()[0])
-        pass
-  except Exception:
-    print("Error: pool con:",  xs, sys.exc_info()[0])
-    pass
-  return None
+    try:
+        session = XenAPI.Session("http://%s" % xs)
+        session.xenapi.login_with_password(user, password)
+        return session
+    except XenAPI.Failure as exc:
+        if exc.details[0] == "HOST_IS_SLAVE":
+            host = exc.details[1]
+            session = XenAPI.Session("http://%s" % host)
+            session.xenapi.login_with_password(user, password)
+            return session
+        print("Error: pool con:", xs, exc)
+    except Exception as exc:
+        print("Error: pool con:", xs, exc)
+    return None
+
 
 def main(output, user, password, rules, xenserver):
-  res = {}
-  for xs in xenserver:
-    try:
-      s = con_poolmaster(xs, user, password)
-      vms = s.xenapi.VM.get_all()
-      for vm in vms:
-        record = s.xenapi.VM.get_record(vm)
-        if not(record["is_a_template"]) and not(record["is_control_domain"]):
-          vhost = s.xenapi.VM.get_resident_on(vm)
-          if vhost != "OpaqueRef:NULL":
-            host = s.xenapi.host.get_hostname(vhost)
-            vm_name = s.xenapi.VM.get_name_label(vm)
-            if host in res.keys():
-              res[host].append(vm_name)
-            else:
-              res[host] = [vm_name]
-      s.xenapi.session.logout()
-    except Exception:
-      pass
-  r = create_all_links(res,rules)
-  print("Created %d links" % len(r))
+    res = {}
+    for xs in xenserver:
+        session = None
+        try:
+            session = con_poolmaster(xs, user, password)
+            if session is None:
+                continue
+            for vm in session.xenapi.VM.get_all():
+                record = session.xenapi.VM.get_record(vm)
+                if record["is_a_template"] or record["is_control_domain"]:
+                    continue
+                vhost = session.xenapi.VM.get_resident_on(vm)
+                if vhost == "OpaqueRef:NULL":
+                    continue
+                host = session.xenapi.host.get_hostname(vhost)
+                vm_name = session.xenapi.VM.get_name_label(vm)
+                res.setdefault(host, []).append(vm_name)
+        except Exception as exc:
+            print("Error querying XenServer %s: %s" % (xs, exc))
+        finally:
+            if session is not None:
+                try:
+                    session.xenapi.session.logout()
+                except Exception:
+                    pass
 
-  write_output(output, r)
-  print("Finished!")
+    links = create_all_links(res, _split_rules(rules))
+    print("Created %d links" % len(links))
+    write_output(output, links)
+    print("Finished!")
+
 
 if __name__ == "__main__":
-    # Manage the options
     parser = optparse.OptionParser(
         version="Shinken XenServer/XCP links dumping script version %s" % VERSION)
     parser.add_option("-o", "--output",
                       default='/tmp/xen_mapping_file.json',
                       help="Path of the generated mapping file.")
     parser.add_option("-u", "--user",
-                      help="User name to connect to this Vcenter")
+                      help="User name to connect to this XenServer pool")
     parser.add_option("-p", "--password",
                       help="The password of this user")
     parser.add_option('-r', '--rules', default='',
@@ -137,19 +126,16 @@ if __name__ == "__main__":
                       "`lower`: to lower names, "
                       "`nofqdn`: keep only the first name (server.mydomain.com -> server)."
                       "You can use several rules like `lower|nofqdn`")
-    parser.add_option('-x','--xenserver',action="append",
-                      help="multiple ip/fqdn of your XenServer/XCP poll master (or member). "
-                      "ex: -x poolmaster1 -x poolmaster2 -x poolmaster3 "
-                      "If pool member was use, the poll master was found")
+    parser.add_option('-x', '--xenserver', action="append",
+                      help="multiple ip/fqdn of your XenServer/XCP pool master (or member). "
+                      "ex: -x poolmaster1 -x poolmaster2 -x poolmaster3")
 
     opts, args = parser.parse_args()
     if args:
         parser.error("does not take any positional arguments")
-
     if opts.user is None:
         parser.error("missing -u or --user option for the pool master username")
     if opts.password is None:
-        error = True
         parser.error("missing -p or --password option for the pool master password")
     if opts.output is None:
         parser.error("missing -o or --output option for the output mapping file")

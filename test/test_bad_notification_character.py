@@ -23,8 +23,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 
@@ -53,6 +53,8 @@ class TestConfig(ShinkenTest):
         self.assertEqual('UP', host.state)
         self.assertEqual('HARD', host.state_type)
 
+        # Python 2 returned a list here. Keep that snapshot behavior because
+        # successful result processing removes the notification from the map.
         for n in list(svc.notifications_in_progress.values()):
             print("HEHE")
             print(n.__dict__)
@@ -60,6 +62,8 @@ class TestConfig(ShinkenTest):
             print(n.exit_status)
             n.output = u'I love myself $£¤'
             self.sched.put_results(n)
+
+        self.assertEqual({}, svc.notifications_in_progress)
 
 if __name__ == '__main__':
     unittest.main()
