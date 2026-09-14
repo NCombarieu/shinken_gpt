@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 /// Message sent from Arbiter to Python daemons
 #[derive(Debug, Clone, Serialize, Deserialize)]
