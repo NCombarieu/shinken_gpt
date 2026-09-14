@@ -28,6 +28,8 @@ Full documentation lives in `doc/ <doc/README.md>`_:
   container-specific networking
 * `doc/exploitation.md <doc/exploitation.md>`_ — day-to-day operations
   (reload, force check, acknowledge, downtime)
+* `doc/database.md <doc/DATABASE.md>`_ — monitoring logs storage (SQLite, MySQL, Oracle)
+* `doc/logging.md <doc/LOGGING.md>`_ — structured JSON logging for aggregation
 * `doc/livestatus-thruk.md <doc/livestatus-thruk.md>`_ — integrating Thruk
   web UI via Livestatus
 
