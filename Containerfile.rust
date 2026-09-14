@@ -6,7 +6,7 @@ RUN cargo build --locked --release -p shinken-rs
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends monitoring-plugins-basic ca-certificates \
+    && apt-get install -y --no-install-recommends monitoring-plugins-basic openssh-client ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --create-home --home-dir /var/lib/shinken shinken \
     && mkdir -p /run/shinken /etc/shinken \
