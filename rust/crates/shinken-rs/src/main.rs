@@ -137,7 +137,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 tasks.spawn(async move { engine.serve_tcp(listener).await });
             }
             let mut workers = runtime_tasks(&engine, state_file.clone());
-            let mut hangup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())?;
+            let mut hangup =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())?;
             let mut control = tokio::time::interval(Duration::from_millis(100));
             let stopping = shutdown();
             tokio::pin!(stopping);
@@ -149,7 +150,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     _ = hangup.recv() => true,
                     _ = control.tick() => engine.take_reload_request().await,
                 };
-                if !reload { continue; }
+                if !reload {
+                    continue;
+                }
                 let path = config.clone();
                 let candidate = tokio::task::spawn_blocking(move || configuration(path)).await;
                 let candidate = match candidate {
@@ -165,7 +168,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 };
                 let next = match candidate {
                     Ok(engine) => engine,
-                    Err(error) => { eprintln!("configuration reload rejected: {error}"); continue; }
+                    Err(error) => {
+                        eprintln!("configuration reload rejected: {error}");
+                        continue;
+                    }
                 };
                 workers.shutdown().await;
                 engine = live.replace(next).await;
@@ -183,11 +189,15 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn task_result(result: Option<Result<Result<(), EngineError>, tokio::task::JoinError>>) -> Result<(), EngineError> {
+fn task_result(
+    result: Option<Result<Result<(), EngineError>, tokio::task::JoinError>>,
+) -> Result<(), EngineError> {
     match result {
         Some(Ok(Err(error))) => Err(error),
         Some(Err(error)) => Err(EngineError::Task(error)),
-        _ => Err(EngineError::Invalid("runtime task stopped unexpectedly".into())),
+        _ => Err(EngineError::Invalid(
+            "runtime task stopped unexpectedly".into(),
+        )),
     }
 }
 fn runtime_tasks(engine: &Engine, state_file: Option<PathBuf>) -> JoinSet<Result<(), EngineError>> {

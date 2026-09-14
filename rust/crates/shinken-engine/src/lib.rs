@@ -1,14 +1,14 @@
 //! Native monitoring runtime; configuration and Livestatus are independent crates.
 mod commands;
 mod dependencies;
-mod handlers;
-mod reload;
 mod execute;
+mod handlers;
 mod notifications;
+mod reload;
 mod server;
 mod tables;
-pub use server::UnixEndpoint;
 pub use reload::LiveEngine;
+pub use server::UnixEndpoint;
 
 use serde::{Deserialize, Serialize};
 use shinken_config::{Attributes, CheckConfig, MonitoringConfig};
@@ -294,7 +294,10 @@ impl Engine {
                 old.status.max_attempts = current.status.max_attempts;
                 old.status.attempt = old.status.attempt.clamp(1, old.status.max_attempts);
                 old.next_check_ms = now_ms();
-                if let Some((at, forced)) = old.scheduled.take() { old.next_check_ms = at; old.force = forced; }
+                if let Some((at, forced)) = old.scheduled.take() {
+                    old.next_check_ms = at;
+                    old.force = forced;
+                }
                 *current = old;
             }
         }
@@ -469,7 +472,13 @@ impl Engine {
     ) {
         let d = &self.definitions[key];
         if d.service.is_none() && (!passive || self.config.dependencies.translate_passive_hosts) {
-            result.code = if result.code == 0 { 0 } else if self.parents_down(state, &d.host) { 2 } else { 1 };
+            result.code = if result.code == 0 {
+                0
+            } else if self.parents_down(state, &d.host) {
+                2
+            } else {
+                1
+            };
         }
         let Some(r) = state.objects.get_mut(key) else {
             return;
@@ -489,8 +498,12 @@ impl Engine {
         let changed = previous.state != r.status.state || first_check;
         let handle = (r.status.state_type == StateType::Soft && next != CheckState::Ok)
             || (changed && (!first_check || next != CheckState::Ok))
-            || (previous.state_type == StateType::Soft && r.status.state_type == StateType::Hard && next != CheckState::Ok);
-        let soft_recovery = next == CheckState::Ok && previous.state != CheckState::Ok && previous.state_type == StateType::Soft;
+            || (previous.state_type == StateType::Soft
+                && r.status.state_type == StateType::Hard
+                && next != CheckState::Ok);
+        let soft_recovery = next == CheckState::Ok
+            && previous.state != CheckState::Ok
+            && previous.state_type == StateType::Soft;
         if changed {
             r.last_state = numeric(previous.state);
             r.last_state_change = at;
@@ -542,8 +555,12 @@ impl Engine {
                 state.log.pop_front();
             }
         }
-        if handle { self.queue_handler(state, key, soft_recovery); }
-        if changed && d.service.is_none() { self.refresh_children(state, &d.host); }
+        if handle {
+            self.queue_handler(state, key, soft_recovery);
+        }
+        if changed && d.service.is_none() {
+            self.refresh_children(state, &d.host);
+        }
         if next == CheckState::Ok {
             state
                 .comments

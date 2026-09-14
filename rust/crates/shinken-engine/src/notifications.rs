@@ -111,7 +111,9 @@ impl Engine {
         {
             return None;
         }
-        if self.dependency_failed(&state, key, true, now / 1000) { return None; }
+        if self.dependency_failed(&state, key, true, now / 1000) {
+            return None;
+        }
         let code = numeric(r.status.state);
         let host = d.service.is_none();
         let option = option_for(code, host);
@@ -148,37 +150,77 @@ impl Engine {
             return None;
         }
         let new_round = r.notification.round_state != Some(code)
-            || (code > 0 && r.notification.round_interval_ms > 0
-                && now >= r.notification.round_at_ms.saturating_add(r.notification.round_interval_ms));
-        let number = if code == 0 { 0 } else if new_round {
+            || (code > 0
+                && r.notification.round_interval_ms > 0
+                && now
+                    >= r.notification
+                        .round_at_ms
+                        .saturating_add(r.notification.round_interval_ms));
+        let number = if code == 0 {
+            0
+        } else if new_round {
             r.notification.number.saturating_add(1)
-        } else { r.notification.number };
+        } else {
+            r.notification.number
+        };
         let elapsed = now.saturating_sub(r.notification.problem_since_ms);
-        let escalations: Vec<_> = self.config.escalations.get(key).into_iter().flatten()
-            .filter(|e| e.matches(number, elapsed, option) && self.config.periods.allows(&e.period, zone, now / 1000)).collect();
-        if escalations.is_empty() && !d.notification.options.contains(&option) { return None; }
-        let interval_ms = escalations.iter().filter_map(|e| e.interval_ms).min().unwrap_or(d.notification.interval_ms);
+        let escalations: Vec<_> = self
+            .config
+            .escalations
+            .get(key)
+            .into_iter()
+            .flatten()
+            .filter(|e| {
+                e.matches(number, elapsed, option)
+                    && self.config.periods.allows(&e.period, zone, now / 1000)
+            })
+            .collect();
+        if escalations.is_empty() && !d.notification.options.contains(&option) {
+            return None;
+        }
+        let interval_ms = escalations
+            .iter()
+            .filter_map(|e| e.interval_ms)
+            .min()
+            .unwrap_or(d.notification.interval_ms);
         let contacts: std::collections::BTreeSet<_> = if code == 0 {
             // Recovery reaches every successful recipient of this incident, including earlier escalations.
             self.config.contacts.keys().cloned().collect()
         } else if escalations.is_empty() {
             members(&d.attributes, "contacts").into_iter().collect()
-        } else { escalations.iter().flat_map(|e| e.contacts.iter().cloned()).collect() };
+        } else {
+            escalations
+                .iter()
+                .flat_map(|e| e.contacts.iter().cloned())
+                .collect()
+        };
         let mut jobs = Vec::new();
         for contact in contacts {
-            let Some(routes) = self.config.notification_routes.get(&contact) else { continue; };
+            let Some(routes) = self.config.notification_routes.get(&contact) else {
+                continue;
+            };
             for route in if host { &routes.host } else { &routes.service } {
-                if !route.enabled || !route.options.contains(&option)
-                    || !self.config.periods.allows(&route.period, "", now / 1000) { continue; }
+                if !route.enabled
+                    || !route.options.contains(&option)
+                    || !self.config.periods.allows(&route.period, "", now / 1000)
+                {
+                    continue;
+                }
                 let last = r.notification.deliveries.get(&route.id);
                 if code == 0 {
-                    if last.is_none_or(|last| last.state == 0) { continue; }
+                    if last.is_none_or(|last| last.state == 0) {
+                        continue;
+                    }
                 } else if last.is_some_and(|last| last.state == code && last.number == number) {
                     continue;
                 }
                 let mut macros = self.notification_macros(&state, key, &contact, code);
                 macros.insert("$NOTIFICATIONNUMBER$".into(), number.to_string());
-                jobs.push(Job { id: route.id.clone(), command: route.command.clone(), macros });
+                jobs.push(Job {
+                    id: route.id.clone(),
+                    command: route.command.clone(),
+                    macros,
+                });
             }
         }
         if jobs.is_empty() {
@@ -187,7 +229,9 @@ impl Engine {
         let incident = r.notification.incident;
         state.objects.get_mut(key)?.notification.sending = true;
         Some(Plan {
-            number, interval_ms, incident,
+            number,
+            interval_ms,
+            incident,
             key: key.into(),
             state: code,
             jobs,
@@ -221,7 +265,9 @@ impl Engine {
         };
         r.notification.sending = false;
         r.notification.retry_after_ms = now.saturating_add(1000);
-        if r.notification.incident != plan.incident { return; }
+        if r.notification.incident != plan.incident {
+            return;
+        }
         if !delivered.is_empty() {
             for id in delivered {
                 r.notification.deliveries.insert(
@@ -234,7 +280,9 @@ impl Engine {
                 );
             }
             r.notification.last_notification = now / 1000;
-            if r.notification.round_state != Some(plan.state) || r.notification.number != plan.number {
+            if r.notification.round_state != Some(plan.state)
+                || r.notification.number != plan.number
+            {
                 r.notification.round_at_ms = now;
                 r.notification.round_interval_ms = plan.interval_ms;
             }

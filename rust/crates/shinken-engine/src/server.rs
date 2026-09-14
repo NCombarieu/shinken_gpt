@@ -1,4 +1,4 @@
-use crate::{LiveEngine, EngineError};
+use crate::{EngineError, LiveEngine};
 use shinken_livestatus::{fixed16_response, parse_query, ResponseHeader};
 use std::{
     fs, io,

@@ -152,8 +152,10 @@ impl Engine {
             return Ok(());
         }
         let supported = [
-            "ENABLE_HOST_EVENT_HANDLER", "DISABLE_HOST_EVENT_HANDLER",
-            "ENABLE_SVC_EVENT_HANDLER", "DISABLE_SVC_EVENT_HANDLER",
+            "ENABLE_HOST_EVENT_HANDLER",
+            "DISABLE_HOST_EVENT_HANDLER",
+            "ENABLE_SVC_EVENT_HANDLER",
+            "DISABLE_SVC_EVENT_HANDLER",
             "ENABLE_HOST_NOTIFICATIONS",
             "DISABLE_HOST_NOTIFICATIONS",
             "ENABLE_SVC_NOTIFICATIONS",
@@ -188,9 +190,16 @@ impl Engine {
         }
         let (key, args) = self.target(name, args)?;
         match name {
-            "ENABLE_HOST_EVENT_HANDLER" | "DISABLE_HOST_EVENT_HANDLER" | "ENABLE_SVC_EVENT_HANDLER" | "DISABLE_SVC_EVENT_HANDLER" => {
+            "ENABLE_HOST_EVENT_HANDLER"
+            | "DISABLE_HOST_EVENT_HANDLER"
+            | "ENABLE_SVC_EVENT_HANDLER"
+            | "DISABLE_SVC_EVENT_HANDLER" => {
                 count(args, 0)?;
-                state.objects.get_mut(&key).expect("known key").event_handler_enabled = Some(name.starts_with("ENABLE"));
+                state
+                    .objects
+                    .get_mut(&key)
+                    .expect("known key")
+                    .event_handler_enabled = Some(name.starts_with("ENABLE"));
             }
             "ENABLE_HOST_NOTIFICATIONS"
             | "DISABLE_HOST_NOTIFICATIONS"
@@ -267,8 +276,12 @@ impl Engine {
                 }
                 let r = state.objects.get_mut(&key).expect("known key");
                 let scheduled = (time.max(1), name.contains("FORCED"));
-                if r.executing { r.scheduled = Some(scheduled); }
-                else { r.next_check_ms = scheduled.0; r.force = scheduled.1; }
+                if r.executing {
+                    r.scheduled = Some(scheduled);
+                } else {
+                    r.next_check_ms = scheduled.0;
+                    r.force = scheduled.1;
+                }
             }
             "ACKNOWLEDGE_HOST_PROBLEM" | "ACKNOWLEDGE_SVC_PROBLEM" => {
                 if args.len() < 5 {

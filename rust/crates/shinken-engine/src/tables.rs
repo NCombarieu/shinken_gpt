@@ -161,19 +161,55 @@ fn object_row(d: &Definition, r: &Runtime, state: &Snapshot, key: &str, engine: 
         put(&mut row, &format!("{name}_expanded"), value);
     }
     put(&mut row, "check_command", &d.check.command);
-    put(&mut row, "event_handler_enabled", u8::from(r.event_handler_enabled.unwrap_or(a.get("event_handler_enabled").is_none_or(|v| v == "1"))));
+    put(
+        &mut row,
+        "event_handler_enabled",
+        u8::from(
+            r.event_handler_enabled
+                .unwrap_or(a.get("event_handler_enabled").is_none_or(|v| v == "1")),
+        ),
+    );
     put(&mut row, "last_event_handler", r.last_event_handler);
-    put(&mut row, "last_event_handler_exit_code", r.last_event_handler_code);
-    for (name, notification) in [("execution_dependencies_failed", false), ("notification_dependencies_failed", true)] {
-        put(&mut row, name, u8::from(engine.dependency_failed(state, key, notification, now_ms() / 1000)));
+    put(
+        &mut row,
+        "last_event_handler_exit_code",
+        r.last_event_handler_code,
+    );
+    for (name, notification) in [
+        ("execution_dependencies_failed", false),
+        ("notification_dependencies_failed", true),
+    ] {
+        put(
+            &mut row,
+            name,
+            u8::from(engine.dependency_failed(state, key, notification, now_ms() / 1000)),
+        );
     }
     for (name, notification) in [("depends_exec", false), ("depends_notify", true)] {
-        let masters: Vec<Value> = engine.config.dependencies.edges.get(key).into_iter().flatten()
-            .filter(|dep| !(if notification { &dep.notification } else { &dep.execution }).is_empty())
+        let masters: Vec<Value> = engine
+            .config
+            .dependencies
+            .edges
+            .get(key)
+            .into_iter()
+            .flatten()
+            .filter(|dep| {
+                !(if notification {
+                    &dep.notification
+                } else {
+                    &dep.execution
+                })
+                .is_empty()
+            })
             .map(|dep| {
                 let master = &engine.definitions[&dep.master];
-                if let Some(service) = &master.service { json!([master.host, service]) } else { json!(master.host) }
-            }).collect();
+                if let Some(service) = &master.service {
+                    json!([master.host, service])
+                } else {
+                    json!(master.host)
+                }
+            })
+            .collect();
         put(&mut row, name, masters);
     }
     put(
@@ -540,8 +576,20 @@ impl Engine {
                 put(&mut r, "program_start", self.started);
                 put(&mut r, "configuration_reloads", state.reloads);
                 put(&mut r, "last_reload", state.last_reload);
-                put(&mut r, "dropped_event_handlers", state.dropped_event_handlers);
-                put(&mut r, "enable_event_handlers", u8::from(state.event_handlers_enabled.unwrap_or(self.config.enable_event_handlers)));
+                put(
+                    &mut r,
+                    "dropped_event_handlers",
+                    state.dropped_event_handlers,
+                );
+                put(
+                    &mut r,
+                    "enable_event_handlers",
+                    u8::from(
+                        state
+                            .event_handlers_enabled
+                            .unwrap_or(self.config.enable_event_handlers),
+                    ),
+                );
                 put(&mut r, "last_command_check", state.last_command_check);
                 put(&mut r, "interval_length", self.config.interval_length);
                 put(

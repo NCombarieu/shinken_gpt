@@ -12,8 +12,8 @@ mod timeperiod;
 pub use timeperiod::TimePeriods;
 mod notification;
 mod rules;
-pub use rules::{host_key, service_key, Dependencies, Dependency, Escalation};
 pub use notification::{option_for, ContactNotifications, NotificationConfig, NotificationRoute};
+pub use rules::{host_key, service_key, Dependencies, Dependency, Escalation};
 
 pub type Attributes = BTreeMap<String, String>;
 
@@ -489,9 +489,16 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
         dependencies: Dependencies::default(),
         escalations: BTreeMap::new(),
         enable_event_handlers: flag(&loaded.settings, "enable_event_handlers", true)?,
-        event_handler_timeout_ms: (positive(value(&loaded.settings, "event_handler_timeout", "30"), "event_handler_timeout", false)? * 1000.0).round().max(1.0) as u64,
+        event_handler_timeout_ms: (positive(
+            value(&loaded.settings, "event_handler_timeout", "30"),
+            "event_handler_timeout",
+            false,
+        )? * 1000.0)
+            .round()
+            .max(1.0) as u64,
         global_host_event_handler: value(&loaded.settings, "global_host_event_handler", "").into(),
-        global_service_event_handler: value(&loaded.settings, "global_service_event_handler", "").into(),
+        global_service_event_handler: value(&loaded.settings, "global_service_event_handler", "")
+            .into(),
         notification_routes: BTreeMap::new(),
         enable_notifications: flag(&loaded.settings, "enable_notifications", true)?,
         notification_timeout_ms: (positive(
@@ -558,15 +565,24 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
             }
             "hostgroup" => {
                 let name = required(a, "hostgroup_name")?;
-                if groups.insert(name.to_owned(), a.clone()).is_some() { return Err(semantic(format!("duplicate hostgroup {name}"))); }
+                if groups.insert(name.to_owned(), a.clone()).is_some() {
+                    return Err(semantic(format!("duplicate hostgroup {name}")));
+                }
             }
             "contact" => {
                 let name = required(a, "contact_name")?;
-                if model.contacts.insert(name.to_owned(), a.clone()).is_some() { return Err(semantic(format!("duplicate contact {name}"))); }
+                if model.contacts.insert(name.to_owned(), a.clone()).is_some() {
+                    return Err(semantic(format!("duplicate contact {name}")));
+                }
             }
             "contactgroup" => {
                 let name = required(a, "contactgroup_name")?;
-                contact_children.insert(name.to_owned(), list(value(a, "contactgroup_members", "")).map(str::to_owned).collect());
+                contact_children.insert(
+                    name.to_owned(),
+                    list(value(a, "contactgroup_members", ""))
+                        .map(str::to_owned)
+                        .collect(),
+                );
                 if contactgroups
                     .insert(
                         name.to_owned(),
@@ -577,7 +593,8 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
                     return Err(semantic(format!("duplicate contactgroup {name}")));
                 }
             }
-            "service" | "servicegroup" | "timeperiod" | "notificationway" | "hostdependency" | "servicedependency" | "escalation" | "hostescalation" | "serviceescalation" => {}
+            "service" | "servicegroup" | "timeperiod" | "notificationway" | "hostdependency"
+            | "servicedependency" | "escalation" | "hostescalation" | "serviceescalation" => {}
             _ => {
                 unsupported.insert(kind.to_string());
             }
@@ -595,9 +612,17 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
     }
     for name in groups.keys() {
         let mut members = group_members(name, &groups, &mut BTreeSet::new())?;
-        if members.remove("*") { members.extend(model.hosts.keys().cloned()); }
-        let excluded: Vec<_> = members.iter().filter_map(|s| s.strip_prefix('!').map(str::to_owned)).collect();
-        for name in excluded { members.remove(&format!("!{name}")); members.remove(&name); }
+        if members.remove("*") {
+            members.extend(model.hosts.keys().cloned());
+        }
+        let excluded: Vec<_> = members
+            .iter()
+            .filter_map(|s| s.strip_prefix('!').map(str::to_owned))
+            .collect();
+        for name in excluded {
+            members.remove(&format!("!{name}"));
+            members.remove(&name);
+        }
         for host in &members {
             if !model.hosts.contains_key(host) {
                 return Err(semantic(format!(
@@ -642,7 +667,12 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
     for (kind, a) in &resolved {
         if *kind == "servicegroup" {
             let name = required(a, "servicegroup_name")?;
-            service_children.insert(name.to_owned(), list(value(a, "servicegroup_members", "")).map(str::to_owned).collect());
+            service_children.insert(
+                name.to_owned(),
+                list(value(a, "servicegroup_members", ""))
+                    .map(str::to_owned)
+                    .collect(),
+            );
             let entries: Vec<_> = list(value(a, "members", "")).collect();
             if entries.len() % 2 != 0 {
                 return Err(semantic(format!(
@@ -766,11 +796,17 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
         .sort_by(|a, b| (&a.host_name, &a.description).cmp(&(&b.host_name, &b.description)));
     Ok(model)
 }
-fn expand_nested<T: Ord + Clone>(groups: &mut BTreeMap<String, Vec<T>>, children: &BTreeMap<String, Vec<String>>, label: &str) -> Result<(), LoadError> {
+fn expand_nested<T: Ord + Clone>(
+    groups: &mut BTreeMap<String, Vec<T>>,
+    children: &BTreeMap<String, Vec<String>>,
+    label: &str,
+) -> Result<(), LoadError> {
     rules::acyclic(children, label)?;
     for names in children.values() {
         for name in names {
-            if !groups.contains_key(name) { return Err(semantic(format!("unknown {label} {name}"))); }
+            if !groups.contains_key(name) {
+                return Err(semantic(format!("unknown {label} {name}")));
+            }
         }
     }
     let original = groups.clone();
@@ -779,7 +815,9 @@ fn expand_nested<T: Ord + Clone>(groups: &mut BTreeMap<String, Vec<T>>, children
         let mut visited = BTreeSet::new();
         let mut expanded = BTreeSet::new();
         while let Some(key) = pending.pop() {
-            if !visited.insert(key.clone()) { continue; }
+            if !visited.insert(key.clone()) {
+                continue;
+            }
             expanded.extend(original[&key].iter().cloned());
             pending.extend(children.get(&key).into_iter().flatten().cloned());
         }

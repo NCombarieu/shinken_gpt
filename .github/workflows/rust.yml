@@ -124,3 +124,18 @@ jobs:
         with:
           name: shinken-rs-linux-x86_64-release
           path: /tmp/shinken-rs
+
+  thruk-ui:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Actual Thruk interface and native engine
+        run: bash rust/tests/thruk-ui.sh
+      - name: Save rendered pages and integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thruk-native-ui
+          path: rust-ui-results/
