@@ -1,6 +1,6 @@
 # Compatibility and boundaries
 
-This branch is an alpha. Reusing configuration files does not imply exact Nagios/Shinken behavior. Configuration checking prints runtime limitations, and unsupported calendar exceptions in referenced periods are rejected instead of silently executing outside their window.
+This branch is an alpha. Reusing configuration files does not imply exact Nagios/Shinken behavior. Configuration checking prints runtime limitations, and unsupported calendar exception forms in referenced periods are rejected instead of silently executing outside their window.
 
 | Area | Implemented | Remaining boundaries |
 | --- | --- | --- |
@@ -10,7 +10,7 @@ This branch is an alpha. Reusing configuration files does not imply exact Nagios
 | Object expansion | Hosts, explicit/wildcard service host selectors and exclusions, nested hostgroups, servicegroups, contacts and notificationways | Nested host/service/contact groups and wildcard selectors are supported; arbitrary generators remain absent |
 | Validation | Required names, duplicate primary objects, check command references, host/group references, interval ranges | Full Nagios semantic equivalence remains a goal |
 | Scheduling | Host and service checks, configured normal/retry intervals, bounded concurrency, one-shot checks, force scheduling | Dependency gates and parent reachability are supported; distributed execution is absent |
-| Check periods | Weekly ranges, exclusions, empty periods, IANA timezones and DST | Calendar/date exceptions are rejected when referenced |
+| Check periods | Weekly ranges, fixed `YYYY-MM-DD` exceptions, exclusions, empty periods, IANA timezones and DST | Recurring/month/week-relative calendar exception forms are rejected when referenced |
 | Plugin execution | Standard exit codes, resource/ARG/host/service/custom macros, bounded output, separate long output and performance data | On-demand macros are incomplete; no Python modules |
 | Process lifecycle | Process groups, kill/reap on timeout, cancellation cleanup | Plugins that deliberately create a new session can escape their group |
 | States | Independent hosts, service SOFT/HARD retries, recovery, passive hard states | Obsessive checks, freshness and flapping detection are absent |
@@ -27,4 +27,4 @@ This branch is an alpha. Reusing configuration files does not imply exact Nagios
 
 The engine can display configured metadata for a feature that is not executed. Handler and notification flags/timestamps reflect native execution. Flapping flags remain disabled. Unknown Livestatus columns, tables, query headers and external commands return errors.
 
-Do not use this alpha as the sole production alerting system while calendar exceptions, distributed operation and full compatibility remain incomplete.
+Do not use this alpha as the sole production alerting system while recurring calendar exceptions, distributed operation and full compatibility remain incomplete.
