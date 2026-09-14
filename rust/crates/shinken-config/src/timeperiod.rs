@@ -187,8 +187,7 @@ fn days_in_month(year: i32, month: u32) -> Option<u32> {
         .map(|d| d.day())
 }
 fn month_weekday_matches(rule: &MonthWeekDay, date: NaiveDate) -> bool {
-    if rule.month != date.month()
-        || rule.weekday != date.weekday().num_days_from_monday() as usize
+    if rule.month != date.month() || rule.weekday != date.weekday().num_days_from_monday() as usize
     {
         return false;
     }
@@ -460,10 +459,7 @@ mod tests {
             ("friday".into(), "-1 november 18:00-20:00".into()),
         ]);
         let p = TimePeriods::build(
-            &[
-                ("timeperiod", first_monday),
-                ("timeperiod", last_friday),
-            ],
+            &[("timeperiod", first_monday), ("timeperiod", last_friday)],
             &Attributes::from([("use_timezone".into(), "UTC".into())]),
         )
         .unwrap();
