@@ -141,7 +141,9 @@ fn days_in_month(year: i32, month: u32) -> Option<u32> {
     } else {
         (year, month + 1)
     };
-    NaiveDate::from_ymd_opt(year, month, 1)?.pred_opt().map(|d| d.day())
+    NaiveDate::from_ymd_opt(year, month, 1)?
+        .pred_opt()
+        .map(|d| d.day())
 }
 fn month_date_matches(rule: &MonthDate, date: NaiveDate) -> bool {
     if rule.month != date.month() {
