@@ -65,6 +65,56 @@ services:
     <<: *shinken
     command: ["receiver"]
 
+  influxdb:
+    image: influxdb:2.7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8086:8086"
+    environment:
+      INFLUXDB_DB: shinken
+      INFLUXDB_ADMIN_USER: admin
+      INFLUXDB_ADMIN_PASSWORD: shinkenpass
+      INFLUXDB_HTTP_AUTH_ENABLED: "true"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2:Z
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - "-f"
+        - "http://127.0.0.1:8086/api/v1/ping"
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana:Z
+      - ./etc/grafana/provisioning:/etc/grafana/provisioning:ro,Z
+    depends_on:
+      - influxdb
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - "-f"
+        - "http://127.0.0.1:3000/api/health"
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
 volumes:
   shinken-data:
   shinken-logs:
+  influxdb-data:
+  grafana-data:
