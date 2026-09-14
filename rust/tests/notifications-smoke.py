@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory(prefix="rust-notify-") as temp:
         command(f"SCHEDULE_SVC_DOWNTIME;edge;repeat;{now-1};{now+600};1;0;601;operator;quiet")
         time.sleep(0.3)
         before = len(lines())
-        time.sleep(1.3)
+        time.sleep(32)
         assert len(lines()) == before, "downtime did not suppress repeated notifications"
     finally:
         proc.terminate()
