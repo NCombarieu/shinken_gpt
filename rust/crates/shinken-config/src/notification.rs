@@ -42,7 +42,7 @@ pub fn option_for(state: u8, host: bool) -> char {
         }
     }
 }
-fn options(a: &Attributes, key: &str, host: bool) -> Result<BTreeSet<char>, LoadError> {
+pub(crate) fn options(a: &Attributes, key: &str, host: bool) -> Result<BTreeSet<char>, LoadError> {
     let raw = value(a, key, if host { "d,u,r" } else { "w,c,u,r" });
     let options: BTreeSet<_> = list(raw)
         .map(|s| {

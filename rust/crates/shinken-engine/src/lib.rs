@@ -1,10 +1,14 @@
 //! Native monitoring runtime; configuration and Livestatus are independent crates.
 mod commands;
+mod dependencies;
+mod handlers;
+mod reload;
 mod execute;
 mod notifications;
 mod server;
 mod tables;
 pub use server::UnixEndpoint;
+pub use reload::LiveEngine;
 
 use serde::{Deserialize, Serialize};
 use shinken_config::{Attributes, CheckConfig, MonitoringConfig};
@@ -51,6 +55,14 @@ struct Definition {
 #[derive(Clone, Serialize, Deserialize)]
 struct Runtime {
     #[serde(default)]
+    event_handler_enabled: Option<bool>,
+    #[serde(default)]
+    last_event_handler: u64,
+    #[serde(default)]
+    last_event_handler_code: u8,
+    #[serde(default)]
+    scheduled: Option<(u64, bool)>,
+    #[serde(default)]
     notification: notifications::NotificationState,
     status: ServiceStatus,
     output: String,
@@ -80,6 +92,10 @@ struct Runtime {
 impl Runtime {
     fn new(check: &CheckConfig) -> Self {
         Self {
+            event_handler_enabled: None,
+            last_event_handler: 0,
+            last_event_handler_code: 0,
+            scheduled: None,
             notification: notifications::NotificationState::default(),
             status: ServiceStatus::new(check.max_attempts),
             output: "PENDING".into(),
@@ -136,6 +152,18 @@ struct LogEntry {
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Snapshot {
+    #[serde(default)]
+    event_handlers_enabled: Option<bool>,
+    #[serde(default)]
+    dropped_event_handlers: u64,
+    #[serde(default)]
+    reloads: u64,
+    #[serde(default)]
+    last_reload: u64,
+    #[serde(skip)]
+    reload_requested: bool,
+    #[serde(skip)]
+    events: VecDeque<handlers::Event>,
     #[serde(default)]
     notifications_enabled: Option<bool>,
     version: u32,
@@ -226,6 +254,12 @@ impl Engine {
             max_concurrent,
             started,
             state: Arc::new(RwLock::new(Snapshot {
+                event_handlers_enabled: None,
+                dropped_event_handlers: 0,
+                reloads: 0,
+                last_reload: 0,
+                reload_requested: false,
+                events: VecDeque::new(),
                 notifications_enabled,
                 version: 1,
                 objects,
@@ -260,6 +294,7 @@ impl Engine {
                 old.status.max_attempts = current.status.max_attempts;
                 old.status.attempt = old.status.attempt.clamp(1, old.status.max_attempts);
                 old.next_check_ms = now_ms();
+                if let Some((at, forced)) = old.scheduled.take() { old.next_check_ms = at; old.force = forced; }
                 *current = old;
             }
         }
@@ -292,6 +327,10 @@ impl Engine {
                 .unwrap_or(0)
                 .saturating_add(1),
         );
+        state.event_handlers_enabled = saved.event_handlers_enabled;
+        state.dropped_event_handlers = saved.dropped_event_handlers;
+        state.reloads = saved.reloads;
+        state.last_reload = saved.last_reload;
         state.host_checks = saved.host_checks;
         state.service_checks = saved.service_checks;
         state.passive_hosts = saved.passive_hosts;
@@ -331,6 +370,7 @@ impl Engine {
         while let Some(result) = tasks.join_next().await {
             result?;
         }
+        self.drain_event_handlers().await;
         Ok(())
     }
     pub async fn run_forever(&self) -> Result<(), EngineError> {
@@ -366,14 +406,19 @@ impl Engine {
         } else {
             state.host_checks
         };
-        let r = state.objects.get_mut(key)?;
         let now = now_ms();
+        let failed = self.dependency_failed(&state, key, false, now / 1000);
+        let r = state.objects.get_mut(key)?;
         let due = once || (now >= r.next_check_ms && (r.last_check == 0 || r.next_check_ms > 0));
         if r.executing
             || !due
             || definition.check.command.is_empty()
             || !(r.force || r.active && global)
         {
+            return None;
+        }
+        if !r.force && failed {
+            r.next_check_ms = now.saturating_add(definition.check.interval_ms.max(100));
             return None;
         }
         r.executing = true;
@@ -423,15 +468,15 @@ impl Engine {
         at: u64,
     ) {
         let d = &self.definitions[key];
-        if d.service.is_none() && !passive {
-            result.code = if result.code == 0 { 0 } else { 1 };
+        if d.service.is_none() && (!passive || self.config.dependencies.translate_passive_hosts) {
+            result.code = if result.code == 0 { 0 } else if self.parents_down(state, &d.host) { 2 } else { 1 };
         }
         let Some(r) = state.objects.get_mut(key) else {
             return;
         };
         let previous = r.status;
         if previous.state == CheckState::Ok && result.code != 0 {
-            r.notification.problem_since_ms = at.saturating_mul(1000);
+            r.notification.begin_problem(at.saturating_mul(1000));
         }
         let next = CheckState::from_plugin_status(i32::from(result.code));
         r.status = r.status.apply_result(next);
@@ -440,7 +485,12 @@ impl Engine {
             r.status.attempt = 1;
             r.generation = r.generation.wrapping_add(1);
         }
-        let changed = previous.state != r.status.state || r.last_check == 0;
+        let first_check = r.last_check == 0;
+        let changed = previous.state != r.status.state || first_check;
+        let handle = (r.status.state_type == StateType::Soft && next != CheckState::Ok)
+            || (changed && (!first_check || next != CheckState::Ok))
+            || (previous.state_type == StateType::Soft && r.status.state_type == StateType::Hard && next != CheckState::Ok);
+        let soft_recovery = next == CheckState::Ok && previous.state != CheckState::Ok && previous.state_type == StateType::Soft;
         if changed {
             r.last_state = numeric(previous.state);
             r.last_state_change = at;
@@ -470,6 +520,10 @@ impl Engine {
         } else {
             now_ms().saturating_add(interval)
         };
+        if let Some((at, force)) = r.scheduled.take() {
+            r.next_check_ms = at;
+            r.force = force;
+        }
         if changed || previous.state_type != r.status.state_type {
             state.log.push_back(LogEntry {
                 time: at,
@@ -488,6 +542,8 @@ impl Engine {
                 state.log.pop_front();
             }
         }
+        if handle { self.queue_handler(state, key, soft_recovery); }
+        if changed && d.service.is_none() { self.refresh_children(state, &d.host); }
         if next == CheckState::Ok {
             state
                 .comments

@@ -13,6 +13,14 @@ pub(crate) struct NotificationState {
     pub last_notification: u64,
     pub number: u32,
     pub problem_since_ms: u64,
+    #[serde(default)]
+    round_state: Option<u8>,
+    #[serde(default)]
+    round_at_ms: u64,
+    #[serde(default)]
+    round_interval_ms: u64,
+    #[serde(default)]
+    incident: u64,
     deliveries: BTreeMap<String, Delivery>,
     #[serde(skip)]
     sending: bool,
@@ -21,8 +29,23 @@ pub(crate) struct NotificationState {
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Delivery {
+    #[serde(default)]
+    number: u32,
     state: u8,
     at_ms: u64,
+}
+impl NotificationState {
+    pub(crate) fn begin_problem(&mut self, at: u64) {
+        self.problem_since_ms = at;
+        self.incident = self.incident.wrapping_add(1);
+        self.round_state = None;
+        self.number = 0;
+        self.deliveries.clear();
+    }
+    pub(crate) fn reset_transient(&mut self) {
+        self.sending = false;
+        self.retry_after_ms = 0;
+    }
 }
 struct Job {
     id: String,
@@ -32,6 +55,9 @@ struct Job {
 struct Plan {
     key: String,
     state: u8,
+    number: u32,
+    interval_ms: u64,
+    incident: u64,
     jobs: Vec<Job>,
 }
 fn state_name(code: u8, host: bool) -> &'static str {
@@ -85,12 +111,10 @@ impl Engine {
         {
             return None;
         }
+        if self.dependency_failed(&state, key, true, now / 1000) { return None; }
         let code = numeric(r.status.state);
         let host = d.service.is_none();
         let option = option_for(code, host);
-        if !d.notification.options.contains(&option) {
-            return None;
-        }
         if code > 0
             && now
                 < r.notification
@@ -123,43 +147,47 @@ impl Engine {
         {
             return None;
         }
+        let new_round = r.notification.round_state != Some(code)
+            || (code > 0 && r.notification.round_interval_ms > 0
+                && now >= r.notification.round_at_ms.saturating_add(r.notification.round_interval_ms));
+        let number = if code == 0 { 0 } else if new_round {
+            r.notification.number.saturating_add(1)
+        } else { r.notification.number };
+        let elapsed = now.saturating_sub(r.notification.problem_since_ms);
+        let escalations: Vec<_> = self.config.escalations.get(key).into_iter().flatten()
+            .filter(|e| e.matches(number, elapsed, option) && self.config.periods.allows(&e.period, zone, now / 1000)).collect();
+        if escalations.is_empty() && !d.notification.options.contains(&option) { return None; }
+        let interval_ms = escalations.iter().filter_map(|e| e.interval_ms).min().unwrap_or(d.notification.interval_ms);
+        let contacts: std::collections::BTreeSet<_> = if code == 0 {
+            // Recovery reaches every successful recipient of this incident, including earlier escalations.
+            self.config.contacts.keys().cloned().collect()
+        } else if escalations.is_empty() {
+            members(&d.attributes, "contacts").into_iter().collect()
+        } else { escalations.iter().flat_map(|e| e.contacts.iter().cloned()).collect() };
         let mut jobs = Vec::new();
-        for contact in members(&d.attributes, "contacts") {
-            let Some(routes) = self.config.notification_routes.get(&contact) else {
-                continue;
-            };
+        for contact in contacts {
+            let Some(routes) = self.config.notification_routes.get(&contact) else { continue; };
             for route in if host { &routes.host } else { &routes.service } {
-                if !route.enabled
-                    || !route.options.contains(&option)
-                    || !self.config.periods.allows(&route.period, "", now / 1000)
-                {
-                    continue;
-                }
+                if !route.enabled || !route.options.contains(&option)
+                    || !self.config.periods.allows(&route.period, "", now / 1000) { continue; }
                 let last = r.notification.deliveries.get(&route.id);
                 if code == 0 {
-                    if last.is_none_or(|last| last.state == 0) {
-                        continue;
-                    }
-                } else if let Some(last) = last {
-                    if last.state == code
-                        && (d.notification.interval_ms == 0
-                            || now < last.at_ms.saturating_add(d.notification.interval_ms))
-                    {
-                        continue;
-                    }
+                    if last.is_none_or(|last| last.state == 0) { continue; }
+                } else if last.is_some_and(|last| last.state == code && last.number == number) {
+                    continue;
                 }
-                jobs.push(Job {
-                    id: route.id.clone(),
-                    command: route.command.clone(),
-                    macros: self.notification_macros(&state, key, &contact, code),
-                });
+                let mut macros = self.notification_macros(&state, key, &contact, code);
+                macros.insert("$NOTIFICATIONNUMBER$".into(), number.to_string());
+                jobs.push(Job { id: route.id.clone(), command: route.command.clone(), macros });
             }
         }
         if jobs.is_empty() {
             return None;
         }
+        let incident = r.notification.incident;
         state.objects.get_mut(key)?.notification.sending = true;
         Some(Plan {
+            number, interval_ms, incident,
             key: key.into(),
             state: code,
             jobs,
@@ -193,33 +221,29 @@ impl Engine {
         };
         r.notification.sending = false;
         r.notification.retry_after_ms = now.saturating_add(1000);
+        if r.notification.incident != plan.incident { return; }
         if !delivered.is_empty() {
             for id in delivered {
                 r.notification.deliveries.insert(
                     id,
                     Delivery {
+                        number: plan.number,
                         state: plan.state,
                         at_ms: now,
                     },
                 );
             }
             r.notification.last_notification = now / 1000;
-            r.notification.number = if plan.state == 0 {
-                0
-            } else {
-                r.notification.number.saturating_add(1)
-            };
+            if r.notification.round_state != Some(plan.state) || r.notification.number != plan.number {
+                r.notification.round_at_ms = now;
+                r.notification.round_interval_ms = plan.interval_ms;
+            }
+            r.notification.round_state = Some(plan.state);
+            r.notification.number = plan.number;
         }
     }
-    fn notification_macros(
-        &self,
-        state: &Snapshot,
-        key: &str,
-        contact: &str,
-        code: u8,
-    ) -> Attributes {
+    pub(crate) fn object_macros(&self, state: &Snapshot, key: &str) -> Attributes {
         let d = &self.definitions[key];
-        let r = &state.objects[key];
         let mut result = Attributes::new();
         let now = now_ms() / 1000;
         for (prefix, key, host) in [
@@ -255,6 +279,35 @@ impl Engine {
             }
             result.insert(format!("$LONG{prefix}OUTPUT$"), r.long_output.clone());
         }
+        result.insert(
+            "$LONGDATETIME$".into(),
+            self.config
+                .periods
+                .format_time(now, "%a %b %d %H:%M:%S %Z %Y"),
+        );
+        result.insert(
+            "$SHORTDATETIME$".into(),
+            self.config.periods.format_time(now, "%m-%d-%Y %H:%M:%S"),
+        );
+        result.insert(
+            "$DATE$".into(),
+            self.config.periods.format_time(now, "%m-%d-%Y"),
+        );
+        result.insert(
+            "$TIME$".into(),
+            self.config.periods.format_time(now, "%H:%M:%S"),
+        );
+        result
+    }
+    fn notification_macros(
+        &self,
+        state: &Snapshot,
+        key: &str,
+        contact: &str,
+        code: u8,
+    ) -> Attributes {
+        let r = &state.objects[key];
+        let mut result = self.object_macros(state, key);
         let a = &self.config.contacts[contact];
         for suffix in [
             "NAME", "ALIAS", "EMAIL", "PAGER", "ADDRESS1", "ADDRESS2", "ADDRESS3", "ADDRESS4",
@@ -284,24 +337,6 @@ impl Engine {
         result.insert(
             "$NOTIFICATIONNUMBER$".into(),
             r.notification.number.saturating_add(1).to_string(),
-        );
-        result.insert(
-            "$LONGDATETIME$".into(),
-            self.config
-                .periods
-                .format_time(now, "%a %b %d %H:%M:%S %Z %Y"),
-        );
-        result.insert(
-            "$SHORTDATETIME$".into(),
-            self.config.periods.format_time(now, "%m-%d-%Y %H:%M:%S"),
-        );
-        result.insert(
-            "$DATE$".into(),
-            self.config.periods.format_time(now, "%m-%d-%Y"),
-        );
-        result.insert(
-            "$TIME$".into(),
-            self.config.periods.format_time(now, "%H:%M:%S"),
         );
         result
     }

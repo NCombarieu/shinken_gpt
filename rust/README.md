@@ -39,7 +39,7 @@ target/release/shinken-rs run rust/examples/minimal/shinken.cfg \
 
 `--once` prints a JSON snapshot including header rows. Its exit status indicates whether execution completed, while monitoring problems are encoded in the snapshot. Plugin states do not make a healthy monitoring engine exit.
 
-The daemon restores matching objects from retention at startup and writes atomic snapshots every 30 seconds and on SIGINT/SIGTERM. Abrupt termination can lose changes since the last snapshot. An invalid retention file is a startup error. Configuration is loaded at startup; reload currently requires a restart. Notification delivery history is retained too. Delivery is best effort: a crash between executing a command and saving state can produce a duplicate after restart.
+The daemon restores matching objects from retention at startup and writes atomic snapshots every 30 seconds and on SIGINT/SIGTERM. Abrupt termination can lose changes since the last snapshot. An invalid retention file is a startup error. Send SIGHUP, or the native external command RELOAD_CONFIG, to reload the complete configuration tree without closing Livestatus endpoints. Notification delivery history is retained too. Delivery is best effort: a crash between executing a command and saving state can produce a duplicate after restart.
 
 Unix sockets use mode 0660. Startup refuses any existing socket path. On a normal shutdown, the engine removes only the socket it created. After a crash, verify that the previous process is gone before removing a stale socket yourself.
 
@@ -70,6 +70,23 @@ cargo test --locked --workspace --all-targets
 cargo build --locked -p shinken-rs
 python3 rust/tests/smoke.py target/debug/shinken-rs
 python3 rust/tests/notifications-smoke.py target/debug/shinken-rs
+python3 rust/tests/native-smoke.py target/debug/shinken-rs
 ```
 
 Python is used only by the black-box test harness. CI additionally installs the pinned upstream Thruk client for interoperability tests, builds the rootless container and executes its installed monitoring plugins.
+
+## Dependencies, handlers and escalations
+
+Host and service dependencies support execution/notification failure criteria, the pending state, dependency periods and inherits_parent. They use the latest HARD state by default; soft_state_dependencies=1 opts into SOFT states. Forced checks bypass execution dependencies and check periods; passive results remain accepted. Host parents classify a failed active host check as UNREACHABLE when every known route is down. A parent transition schedules its active children for confirmation. Set translate_passive_host_checks=1 to apply that classification to passive host results.
+
+Native event handlers run on each SOFT problem attempt, the first HARD problem or changed problem state, and recovery. The global handler precedes the object handler. They share plugin process-group supervision, dynamic state macros and event_handler_timeout. Global ENABLE/DISABLE_EVENT_HANDLERS and object ENABLE/DISABLE_HOST/SVC_EVENT_HANDLER commands control future events. Handler and notification workers are separate; strict ordering between a HARD notification and its handler is not guaranteed. The bounded handler queue is best effort and is not replayed after a process restart or configuration replacement.
+
+Host/service escalation objects select hosts, services or groups. Matching rules replace the ordinary contact set, combine overlapping contacts and use the shortest configured interval. An interval of zero stops repeated rounds; failed recipients can still retry within a round. Named Shinken escalation objects support the escalations attribute and first/last_notification_time. Recovery is sent to all contacts successfully notified during that incident, including earlier escalation levels. This explicitly differs from implementations that select only the last escalation level for recovery.
+
+## Reload behavior
+
+Validate with config-check, then send SIGHUP to the daemon PID or submit COMMAND [timestamp] RELOAD_CONFIG over Livestatus. The command acknowledges the request; inspect configuration_reloads and last_reload in GET status, or stderr, for the result. A failed validation leaves the current engine running.
+
+A successful reload cancels outstanding old-generation checks, notifications and handlers, then preserves matching host/service states, acknowledgements, comments, active downtime and notification history. Removed objects disappear and new ones start pending. Existing keepalive connections use the new generation on their next request. Process start time and endpoint paths remain unchanged.
+
+Per-object notification/handler overrides remain effective. Active/passive and global check flags follow changed configuration defaults if their retained value still equals the previous default; otherwise their runtime override is retained. Endpoint/concurrency/state-file CLI settings require restarting the process. In-progress side effects cannot be undone, and an interrupted delivery can be duplicated on a subsequent attempt.

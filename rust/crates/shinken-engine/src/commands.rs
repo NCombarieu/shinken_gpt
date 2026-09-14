@@ -97,6 +97,16 @@ impl Engine {
             state.notifications_enabled = Some(name == "ENABLE_NOTIFICATIONS");
             return Ok(());
         }
+        if name == "RELOAD_CONFIG" {
+            count(args, 0)?;
+            state.reload_requested = true;
+            return Ok(());
+        }
+        if ["ENABLE_EVENT_HANDLERS", "DISABLE_EVENT_HANDLERS"].contains(&name) {
+            count(args, 0)?;
+            state.event_handlers_enabled = Some(name == "ENABLE_EVENT_HANDLERS");
+            return Ok(());
+        }
         let global = match name {
             "START_EXECUTING_HOST_CHECKS" => Some((&mut state.host_checks, true)),
             "STOP_EXECUTING_HOST_CHECKS" => Some((&mut state.host_checks, false)),
@@ -142,6 +152,8 @@ impl Engine {
             return Ok(());
         }
         let supported = [
+            "ENABLE_HOST_EVENT_HANDLER", "DISABLE_HOST_EVENT_HANDLER",
+            "ENABLE_SVC_EVENT_HANDLER", "DISABLE_SVC_EVENT_HANDLER",
             "ENABLE_HOST_NOTIFICATIONS",
             "DISABLE_HOST_NOTIFICATIONS",
             "ENABLE_SVC_NOTIFICATIONS",
@@ -176,6 +188,10 @@ impl Engine {
         }
         let (key, args) = self.target(name, args)?;
         match name {
+            "ENABLE_HOST_EVENT_HANDLER" | "DISABLE_HOST_EVENT_HANDLER" | "ENABLE_SVC_EVENT_HANDLER" | "DISABLE_SVC_EVENT_HANDLER" => {
+                count(args, 0)?;
+                state.objects.get_mut(&key).expect("known key").event_handler_enabled = Some(name.starts_with("ENABLE"));
+            }
             "ENABLE_HOST_NOTIFICATIONS"
             | "DISABLE_HOST_NOTIFICATIONS"
             | "ENABLE_SVC_NOTIFICATIONS"
@@ -250,8 +266,9 @@ impl Engine {
                     return Err(invalid("object has no active check command"));
                 }
                 let r = state.objects.get_mut(&key).expect("known key");
-                r.next_check_ms = time.max(1);
-                r.force = name.contains("FORCED");
+                let scheduled = (time.max(1), name.contains("FORCED"));
+                if r.executing { r.scheduled = Some(scheduled); }
+                else { r.next_check_ms = scheduled.0; r.force = scheduled.1; }
             }
             "ACKNOWLEDGE_HOST_PROBLEM" | "ACKNOWLEDGE_SVC_PROBLEM" => {
                 if args.len() < 5 {

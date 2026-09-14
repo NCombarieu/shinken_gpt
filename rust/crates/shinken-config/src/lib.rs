@@ -11,6 +11,8 @@ use thiserror::Error;
 mod timeperiod;
 pub use timeperiod::TimePeriods;
 mod notification;
+mod rules;
+pub use rules::{host_key, service_key, Dependencies, Dependency, Escalation};
 pub use notification::{option_for, ContactNotifications, NotificationConfig, NotificationRoute};
 
 pub type Attributes = BTreeMap<String, String>;
@@ -283,6 +285,12 @@ pub struct ServiceConfig {
 }
 #[derive(Clone, Debug)]
 pub struct MonitoringConfig {
+    pub dependencies: Dependencies,
+    pub escalations: BTreeMap<String, Vec<Escalation>>,
+    pub enable_event_handlers: bool,
+    pub event_handler_timeout_ms: u64,
+    pub global_host_event_handler: String,
+    pub global_service_event_handler: String,
     pub notification_routes: BTreeMap<String, ContactNotifications>,
     pub enable_notifications: bool,
     pub notification_timeout_ms: u64,
@@ -478,6 +486,12 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
         ));
     }
     let mut model = MonitoringConfig {
+        dependencies: Dependencies::default(),
+        escalations: BTreeMap::new(),
+        enable_event_handlers: flag(&loaded.settings, "enable_event_handlers", true)?,
+        event_handler_timeout_ms: (positive(value(&loaded.settings, "event_handler_timeout", "30"), "event_handler_timeout", false)? * 1000.0).round().max(1.0) as u64,
+        global_host_event_handler: value(&loaded.settings, "global_host_event_handler", "").into(),
+        global_service_event_handler: value(&loaded.settings, "global_service_event_handler", "").into(),
         notification_routes: BTreeMap::new(),
         enable_notifications: flag(&loaded.settings, "enable_notifications", true)?,
         notification_timeout_ms: (positive(
@@ -509,6 +523,8 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
     };
     let mut groups = BTreeMap::new();
     let mut contactgroups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut contact_children = BTreeMap::<String, Vec<String>>::new();
+    let mut service_children = BTreeMap::<String, Vec<String>>::new();
     let mut unsupported = BTreeSet::new();
     for (kind, a) in &resolved {
         match *kind {
@@ -541,18 +557,16 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
                 }
             }
             "hostgroup" => {
-                groups.insert(required(a, "hostgroup_name")?.to_owned(), a.clone());
+                let name = required(a, "hostgroup_name")?;
+                if groups.insert(name.to_owned(), a.clone()).is_some() { return Err(semantic(format!("duplicate hostgroup {name}"))); }
             }
             "contact" => {
-                model
-                    .contacts
-                    .insert(required(a, "contact_name")?.to_owned(), a.clone());
+                let name = required(a, "contact_name")?;
+                if model.contacts.insert(name.to_owned(), a.clone()).is_some() { return Err(semantic(format!("duplicate contact {name}"))); }
             }
             "contactgroup" => {
-                if a.contains_key("contactgroup_members") {
-                    return Err(semantic("nested contactgroups are not implemented"));
-                }
                 let name = required(a, "contactgroup_name")?;
+                contact_children.insert(name.to_owned(), list(value(a, "contactgroup_members", "")).map(str::to_owned).collect());
                 if contactgroups
                     .insert(
                         name.to_owned(),
@@ -563,7 +577,7 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
                     return Err(semantic(format!("duplicate contactgroup {name}")));
                 }
             }
-            "service" | "servicegroup" | "timeperiod" | "notificationway" => {}
+            "service" | "servicegroup" | "timeperiod" | "notificationway" | "hostdependency" | "servicedependency" | "escalation" | "hostescalation" | "serviceescalation" => {}
             _ => {
                 unsupported.insert(kind.to_string());
             }
@@ -580,7 +594,10 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
         }
     }
     for name in groups.keys() {
-        let members = group_members(name, &groups, &mut BTreeSet::new())?;
+        let mut members = group_members(name, &groups, &mut BTreeSet::new())?;
+        if members.remove("*") { members.extend(model.hosts.keys().cloned()); }
+        let excluded: Vec<_> = members.iter().filter_map(|s| s.strip_prefix('!').map(str::to_owned)).collect();
+        for name in excluded { members.remove(&format!("!{name}")); members.remove(&name); }
         for host in &members {
             if !model.hosts.contains_key(host) {
                 return Err(semantic(format!(
@@ -597,39 +614,14 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
         if *kind != "service" {
             continue;
         }
-        let mut selected = BTreeSet::new();
-        let mut excluded = BTreeSet::new();
-        for host in list(value(a, "host_name", "")) {
-            if host == "*" {
-                selected.extend(model.hosts.keys().cloned());
-            } else if let Some(exclude) = host.strip_prefix('!') {
-                excluded.insert(exclude.to_owned());
-            } else {
-                selected.insert(host.to_owned());
-            }
-        }
-        for group in list(value(a, "hostgroup_name", "")) {
-            let (negative, name) = match group.strip_prefix('!') {
-                Some(name) => (true, name),
-                None => (false, group),
-            };
-            let members = model
-                .hostgroups
-                .get(name)
-                .ok_or_else(|| semantic(format!("unknown hostgroup {name}")))?;
-            if negative {
-                excluded.extend(members.iter().cloned());
-            } else {
-                selected.extend(members.iter().cloned());
-            }
-        }
+        let selected = rules::select_hosts(a, "", &model)?;
         let description = required(a, "service_description")?;
         if selected.is_empty() && value(a, "hostgroup_name", "").is_empty() {
             return Err(semantic(format!(
                 "service {description} has no host selector"
             )));
         }
-        for host in selected.difference(&excluded) {
+        for host in &selected {
             if !model.hosts.contains_key(host) {
                 return Err(semantic(format!(
                     "service {description} references unknown host {host}"
@@ -650,9 +642,7 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
     for (kind, a) in &resolved {
         if *kind == "servicegroup" {
             let name = required(a, "servicegroup_name")?;
-            if a.contains_key("servicegroup_members") {
-                return Err(semantic("nested servicegroups are not implemented"));
-            }
+            service_children.insert(name.to_owned(), list(value(a, "servicegroup_members", "")).map(str::to_owned).collect());
             let entries: Vec<_> = list(value(a, "members", "")).collect();
             if entries.len() % 2 != 0 {
                 return Err(semantic(format!(
@@ -683,6 +673,7 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
                 .push((s.host_name.clone(), s.description.clone()));
         }
     }
+    expand_nested(&mut model.servicegroups, &service_children, "servicegroup")?;
     for group in model.servicegroups.values_mut() {
         group.sort();
         group.dedup();
@@ -695,6 +686,7 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
                 .push(name.clone());
         }
     }
+    expand_nested(&mut contactgroups, &contact_children, "contactgroup")?;
     for group in contactgroups.values_mut() {
         group.sort();
         group.dedup();
@@ -765,12 +757,37 @@ pub fn build_monitoring_config(loaded: &LoadedConfig) -> Result<MonitoringConfig
             unsupported.into_iter().collect::<Vec<_>>().join(", ")
         ));
     }
-    model.warnings.push("Escalations, event handlers, dependency logic and flapping detection are not implemented in this alpha.".to_owned());
+    model.dependencies = rules::dependencies(&resolved, &loaded.settings, &model)?;
+    model.escalations = rules::escalations(&resolved, &model)?;
+    rules::validate_handlers(&resolved, &loaded.settings, &model)?;
+    model.warnings.push("Flapping detection, calendar exception rules and legacy Python modules are not implemented.".to_owned());
     model
         .services
         .sort_by(|a, b| (&a.host_name, &a.description).cmp(&(&b.host_name, &b.description)));
     Ok(model)
 }
+fn expand_nested<T: Ord + Clone>(groups: &mut BTreeMap<String, Vec<T>>, children: &BTreeMap<String, Vec<String>>, label: &str) -> Result<(), LoadError> {
+    rules::acyclic(children, label)?;
+    for names in children.values() {
+        for name in names {
+            if !groups.contains_key(name) { return Err(semantic(format!("unknown {label} {name}"))); }
+        }
+    }
+    let original = groups.clone();
+    for (name, members) in groups.iter_mut() {
+        let mut pending = vec![name.clone()];
+        let mut visited = BTreeSet::new();
+        let mut expanded = BTreeSet::new();
+        while let Some(key) = pending.pop() {
+            if !visited.insert(key.clone()) { continue; }
+            expanded.extend(original[&key].iter().cloned());
+            pending.extend(children.get(&key).into_iter().flatten().cloned());
+        }
+        *members = expanded.into_iter().collect();
+    }
+    Ok(())
+}
+
 fn expand_contacts(a: &mut Attributes, groups: &BTreeMap<String, Vec<String>>) {
     let mut contacts: BTreeSet<String> =
         list(value(a, "contacts", "")).map(str::to_owned).collect();

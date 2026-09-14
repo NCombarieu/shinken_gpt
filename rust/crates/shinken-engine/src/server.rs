@@ -1,4 +1,4 @@
-use crate::{Engine, EngineError};
+use crate::{LiveEngine, EngineError};
 use shinken_livestatus::{fixed16_response, parse_query, ResponseHeader};
 use std::{
     fs, io,
@@ -45,7 +45,7 @@ impl Drop for UnixEndpoint {
         }
     }
 }
-impl Engine {
+impl LiveEngine {
     pub async fn serve_tcp(&self, listener: TcpListener) -> Result<(), EngineError> {
         let permits = Arc::new(Semaphore::new(128));
         let mut tasks = JoinSet::new();
@@ -91,13 +91,14 @@ impl Engine {
                 .lines()
                 .any(|l| l.trim() == "ResponseHeader: fixed16");
             let mut keep_alive = false;
+            let current = self.current.read().await;
             let response = if request.starts_with("COMMAND ") {
                 let commands = request
                     .lines()
                     .filter(|l| !l.starts_with("ResponseHeader:"))
                     .collect::<Vec<_>>()
                     .join("\n");
-                match self.command(&commands).await {
+                match current.command(&commands).await {
                     Ok(()) => {
                         if fixed {
                             fixed16_response(200, b"")
@@ -115,7 +116,7 @@ impl Engine {
                             keep_alive = false;
                             error_response(400, "KeepAlive requires ResponseHeader: fixed16", fixed)
                         } else {
-                            match self.query(&query).await {
+                            match current.query(&query).await {
                                 Ok(body) => body,
                                 Err(e) => error_response(400, &e.to_string(), fixed),
                             }
@@ -124,6 +125,7 @@ impl Engine {
                     Err(e) => error_response(400, &e.to_string(), fixed),
                 }
             };
+            drop(current);
             time::timeout(Duration::from_secs(15), async {
                 stream.get_mut().write_all(&response).await?;
                 stream.get_mut().flush().await

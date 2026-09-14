@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use shinken_config::{build_monitoring_config, load_config_tree, MonitoringConfig};
-use shinken_engine::{Engine, EngineError, UnixEndpoint};
+use shinken_engine::{Engine, EngineError, LiveEngine, UnixEndpoint};
 use shinken_livestatus::parse_query;
 use std::{fs, path::PathBuf, process::ExitCode, time::Duration};
 use tokio::{net::TcpListener, task::JoinSet};
@@ -51,7 +51,7 @@ async fn main() -> ExitCode {
         }
     }
 }
-fn configuration(path: PathBuf) -> Result<MonitoringConfig, Box<dyn std::error::Error>> {
+fn configuration(path: PathBuf) -> Result<MonitoringConfig, shinken_config::LoadError> {
     let loaded = load_config_tree(path)?;
     let config = build_monitoring_config(&loaded)?;
     for warning in &config.warnings {
@@ -93,7 +93,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             max_concurrent_checks,
             state_file,
         } => {
-            let engine = Engine::new(configuration(config)?, max_concurrent_checks)?;
+            let mut engine = Engine::new(configuration(config.clone())?, max_concurrent_checks)?;
             if let Some(path) = &state_file {
                 engine.restore(path).await?;
             }
@@ -124,42 +124,55 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 Some(address) => Some(TcpListener::bind(address).await?),
                 None => None,
             };
+            let live = LiveEngine::new(engine.clone());
             let mut tasks = JoinSet::new();
             if let Some(endpoint) = unix {
                 eprintln!("Livestatus Unix: {}", livestatus_unix.display());
-                let engine = engine.clone();
+                let engine = live.clone();
                 tasks.spawn(async move { engine.serve_unix(endpoint).await });
             }
             if let Some(listener) = tcp {
                 eprintln!("Livestatus TCP: {}", listener.local_addr()?);
-                let engine = engine.clone();
+                let engine = live.clone();
                 tasks.spawn(async move { engine.serve_tcp(listener).await });
             }
-            let scheduler = engine.clone();
-            tasks.spawn(async move { scheduler.run_forever().await });
-            let notifier = engine.clone();
-            tasks.spawn(async move { notifier.run_notifications_forever().await });
-            if let Some(path) = state_file.clone() {
-                let engine = engine.clone();
-                tasks.spawn(async move {
-                    let mut tick = tokio::time::interval(Duration::from_secs(30));
-                    tick.tick().await;
-                    loop {
-                        tick.tick().await;
-                        engine.save(&path).await?;
+            let mut workers = runtime_tasks(&engine, state_file.clone());
+            let mut hangup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())?;
+            let mut control = tokio::time::interval(Duration::from_millis(100));
+            let stopping = shutdown();
+            tokio::pin!(stopping);
+            let result = loop {
+                let reload = tokio::select! {
+                    result = &mut stopping => break result,
+                    result = tasks.join_next() => break task_result(result),
+                    result = workers.join_next() => break task_result(result),
+                    _ = hangup.recv() => true,
+                    _ = control.tick() => engine.take_reload_request().await,
+                };
+                if !reload { continue; }
+                let path = config.clone();
+                let candidate = tokio::task::spawn_blocking(move || configuration(path)).await;
+                let candidate = match candidate {
+                    Ok(Ok(config)) => Engine::new(config, max_concurrent_checks),
+                    Ok(Err(error)) => {
+                        eprintln!("configuration reload rejected: {error}");
+                        continue;
                     }
-                    #[allow(unreachable_code)]
-                    Ok::<(), EngineError>(())
-                });
-            }
-            let result = tokio::select! {
-                result=shutdown()=>result,
-                result=tasks.join_next()=>match result {
-                    Some(Ok(Err(e)))=>Err(e),
-                    Some(Err(e))=>Err(EngineError::Task(e)),
-                    _=>Err(EngineError::Invalid("runtime task stopped unexpectedly".into())),
-                },
+                    Err(error) => {
+                        eprintln!("configuration reload failed: {error}");
+                        continue;
+                    }
+                };
+                let next = match candidate {
+                    Ok(engine) => engine,
+                    Err(error) => { eprintln!("configuration reload rejected: {error}"); continue; }
+                };
+                workers.shutdown().await;
+                engine = live.replace(next).await;
+                workers = runtime_tasks(&engine, state_file.clone());
+                eprintln!("configuration reload complete");
             };
+            workers.shutdown().await;
             tasks.shutdown().await;
             if let Some(path) = &state_file {
                 engine.save(path).await?;
@@ -168,4 +181,35 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn task_result(result: Option<Result<Result<(), EngineError>, tokio::task::JoinError>>) -> Result<(), EngineError> {
+    match result {
+        Some(Ok(Err(error))) => Err(error),
+        Some(Err(error)) => Err(EngineError::Task(error)),
+        _ => Err(EngineError::Invalid("runtime task stopped unexpectedly".into())),
+    }
+}
+fn runtime_tasks(engine: &Engine, state_file: Option<PathBuf>) -> JoinSet<Result<(), EngineError>> {
+    let mut tasks = JoinSet::new();
+    let scheduler = engine.clone();
+    tasks.spawn(async move { scheduler.run_forever().await });
+    let notifier = engine.clone();
+    tasks.spawn(async move { notifier.run_notifications_forever().await });
+    let handlers = engine.clone();
+    tasks.spawn(async move { handlers.run_event_handlers_forever().await });
+    if let Some(path) = state_file {
+        let engine = engine.clone();
+        tasks.spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_secs(30));
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                engine.save(&path).await?;
+            }
+            #[allow(unreachable_code)]
+            Ok::<(), EngineError>(())
+        });
+    }
+    tasks
 }

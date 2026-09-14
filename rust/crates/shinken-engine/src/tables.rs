@@ -31,7 +31,7 @@ fn put(row: &mut Row, name: &str, value: impl serde::Serialize) {
 fn object_schema() -> Row {
     let mut r = Row::new();
     fields(&mut r,"name host_name description display_name alias address check_command check_period notification_period event_handler plugin_output long_plugin_output perf_data notes notes_expanded notes_url notes_url_expanded action_url action_url_expanded icon_image icon_image_expanded icon_image_alt",json!(""));
-    fields(&mut r,"state state_type last_state last_hard_state hard_state current_attempt max_check_attempts last_check next_check last_update last_state_change last_hard_state_change last_notification current_notification_number check_type check_options has_been_checked is_executing active_checks_enabled checks_enabled accept_passive_checks acknowledged acknowledgement_type notifications_enabled event_handler_enabled flap_detection_enabled is_flapping scheduled_downtime_depth check_freshness obsess_over_host obsess_over_service process_performance_data in_check_period in_notification_period num_services num_services_ok num_services_warn num_services_crit num_services_unknown num_services_pending last_time_up last_time_down last_time_unreachable last_time_ok last_time_warning last_time_critical last_time_unknown",json!(0));
+    fields(&mut r,"last_event_handler last_event_handler_exit_code execution_dependencies_failed notification_dependencies_failed state state_type last_state last_hard_state hard_state current_attempt max_check_attempts last_check next_check last_update last_state_change last_hard_state_change last_notification current_notification_number check_type check_options has_been_checked is_executing active_checks_enabled checks_enabled accept_passive_checks acknowledged acknowledgement_type notifications_enabled event_handler_enabled flap_detection_enabled is_flapping scheduled_downtime_depth check_freshness obsess_over_host obsess_over_service process_performance_data in_check_period in_notification_period num_services num_services_ok num_services_warn num_services_crit num_services_unknown num_services_pending last_time_up last_time_down last_time_unreachable last_time_ok last_time_warning last_time_critical last_time_unknown",json!(0));
     fields(&mut r,"execution_time latency check_interval retry_interval notification_interval first_notification_delay low_flap_threshold high_flap_threshold percent_state_change",json!(0.0));
     fields(&mut r,"contacts contact_groups groups parents childs services services_with_state services_with_info comments comments_with_info downtimes downtimes_with_info custom_variable_names custom_variable_values modified_attributes_list depends_exec depends_notify",json!([]));
     r
@@ -48,7 +48,7 @@ fn schema(table: &str) -> Option<Row> {
         }
         "status" => {
             fields(&mut r, "program_version livestatus_version", json!(""));
-            fields(&mut r,"accept_passive_host_checks accept_passive_service_checks check_external_commands check_host_freshness check_service_freshness enable_event_handlers enable_flap_detection enable_notifications execute_host_checks execute_service_checks last_command_check last_log_rotation nagios_pid obsess_over_hosts obsess_over_services process_performance_data program_start num_hosts num_services",json!(0));
+            fields(&mut r,"configuration_reloads last_reload dropped_event_handlers accept_passive_host_checks accept_passive_service_checks check_external_commands check_host_freshness check_service_freshness enable_event_handlers enable_flap_detection enable_notifications execute_host_checks execute_service_checks last_command_check last_log_rotation nagios_pid obsess_over_hosts obsess_over_services process_performance_data program_start num_hosts num_services",json!(0));
             put(&mut r, "interval_length", 0.0);
         }
         "hostgroups" | "servicegroups" => {
@@ -161,6 +161,21 @@ fn object_row(d: &Definition, r: &Runtime, state: &Snapshot, key: &str, engine: 
         put(&mut row, &format!("{name}_expanded"), value);
     }
     put(&mut row, "check_command", &d.check.command);
+    put(&mut row, "event_handler_enabled", u8::from(r.event_handler_enabled.unwrap_or(a.get("event_handler_enabled").is_none_or(|v| v == "1"))));
+    put(&mut row, "last_event_handler", r.last_event_handler);
+    put(&mut row, "last_event_handler_exit_code", r.last_event_handler_code);
+    for (name, notification) in [("execution_dependencies_failed", false), ("notification_dependencies_failed", true)] {
+        put(&mut row, name, u8::from(engine.dependency_failed(state, key, notification, now_ms() / 1000)));
+    }
+    for (name, notification) in [("depends_exec", false), ("depends_notify", true)] {
+        let masters: Vec<Value> = engine.config.dependencies.edges.get(key).into_iter().flatten()
+            .filter(|dep| !(if notification { &dep.notification } else { &dep.execution }).is_empty())
+            .map(|dep| {
+                let master = &engine.definitions[&dep.master];
+                if let Some(service) = &master.service { json!([master.host, service]) } else { json!(master.host) }
+            }).collect();
+        put(&mut row, name, masters);
+    }
     put(
         &mut row,
         "notifications_enabled",
@@ -523,6 +538,10 @@ impl Engine {
                 );
                 put(&mut r, "nagios_pid", std::process::id());
                 put(&mut r, "program_start", self.started);
+                put(&mut r, "configuration_reloads", state.reloads);
+                put(&mut r, "last_reload", state.last_reload);
+                put(&mut r, "dropped_event_handlers", state.dropped_event_handlers);
+                put(&mut r, "enable_event_handlers", u8::from(state.event_handlers_enabled.unwrap_or(self.config.enable_event_handlers)));
                 put(&mut r, "last_command_check", state.last_command_check);
                 put(&mut r, "interval_length", self.config.interval_length);
                 put(
@@ -794,7 +813,7 @@ impl Engine {
             "log" => state
                 .log
                 .iter()
-                .filter(|l| visible(&l.key))
+                .filter(|l| self.definitions.contains_key(&l.key) && visible(&l.key))
                 .map(|l| {
                     let d = &self.definitions[&l.key];
                     let mut r = expected.clone();

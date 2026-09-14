@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "shinken-config"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -520,7 +520,7 @@ dependencies = [
 
 [[package]]
 name = "shinken-core"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "serde",
  "shinken-model",
@@ -528,7 +528,7 @@ dependencies = [
 
 [[package]]
 name = "shinken-engine"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "nix",
  "serde",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "shinken-livestatus"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "regex",
  "serde_json",
@@ -553,14 +553,14 @@ dependencies = [
 
 [[package]]
 name = "shinken-model"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "shinken-rs"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "clap",
  "shinken-config",
