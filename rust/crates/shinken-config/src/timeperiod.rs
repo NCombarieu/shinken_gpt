@@ -34,10 +34,18 @@ struct MonthDate {
     ranges: Vec<(u32, u32)>,
 }
 #[derive(Clone, Debug)]
+struct MonthWeekDay {
+    month: u32,
+    weekday: usize,
+    offset: i32,
+    ranges: Vec<(u32, u32)>,
+}
+#[derive(Clone, Debug)]
 struct Period {
     week: [Vec<(u32, u32)>; 7],
     dates: BTreeMap<NaiveDate, Vec<(u32, u32)>>,
     month_dates: Vec<MonthDate>,
+    month_weekdays: Vec<MonthWeekDay>,
     exclude: Vec<String>,
 }
 #[derive(Clone, Debug)]
@@ -96,16 +104,49 @@ fn month_date(month: u32, value: &str) -> Result<MonthDate, String> {
         ranges: ranges(value[split..].trim())?,
     })
 }
+fn month_weekday(weekday: usize, value: &str) -> Result<Option<MonthWeekDay>, String> {
+    let mut parts = value.split_whitespace();
+    let Some(offset) = parts.next() else {
+        return Ok(None);
+    };
+    let Some(month) = parts.next() else {
+        return Ok(None);
+    };
+    let Some(month) = MONTHS.iter().position(|name| *name == month) else {
+        return Ok(None);
+    };
+    let offset = offset
+        .parse::<i32>()
+        .map_err(|_| format!("invalid weekday offset {offset}"))?;
+    if offset == 0 {
+        return Err("weekday offset 0 is invalid".into());
+    }
+    let rest = parts.collect::<Vec<_>>().join(" ");
+    if rest.is_empty() {
+        return Err(format!("missing time range in {value}"));
+    }
+    Ok(Some(MonthWeekDay {
+        month: month as u32 + 1,
+        weekday,
+        offset,
+        ranges: ranges(&rest)?,
+    }))
+}
 fn parse(a: &Attributes) -> Result<Period, String> {
     let mut period = Period {
         week: std::array::from_fn(|_| Vec::new()),
         dates: BTreeMap::new(),
         month_dates: Vec::new(),
+        month_weekdays: Vec::new(),
         exclude: list(value(a, "exclude", "")).map(str::to_owned).collect(),
     };
     for (key, v) in a {
         if let Some(day) = DAYS.iter().position(|name| *name == key) {
-            period.week[day].extend(ranges(v)?);
+            if let Some(rule) = month_weekday(day, v)? {
+                period.month_weekdays.push(rule);
+            } else {
+                period.week[day].extend(ranges(v)?);
+            }
         } else if let Ok(date) = NaiveDate::parse_from_str(key, "%Y-%m-%d") {
             period.dates.insert(date, ranges(v)?);
         } else if let Some(month) = MONTHS.iter().position(|name| *name == key) {
@@ -144,6 +185,22 @@ fn days_in_month(year: i32, month: u32) -> Option<u32> {
     NaiveDate::from_ymd_opt(year, month, 1)?
         .pred_opt()
         .map(|d| d.day())
+}
+fn month_weekday_matches(rule: &MonthWeekDay, date: NaiveDate) -> bool {
+    if rule.month != date.month()
+        || rule.weekday != date.weekday().num_days_from_monday() as usize
+    {
+        return false;
+    }
+    let Some(last) = days_in_month(date.year(), date.month()) else {
+        return false;
+    };
+    let occurrence = if rule.offset > 0 {
+        (date.day() - 1) / 7 + 1
+    } else {
+        (last - date.day()) / 7 + 1
+    };
+    occurrence == rule.offset.unsigned_abs()
 }
 fn month_date_matches(rule: &MonthDate, date: NaiveDate) -> bool {
     if rule.month != date.month() {
@@ -276,7 +333,14 @@ impl TimePeriods {
                     .iter()
                     .any(|(start, end)| *start <= minute && minute < *end)
         });
-        (weekly || fixed || recurring)
+        let recurring_weekday = period.month_weekdays.iter().any(|rule| {
+            month_weekday_matches(rule, date)
+                && rule
+                    .ranges
+                    .iter()
+                    .any(|(start, end)| *start <= minute && minute < *end)
+        });
+        (weekly || fixed || recurring || recurring_weekday)
             && !period
                 .exclude
                 .iter()
@@ -292,10 +356,13 @@ impl TimePeriods {
             p.week.iter().all(Vec::is_empty)
                 && p.dates.values().all(Vec::is_empty)
                 && p.month_dates.iter().all(|r| r.ranges.is_empty())
+                && p.month_weekdays.iter().all(|r| r.ranges.is_empty())
         }) {
             return None;
         }
-        let calendar = period.is_some_and(|p| !p.dates.is_empty() || !p.month_dates.is_empty());
+        let calendar = period.is_some_and(|p| {
+            !p.dates.is_empty() || !p.month_dates.is_empty() || !p.month_weekdays.is_empty()
+        });
         let days = if calendar { 367 } else { 8 };
         let start = timestamp / 60 * 60 + 60;
         (0..days * 24 * 60)
@@ -380,6 +447,36 @@ mod tests {
         assert_eq!(
             p.next_opening("annual", "", stamp(2026, 2, 1, 0, 0)),
             Some(stamp(2026, 2, 10, 10, 0))
+        );
+    }
+    #[test]
+    fn annual_month_weekdays_follow_shinken_offsets() {
+        let first_monday = Attributes::from([
+            ("timeperiod_name".into(), "first-monday".into()),
+            ("monday".into(), "1 january 09:00-11:00".into()),
+        ]);
+        let last_friday = Attributes::from([
+            ("timeperiod_name".into(), "last-friday".into()),
+            ("friday".into(), "-1 november 18:00-20:00".into()),
+        ]);
+        let p = TimePeriods::build(
+            &[
+                ("timeperiod", first_monday),
+                ("timeperiod", last_friday),
+            ],
+            &Attributes::from([("use_timezone".into(), "UTC".into())]),
+        )
+        .unwrap();
+        p.validate_use("first-monday", "").unwrap();
+        p.validate_use("last-friday", "").unwrap();
+        assert!(p.allows("first-monday", "", stamp(2026, 1, 5, 9, 30)));
+        assert!(!p.allows("first-monday", "", stamp(2026, 1, 12, 9, 30)));
+        assert!(p.allows("first-monday", "", stamp(2027, 1, 4, 9, 30)));
+        assert!(p.allows("last-friday", "", stamp(2026, 11, 27, 18, 30)));
+        assert!(!p.allows("last-friday", "", stamp(2026, 11, 20, 18, 30)));
+        assert_eq!(
+            p.next_opening("first-monday", "", stamp(2026, 1, 1, 0, 0)),
+            Some(stamp(2026, 1, 5, 9, 0))
         );
     }
     #[test]
