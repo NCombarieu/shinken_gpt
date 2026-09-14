@@ -1,4 +1,4 @@
-//! Weekly Nagios periods, fixed-date exceptions, exclusions and timezone-aware evaluation.
+//! Weekly Nagios periods, calendar exceptions, exclusions and timezone-aware evaluation.
 use crate::{list, required, semantic, value, Attributes, LoadError};
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike, Utc};
 use chrono_tz::Tz;
@@ -13,10 +13,31 @@ const DAYS: [&str; 7] = [
     "saturday",
     "sunday",
 ];
+const MONTHS: [&str; 12] = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+];
+#[derive(Clone, Debug)]
+struct MonthDate {
+    month: u32,
+    day: i32,
+    ranges: Vec<(u32, u32)>,
+}
 #[derive(Clone, Debug)]
 struct Period {
     week: [Vec<(u32, u32)>; 7],
     dates: BTreeMap<NaiveDate, Vec<(u32, u32)>>,
+    month_dates: Vec<MonthDate>,
     exclude: Vec<String>,
 }
 #[derive(Clone, Debug)]
@@ -58,10 +79,28 @@ fn ranges(value: &str) -> Result<Vec<(u32, u32)>, String> {
     }
     Ok(result)
 }
+fn month_date(month: u32, value: &str) -> Result<MonthDate, String> {
+    let value = value.trim();
+    let split = value
+        .find(char::is_whitespace)
+        .ok_or_else(|| format!("missing time range in {value}"))?;
+    let day = value[..split]
+        .parse::<i32>()
+        .map_err(|_| format!("invalid month day {}", &value[..split]))?;
+    if day == 0 {
+        return Err("month day 0 is invalid".into());
+    }
+    Ok(MonthDate {
+        month,
+        day,
+        ranges: ranges(value[split..].trim())?,
+    })
+}
 fn parse(a: &Attributes) -> Result<Period, String> {
     let mut period = Period {
         week: std::array::from_fn(|_| Vec::new()),
         dates: BTreeMap::new(),
+        month_dates: Vec::new(),
         exclude: list(value(a, "exclude", "")).map(str::to_owned).collect(),
     };
     for (key, v) in a {
@@ -69,6 +108,8 @@ fn parse(a: &Attributes) -> Result<Period, String> {
             period.week[day].extend(ranges(v)?);
         } else if let Ok(date) = NaiveDate::parse_from_str(key, "%Y-%m-%d") {
             period.dates.insert(date, ranges(v)?);
+        } else if let Some(month) = MONTHS.iter().position(|name| *name == key) {
+            period.month_dates.push(month_date(month as u32 + 1, v)?);
         } else if ![
             "name",
             "alias",
@@ -93,6 +134,29 @@ fn timezone(name: &str) -> Result<Option<Tz>, LoadError> {
             .map(Some)
             .map_err(|_| semantic(format!("unknown timezone {name}")))
     }
+}
+fn days_in_month(year: i32, month: u32) -> Option<u32> {
+    let (year, month) = if month == 12 {
+        (year.checked_add(1)?, 1)
+    } else {
+        (year, month + 1)
+    };
+    NaiveDate::from_ymd_opt(year, month, 1)?.pred_opt().map(|d| d.day())
+}
+fn month_date_matches(rule: &MonthDate, date: NaiveDate) -> bool {
+    if rule.month != date.month() {
+        return false;
+    }
+    let Some(last) = days_in_month(date.year(), date.month()) else {
+        return false;
+    };
+    let target = if rule.day > 0 {
+        (rule.day as u32).min(last)
+    } else {
+        last.saturating_sub(rule.day.unsigned_abs().saturating_sub(1))
+            .max(1)
+    };
+    target == date.day()
 }
 impl TimePeriods {
     pub(crate) fn build(
@@ -203,26 +267,36 @@ impl TimePeriods {
                 .iter()
                 .any(|(start, end)| *start <= minute && minute < *end)
         });
-        (weekly || fixed)
+        let recurring = period.month_dates.iter().any(|rule| {
+            month_date_matches(rule, date)
+                && rule
+                    .ranges
+                    .iter()
+                    .any(|(start, end)| *start <= minute && minute < *end)
+        });
+        (weekly || fixed || recurring)
             && !period
                 .exclude
                 .iter()
                 .any(|name| self.allows_at(name, date, day, minute, depth + 1))
     }
-    /// Search the next weekly or fixed-date opening in absolute minutes; this respects DST jumps.
+    /// Search the next weekly or calendar opening in absolute minutes; this respects DST jumps.
     pub fn next_opening(&self, name: &str, zone: &str, timestamp: u64) -> Option<u64> {
         if self.allows(name, zone, timestamp) {
             return Some(timestamp);
         }
-        if self.definitions.get(name).is_some_and(|p| {
-            p.as_ref().is_ok_and(|p| {
-                p.week.iter().all(Vec::is_empty) && p.dates.values().all(Vec::is_empty)
-            })
+        let period = self.definitions.get(name).and_then(|p| p.as_ref().ok());
+        if period.is_some_and(|p| {
+            p.week.iter().all(Vec::is_empty)
+                && p.dates.values().all(Vec::is_empty)
+                && p.month_dates.iter().all(|r| r.ranges.is_empty())
         }) {
             return None;
         }
+        let calendar = period.is_some_and(|p| !p.dates.is_empty() || !p.month_dates.is_empty());
+        let days = if calendar { 367 } else { 8 };
         let start = timestamp / 60 * 60 + 60;
-        (0..8 * 24 * 60)
+        (0..days * 24 * 60)
             .map(|i| start + i * 60)
             .find(|t| self.allows(name, zone, *t))
     }
@@ -285,10 +359,32 @@ mod tests {
         assert!(p.allows("special", "", stamp(2026, 4, 6, 10, 0)));
     }
     #[test]
+    fn annual_month_dates_follow_shinken_offsets() {
+        let period = Attributes::from([
+            ("timeperiod_name".into(), "annual".into()),
+            ("february".into(), "10 10:00-12:00".into()),
+            ("april".into(), "-1 18:00-20:00".into()),
+        ]);
+        let p = TimePeriods::build(
+            &[("timeperiod", period)],
+            &Attributes::from([("use_timezone".into(), "UTC".into())]),
+        )
+        .unwrap();
+        p.validate_use("annual", "").unwrap();
+        assert!(p.allows("annual", "", stamp(2026, 2, 10, 10, 30)));
+        assert!(p.allows("annual", "", stamp(2027, 2, 10, 10, 30)));
+        assert!(!p.allows("annual", "", stamp(2026, 2, 11, 10, 30)));
+        assert!(p.allows("annual", "", stamp(2026, 4, 30, 18, 30)));
+        assert_eq!(
+            p.next_opening("annual", "", stamp(2026, 2, 1, 0, 0)),
+            Some(stamp(2026, 2, 10, 10, 0))
+        );
+    }
+    #[test]
     fn unsupported_used_periods_and_cycles_fail_validation() {
         let bad = Attributes::from([
             ("timeperiod_name".into(), "holidays".into()),
-            ("january".into(), "1 00:00-24:00".into()),
+            ("day".into(), "1 00:00-24:00".into()),
         ]);
         let p = TimePeriods::build(&[("timeperiod", bad)], &Attributes::new()).unwrap();
         assert!(p.validate_use("holidays", "").is_err());
