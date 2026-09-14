@@ -195,10 +195,15 @@ impl TimePeriods {
         let Some(Ok(period)) = self.definitions.get(name) else {
             return false;
         };
-        let ranges = period.dates.get(&date).unwrap_or(&period.week[day]);
-        ranges
+        let weekly = period.week[day]
             .iter()
-            .any(|(start, end)| *start <= minute && minute < *end)
+            .any(|(start, end)| *start <= minute && minute < *end);
+        let fixed = period.dates.get(&date).is_some_and(|ranges| {
+            ranges
+                .iter()
+                .any(|(start, end)| *start <= minute && minute < *end)
+        });
+        (weekly || fixed)
             && !period
                 .exclude
                 .iter()
@@ -210,8 +215,9 @@ impl TimePeriods {
             return Some(timestamp);
         }
         if self.definitions.get(name).is_some_and(|p| {
-            p.as_ref()
-                .is_ok_and(|p| p.week.iter().all(Vec::is_empty) && p.dates.values().all(Vec::is_empty))
+            p.as_ref().is_ok_and(|p| {
+                p.week.iter().all(Vec::is_empty) && p.dates.values().all(Vec::is_empty)
+            })
         }) {
             return None;
         }
@@ -259,11 +265,11 @@ mod tests {
         assert!(p.allows("work", "UTC", stamp(2026, 3, 30, 15, 0)));
     }
     #[test]
-    fn fixed_date_exceptions_override_weekly_ranges() {
+    fn fixed_date_exceptions_extend_weekly_ranges() {
         let period = Attributes::from([
             ("timeperiod_name".into(), "special".into()),
             ("monday".into(), "09:00-17:00".into()),
-            ("2026-03-30".into(), "00:00-00:00".into()),
+            ("2026-03-30".into(), "18:00-19:00".into()),
             ("2026-04-04".into(), "10:00-12:00".into()),
         ]);
         let p = TimePeriods::build(
@@ -272,7 +278,8 @@ mod tests {
         )
         .unwrap();
         p.validate_use("special", "").unwrap();
-        assert!(!p.allows("special", "", stamp(2026, 3, 30, 10, 0)));
+        assert!(p.allows("special", "", stamp(2026, 3, 30, 10, 0)));
+        assert!(p.allows("special", "", stamp(2026, 3, 30, 18, 30)));
         assert!(p.allows("special", "", stamp(2026, 4, 4, 10, 30)));
         assert!(!p.allows("special", "", stamp(2026, 4, 4, 12, 0)));
         assert!(p.allows("special", "", stamp(2026, 4, 6, 10, 0)));
