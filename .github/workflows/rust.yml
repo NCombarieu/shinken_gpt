@@ -1,0 +1,141 @@
+name: Rust
+on:
+  push:
+    branches: [rewrite/rust-core]
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "rust/**"
+      - "Containerfile.rust"
+      - "compose.rust.yaml"
+      - ".github/workflows/rust.yml"
+permissions:
+  contents: read
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check locked dependencies
+        run: cargo fetch --locked
+      - name: Formatting gate
+        if: "!cancelled()"
+        run: cargo fmt --all -- --check
+      - name: Collect canonical formatting
+        if: "!cancelled()"
+        run: cargo fmt --all
+      - name: Clippy
+        if: "!cancelled()"
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Unit tests
+        if: "!cancelled()"
+        run: cargo test --locked --workspace --all-targets
+      - name: Build standalone executable
+        id: build
+        if: "!cancelled()"
+        run: cargo build --locked -p shinken-rs
+      - name: Install upstream Thruk client dependencies
+        if: "!cancelled() && steps.build.outcome == 'success'"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libcpanel-json-xs-perl libio-socket-ip-perl
+          mkdir -p /tmp/thruk-client/Monitoring/Livestatus
+          ref=8525096bf12a47c7b1774f40ed8ca13835fd3965
+          for path in Livestatus.pm Livestatus/INET.pm Livestatus/UNIX.pm; do
+            curl --fail --location --retry 3 "https://raw.githubusercontent.com/sni/thruk/$ref/lib/Monitoring/$path" -o "/tmp/thruk-client/Monitoring/$path"
+          done
+      - name: Real daemon, plugins and upstream Thruk client
+        if: "!cancelled() && steps.build.outcome == 'success'"
+        env:
+          THRUK_PERL_LIB: /tmp/thruk-client
+        run: |
+          target/debug/shinken-rs config-check etc/shinken.cfg
+          python3 rust/tests/smoke.py target/debug/shinken-rs
+          python3 rust/tests/notifications-smoke.py target/debug/shinken-rs
+          python3 rust/tests/native-smoke.py target/debug/shinken-rs
+      - name: Save canonical sources and dependency lock for review
+        if: "!cancelled()"
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-canonical-sources
+          path: |
+            Cargo.lock
+            rust/crates/**/*.rs
+      - name: Save Linux executable
+        if: "!cancelled() && steps.build.outcome == 'success'"
+        uses: actions/upload-artifact@v4
+        with:
+          name: shinken-rs-linux-x86_64-debug
+          path: target/debug/shinken-rs
+  container:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build rootless container
+        run: |
+          podman --version
+          podman build -f Containerfile.rust -t localhost/shinken-rs:test .
+      - name: Execute installed monitoring plugins without Python
+        run: |
+          podman run --rm --entrypoint /bin/sh localhost/shinken-rs:test -c 'test ! -e /usr/bin/python3 && test -x /usr/lib/nagios/plugins/check_dummy'
+          podman run --rm localhost/shinken-rs:test config-check /etc/shinken/shinken.cfg
+          podman run --rm localhost/shinken-rs:test run /etc/shinken/shinken.cfg --once > /tmp/once.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/once.json"))
+          assert data["hosts"][1][1] == 0, data
+          services = {r[1]: r for r in data["services"][1:]}
+          assert services["Native check"][2] == 0, data
+          assert services["Example alert"][2] == 2, data
+          assert services["Passive input"][4] == 0, data
+          PY
+      - name: Rootless daemon lifecycle and retained state
+        run: |
+          trap 'podman logs rust-smoke; podman rm -f rust-smoke >/dev/null' EXIT
+          podman run -d --name rust-smoke -p 127.0.0.1::6557 localhost/shinken-rs:test
+          port=$(podman port rust-smoke 6557/tcp | awk -F: '{print $NF}')
+          python3 rust/tests/container-smoke.py "$port"
+          podman stop --time 10 rust-smoke
+          test "$(podman inspect --format '{{.State.ExitCode}}' rust-smoke)" = 0
+          podman cp rust-smoke:/var/lib/shinken/state.json /tmp/retained.json
+          python3 - <<'PY'
+          import json
+          state = json.load(open("/tmp/retained.json"))
+          assert state["version"] == 1
+          assert len(state["objects"]) == 4
+          assert state["objects"]["H:localhost"]["last_check"] > 0
+          PY
+          podman cp rust-smoke:/usr/local/bin/shinken-rs /tmp/shinken-rs
+      - name: Save tested Linux release executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: shinken-rs-linux-x86_64-release
+          path: /tmp/shinken-rs
+
+  thruk-ui:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Actual Thruk interface and native engine
+        run: bash rust/tests/thruk-ui.sh
+      - name: Save rendered pages and integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thruk-native-ui
+          path: rust-ui-results/

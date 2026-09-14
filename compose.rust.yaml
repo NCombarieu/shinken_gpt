@@ -1,0 +1,17 @@
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: Containerfile.rust
+    image: localhost/shinken-rs:dev
+    init: true
+    ports:
+      - "127.0.0.1:6557:6557"
+    volumes:
+      - ./rust/examples/minimal:/etc/shinken:ro,z
+      - rust-state:/var/lib/shinken
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  rust-state:
