@@ -33,7 +33,6 @@ import shinken.daemon
 # TODO: clean import *
 from shinken_test import *
 from shinken.property import *
-import six
 
 class PropertiesTester(object):
 
@@ -58,7 +57,7 @@ class PropertiesTester(object):
 
     def test_default_values(self):
         item = self.item # shortcut
-        for name, value in six.iteritems(self.properties):
+        for name, value in self.properties.items():
             self.assertIn(name, item.properties,
                           msg='property %r not found in %s' % (name, self.item.my_type))
             if hasattr(item.properties[name], 'default'):
