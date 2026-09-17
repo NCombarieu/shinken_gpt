@@ -31,7 +31,6 @@ from shinken_test import (
     unittest,
     ShinkenTest,
 )
-from six.moves import range
 
 # Set this variable False to disable profiling test
 PROFILE_BP_RULE_RE_PROCESSING = False
