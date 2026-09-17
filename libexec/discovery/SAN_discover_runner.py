@@ -10,7 +10,7 @@
 # (at your option) any later version.
 
 import fcntl
-import optparse
+from shinken.cli_compat import optparse
 import re
 import socket
 import struct

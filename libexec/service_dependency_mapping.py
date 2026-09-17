@@ -20,7 +20,7 @@ Build a service-dependency mapping from a running arbiter and pack config.
 """
 
 import json
-import optparse
+from shinken.cli_compat import optparse
 import shutil
 import sys
 

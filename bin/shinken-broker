@@ -35,7 +35,7 @@
 
 import os
 import sys
-import optparse
+from shinken.cli_compat import optparse
 
 try:
     from shinken.bin import VERSION

@@ -32,7 +32,7 @@ It also reads orders form users (nagios.cmd) and sends them to schedulers.
 
 import os
 import sys
-import optparse
+from shinken.cli_compat import optparse
 
 
 # We try to raise up recursion limit on

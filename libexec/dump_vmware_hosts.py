@@ -23,7 +23,7 @@
 import os
 import sys
 import shutil
-import optparse
+from shinken.cli_compat import optparse
 from subprocess import Popen, PIPE
 
 VERSION = '0.1'

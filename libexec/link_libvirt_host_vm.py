@@ -23,7 +23,7 @@ can be loaded in hot_dependencies_arbiter module.
 """
 
 import json
-import optparse
+from shinken.cli_compat import optparse
 import signal
 import sys
 

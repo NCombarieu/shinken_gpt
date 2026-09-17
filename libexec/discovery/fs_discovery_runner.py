@@ -10,7 +10,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-import optparse
+from shinken.cli_compat import optparse
 import re
 
 import netsnmp

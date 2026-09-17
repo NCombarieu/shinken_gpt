@@ -27,7 +27,7 @@
 #
 ###############################################################
 
-import optparse
+from shinken.cli_compat import optparse
 
 import netsnmp
 

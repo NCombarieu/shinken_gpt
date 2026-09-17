@@ -6,7 +6,7 @@
 #
 # This file is part of Shinken.
 
-import optparse
+from shinken.cli_compat import optparse
 import os
 import subprocess
 import sys

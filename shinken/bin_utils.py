@@ -7,7 +7,7 @@ Provides:
 - Version and help text
 """
 
-import optparse
+from shinken.cli_compat import optparse
 import logging
 from pathlib import Path
 from typing import Optional, Tuple

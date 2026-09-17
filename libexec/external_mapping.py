@@ -41,7 +41,7 @@ For example, you can use a script like this in your crontab::
 
 import os
 import sys
-import optparse
+from shinken.cli_compat import optparse
 
 # Try to load json (2.5 and higer) or simplejson if failed (python2.4)
 try:
