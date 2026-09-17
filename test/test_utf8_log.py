@@ -27,7 +27,6 @@
 from __future__ import absolute_import
 from shinken_test import *
 from shinken.log import logger
-from six import unichr
 
 
 class TestConfig(ShinkenTest):
@@ -42,7 +41,7 @@ class TestConfig(ShinkenTest):
         logger.info(sutf)
         sutf8 = u'I love myself $£¤'  # dollar, pound, currency
         logger.info(sutf8)
-        s = unichr(40960) + u'abcd' + unichr(1972)
+        s = chr(40960) + u'abcd' + chr(1972)
         logger.info(s)
 
 
