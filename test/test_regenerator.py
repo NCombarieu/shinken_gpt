@@ -30,8 +30,6 @@ from shinken_test import ShinkenTest, unittest
 
 from shinken.objects import Service
 from shinken.misc.regenerator import Regenerator
-import six
-from six.moves import range
 
 
 class TestRegenerator(ShinkenTest):
@@ -143,7 +141,7 @@ class TestRegenerator(ShinkenTest):
 
         times = {}
         sizes = {}
-        import six.moves.cPickle
+        import pickle
         data = {}
         cls = svc.__class__
         start = time.time()
@@ -156,7 +154,7 @@ class TestRegenerator(ShinkenTest):
                         times[prop] = 0
                         sizes[prop] = 0
                     t0 = time.time()
-                    tmp = six.moves.cPickle.dumps(data[prop], 0)
+                    tmp = pickle.dumps(data[prop], 0)
                     sizes[prop] += len(tmp)
                     times[prop] += time.time() - t0
 
