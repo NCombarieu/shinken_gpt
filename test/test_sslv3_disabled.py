@@ -26,7 +26,7 @@ from __future__ import absolute_import
 import subprocess
 from time import sleep
 
-import six.moves.http_client
+import http.client
 import ssl
 
 try:
@@ -76,7 +76,7 @@ class testSchedulerInit(ShinkenTest):
         ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv3)
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        self.conn = six.moves.http_client.HTTPSConnection("localhost:9998", context=ctx)
+        self.conn = http.client.HTTPSConnection("localhost:9998", context=ctx)
         self.assertRaises(ssl.SSLError, self.conn.connect)
         try:
             self.conn.connect()
