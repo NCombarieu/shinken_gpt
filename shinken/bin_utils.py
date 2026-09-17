@@ -54,6 +54,18 @@ def add_common_options(parser: optparse.OptionParser) -> None:
     )
 
 
+def add_logging_options(parser: optparse.OptionParser) -> None:
+    """Add logging controls without reintroducing daemon-specific parsers."""
+    parser.add_option('--verbose', action='store_true', default=False,
+                      help='Enable informational logging')
+    parser.add_option('--debug', action='store_true', default=False,
+                      help='Enable debug logging')
+    parser.add_option('--json-logs', action='store_true', default=False,
+                      help='Emit structured JSON logs')
+    parser.add_option('--logfile', dest='log_file', metavar='FILE', default=None,
+                      help='Also write logs to FILE')
+
+
 def setup_logging_from_options(
     daemon_name: str,
     options: optparse.Values,

@@ -59,6 +59,7 @@ except ImportError:
 
 
 from shinken.daemons.pollerdaemon import Poller
+from shinken.bin_utils import add_logging_options, setup_logging_from_options
 from shinken.bin import VERSION
 
 
@@ -82,7 +83,9 @@ def main():
                       dest="profile",
                       help="Dump a profile file. Need the python cProfile librairy")
 
+    add_logging_options(parser)
     opts, args = parser.parse_args()
+    setup_logging_from_options('shinken-poller', opts)
     if args:
         parser.error("Does not accept any argument.")
 

@@ -49,6 +49,10 @@ class StructuredFormatter(Formatter):
 class HumanFormatter(Formatter):
     """Format log records for human-readable output."""
 
+    def __init__(self, daemon_name: str) -> None:
+        self.daemon_name = daemon_name
+        super().__init__()
+
     def format(self, record: logging.LogRecord) -> str:
         """Format a log record as readable text."""
         if record.exc_info:

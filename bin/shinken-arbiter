@@ -73,6 +73,7 @@ except ImportError:
 
 from shinken.bin import VERSION
 from shinken.daemons.arbiterdaemon import Arbiter
+from shinken.bin_utils import add_logging_options, setup_logging_from_options
 
 
 def main():
@@ -110,7 +111,9 @@ def main():
                       help="Give the arbiter name to use. Optionnal, will use the hostaddress "
                            "if not provide to find it.")
 
+    add_logging_options(parser)
     opts, args = parser.parse_args()
+    setup_logging_from_options('shinken-arbiter', opts)
 
 
     if not opts.config_files:

@@ -23,6 +23,7 @@ class OptionParser(argparse.ArgumentParser):
         if usage:
             usage = usage.replace("%prog", "%(prog)s")
         super().__init__(usage=usage, add_help=False, *args, **kwargs)
+        self.add_argument('-h', '--help', action='help', help='Show this help message and exit')
         if version:
             self.add_argument("--version", action="version", version=version.replace("%prog", "%(prog)s"))
 
