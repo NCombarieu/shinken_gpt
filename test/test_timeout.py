@@ -32,7 +32,6 @@ from shinken.worker import Worker
 from shinken.objects.service import Service
 from shinken.objects.host import Host
 from shinken.objects.contact import Contact
-from six.moves import range
 
 modconf = Module()
 
