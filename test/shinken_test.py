@@ -64,8 +64,6 @@ from shinken.daemons.brokerdaemon import Broker
 from shinken.daemons.arbiterdaemon import Arbiter
 from shinken.daemons.receiverdaemon import Receiver
 from logging import ERROR, DEBUG
-import six
-from six.moves import range
 
 # Modules are by default on the ../modules
 myself = os.path.abspath(__file__)
@@ -94,46 +92,6 @@ def guess_sys_stdout_encoding():
             or sys.getdefaultencoding()
             or 'ascii'
     )
-
-
-def safe_print_old(*args, **kw):
-    """" "print" args to sys.stdout,
-    If some of the args aren't unicode then convert them first to unicode,
-        using keyword argument 'in_encoding' if provided (else default to UTF8)
-        and replacing bad encoded bytes.
-    Write to stdout using 'out_encoding' if provided else best guessed encoding,
-        doing xmlcharrefreplace on errors.
-    """
-    
-    in_bytes_encoding = kw.pop('in_encoding', 'UTF-8')
-    out_encoding = kw.pop('out_encoding', guess_sys_stdout_encoding())
-    if kw:
-        raise ValueError('unhandled named/keyword argument(s): %r' % kw)
-    #
-    make_in_data_gen = lambda: (a if isinstance(a, six.text_type)
-                                else
-                                six.text_type(str(a), in_bytes_encoding, 'replace')
-                                for a in args)
-    
-    possible_codings = (out_encoding,)
-    if out_encoding != 'ascii':
-        possible_codings += ('ascii',)
-    
-    for coding in possible_codings:
-        data = u' '.join(make_in_data_gen()).encode(coding, 'xmlcharrefreplace')
-        try:
-            sys.stdout.write(data)
-            break
-        except UnicodeError as err:
-            # there might still have some problem with the underlying sys.stdout.
-            # it might be a StringIO whose content could be decoded/encoded in this same process
-            # and have encode/decode errors because we could have guessed a bad encoding with it.
-            # in such case fallback on 'ascii'
-            if coding == 'ascii':
-                raise
-            sys.stderr.write('Error on write to sys.stdout with %s encoding: err=%s\nTrying with ascii' % (
-                coding, err))
-    sys.stdout.write(b'\n')
 
 
 #############################################################################
