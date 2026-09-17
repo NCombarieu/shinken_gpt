@@ -25,7 +25,7 @@
 
 from __future__ import print_function
 from __future__ import absolute_import
-import six.moves.cPickle as pickle
+import pickle
 from shinken_test import *
 
 from shinken.safepickle import SafeUnpickler
