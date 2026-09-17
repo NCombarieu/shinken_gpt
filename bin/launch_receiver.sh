@@ -23,8 +23,8 @@
 
 
 DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+BIN="$DIR"
 ETC="$DIR"/../etc
 
 echo "Launching Receiver (which manages passive data)"
-"$BIN"/shinken_receiver.py -d -c "$ETC"/daemons/receiverd.ini
+"$BIN"/shinken-receiver.py -d -c "$ETC"/daemons/receiverd.ini

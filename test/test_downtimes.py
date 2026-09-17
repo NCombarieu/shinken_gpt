@@ -22,8 +22,8 @@
 # This file is used to test host- and service-downtimes.
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 #time.time = original_time_time
@@ -54,13 +54,13 @@ class TestDowntime(ShinkenTest):
         print("downtime was scheduled. check its activity and the comment")
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(svc.downtimes))
-        self.assertIn(svc.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(svc.downtimes[0], list(self.sched.downtimes.values()))
         self.assertTrue(svc.downtimes[0].fixed)
         self.assertTrue(svc.downtimes[0].is_in_effect)
         self.assertFalse(svc.downtimes[0].can_be_deleted)
         self.assertEqual(1, len(self.sched.comments))
         self.assertEqual(1, len(svc.comments))
-        self.assertIn(svc.comments[0], self.sched.comments.values())
+        self.assertIn(svc.comments[0], list(self.sched.comments.values()))
         self.assertEqual(svc.comments[0].id, svc.downtimes[0].comment_id)
 
         self.scheduler_loop(1, [[svc, 0, 'OK']])
@@ -68,7 +68,7 @@ class TestDowntime(ShinkenTest):
         print("good check was launched, downtime must be active")
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(svc.downtimes))
-        self.assertIn(svc.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(svc.downtimes[0], list(self.sched.downtimes.values()))
         self.assertTrue(svc.in_scheduled_downtime)
         self.assertTrue(svc.downtimes[0].fixed)
         self.assertTrue(svc.downtimes[0].is_in_effect)
@@ -79,7 +79,7 @@ class TestDowntime(ShinkenTest):
         print("bad check was launched (SOFT;1), downtime must be active")
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(svc.downtimes))
-        self.assertIn(svc.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(svc.downtimes[0], list(self.sched.downtimes.values()))
         self.assertTrue(svc.in_scheduled_downtime)
         self.assertTrue(svc.downtimes[0].fixed)
         self.assertTrue(svc.downtimes[0].is_in_effect)
@@ -92,7 +92,7 @@ class TestDowntime(ShinkenTest):
         print(svc.downtimes[0])
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(svc.downtimes))
-        self.assertIn(svc.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(svc.downtimes[0], list(self.sched.downtimes.values()))
         self.assertTrue(svc.in_scheduled_downtime)
         self.assertTrue(svc.downtimes[0].fixed)
         self.assertTrue(svc.downtimes[0].is_in_effect)
@@ -138,13 +138,13 @@ class TestDowntime(ShinkenTest):
         #----------------------------------------------------------------
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(svc.downtimes))
-        self.assertIn(svc.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(svc.downtimes[0], list(self.sched.downtimes.values()))
         self.assertFalse(svc.downtimes[0].fixed)
         self.assertFalse(svc.downtimes[0].is_in_effect)
         self.assertFalse(svc.downtimes[0].can_be_deleted)
         self.assertEqual(1, len(self.sched.comments))
         self.assertEqual(1, len(svc.comments))
-        self.assertIn(svc.comments[0], self.sched.comments.values())
+        self.assertIn(svc.comments[0], list(self.sched.comments.values()))
         self.assertEqual(svc.comments[0].id, svc.downtimes[0].comment_id)
         #----------------------------------------------------------------
         # run the service and return an OK status
@@ -153,7 +153,7 @@ class TestDowntime(ShinkenTest):
         self.scheduler_loop(1, [[svc, 0, 'OK']])
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(svc.downtimes))
-        self.assertIn(svc.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(svc.downtimes[0], list(self.sched.downtimes.values()))
         self.assertFalse(svc.in_scheduled_downtime)
         self.assertFalse(svc.downtimes[0].fixed)
         self.assertFalse(svc.downtimes[0].is_in_effect)
@@ -166,7 +166,7 @@ class TestDowntime(ShinkenTest):
         self.scheduler_loop(1, [[svc, 2, 'BAD']])
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(svc.downtimes))
-        self.assertIn(svc.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(svc.downtimes[0], list(self.sched.downtimes.values()))
         self.assertFalse(svc.in_scheduled_downtime)
         self.assertFalse(svc.downtimes[0].fixed)
         self.assertFalse(svc.downtimes[0].is_in_effect)
@@ -179,7 +179,7 @@ class TestDowntime(ShinkenTest):
         self.scheduler_loop(1, [[svc, 2, 'BAD']])
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(svc.downtimes))
-        self.assertIn(svc.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(svc.downtimes[0], list(self.sched.downtimes.values()))
         self.assertTrue(svc.in_scheduled_downtime)
         self.assertFalse(svc.downtimes[0].fixed)
         self.assertTrue(svc.downtimes[0].is_in_effect)
@@ -257,13 +257,13 @@ class TestDowntime(ShinkenTest):
         #----------------------------------------------------------------
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(host.downtimes))
-        self.assertIn(host.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(host.downtimes[0], list(self.sched.downtimes.values()))
         self.assertTrue(host.downtimes[0].fixed)
         self.assertTrue(host.downtimes[0].is_in_effect)
         self.assertFalse(host.downtimes[0].can_be_deleted)
         self.assertEqual(1, len(self.sched.comments))
         self.assertEqual(1, len(host.comments))
-        self.assertIn(host.comments[0], self.sched.comments.values())
+        self.assertIn(host.comments[0], list(self.sched.comments.values()))
         self.assertEqual(host.comments[0].id, host.downtimes[0].comment_id)
         self.show_logs()
         self.show_actions()
@@ -275,7 +275,7 @@ class TestDowntime(ShinkenTest):
         self.scheduler_loop(1, [], do_sleep=False)
         self.show_logs()
         self.show_actions()
-
+        
         self.assertEqual(2, self.count_logs())    # start downt, notif downt
         self.clear_logs()
         self.clear_actions()
@@ -361,13 +361,13 @@ class TestDowntime(ShinkenTest):
         self.assertEqual(1, len(self.sched.downtimes))
         self.assertEqual(1, len(host.downtimes))
         self.assertTrue(host.in_scheduled_downtime)
-        self.assertIn(host.downtimes[0], self.sched.downtimes.values())
+        self.assertIn(host.downtimes[0], list(self.sched.downtimes.values()))
         self.assertTrue(host.downtimes[0].fixed)
         self.assertTrue(host.downtimes[0].is_in_effect)
         self.assertFalse(host.downtimes[0].can_be_deleted)
         self.assertEqual(1, len(self.sched.comments))
         self.assertEqual(1, len(host.comments))
-        self.assertIn(host.comments[0], self.sched.comments.values())
+        self.assertIn(host.comments[0], list(self.sched.comments.values()))
         self.assertEqual(host.comments[0].id, host.downtimes[0].comment_id)
         self.scheduler_loop(4, [[host, 2, 'DOWN']], do_sleep=True)
         self.show_logs()

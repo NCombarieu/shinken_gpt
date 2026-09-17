@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Shinken"
+version = "2.4.3"
+description = "Monitoring framework compatible with Nagios configuration and plugins"
+readme = "README.rst"
+license = {text = "AGPL-3.0-or-later"}
+authors = [{name = "Gabes Jean", email = "gabes.jean@gmail.com"}]
+requires-python = ">=3.11"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: GNU Affero General Public License v3",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Monitoring",
+  "Topic :: System :: Networking :: Monitoring",
+]
+dependencies = [
+  "Bottle>=0.13.4,<0.14",
+  "cheroot>=11.1.2,<12",
+  "pycurl>=7.45.2",
+  "Pyro5>=5.15",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-timeout>=2.1",
+  "pytest-cov>=4.1",
+  "ruff>=0.6",
+  "build>=1.0",
+  "twine>=4.0",
+  "wheel>=0.42",
+]
+sqlite = ["pysqlite3>=2.6"]
+mysql = ["PyMySQL>=1.1"]
+oracle = ["cx_Oracle>=8.3"]
+setproctitle = ["setproctitle>=1.3"]
+
+[project.urls]
+Homepage = "https://github.com/shinken-monitoring/shinken"
+Repository = "https://github.com/NCombarieu/shinken_gpt"
+Documentation = "https://github.com/NCombarieu/shinken_gpt/tree/modernize/podman-python3/doc"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["test"]
+pythonpath = ["test"]
+addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
+filterwarnings = [
+  "default::DeprecationWarning",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = ["doc", "inventory", "share", "*/daemons/*/"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "UP", "B", "SIM", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"test/**" = ["B011"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["shinken"]
+
+[tool.coverage.run]
+branch = true
+source = ["shinken"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

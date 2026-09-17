@@ -22,8 +22,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import time
 
 # Import all objects we will need
@@ -106,7 +104,7 @@ class Regenerator(object):
         c = sched.conf
         # Simulate a drop conf
         b = sched.get_program_status_brok()
-        #b.prepare()
+        b.prepare()
         self.manage_program_status_brok(b)
 
         # Now we will lie and directly map our objects :)
@@ -215,7 +213,7 @@ class Regenerator(object):
 
         # Now link HOSTS with hostgroups, and commands
         for h in inp_hosts:
-            # print("Linking %s groups %s" % (h.get_name(), h.hostgroups))
+            # print "Linking %s groups %s" % (h.get_name(), h.hostgroups)
             new_hostgroups = []
             for hgname in h.hostgroups.split(','):
                 hgname = hgname.strip()
@@ -226,13 +224,11 @@ class Regenerator(object):
 
             # Now link Command() objects
             self.linkify_a_command(h, 'check_command')
-            self.linkify_a_command(h, 'maintenance_check_command')
             self.linkify_a_command(h, 'event_handler')
 
             # Now link timeperiods
             self.linkify_a_timeperiod_by_name(h, 'notification_period')
             self.linkify_a_timeperiod_by_name(h, 'check_period')
-            self.linkify_a_timeperiod_by_name(h, 'maintenance_check_period')
             self.linkify_a_timeperiod_by_name(h, 'maintenance_period')
 
             # And link contacts too
@@ -293,14 +289,12 @@ class Regenerator(object):
 
             # Now link Command() objects
             self.linkify_a_command(s, 'check_command')
-            self.linkify_a_command(s, 'maintenance_check_command')
             self.linkify_a_command(s, 'event_handler')
 
             # Now link timeperiods
             self.linkify_a_timeperiod_by_name(s, 'notification_period')
             self.linkify_a_timeperiod_by_name(s, 'check_period')
             self.linkify_a_timeperiod_by_name(s, 'maintenance_period')
-            self.linkify_a_timeperiod_by_name(s, 'maintenance_check_period')
 
             # And link contacts too
             self.linkify_contacts(s, 'contacts')
@@ -449,7 +443,7 @@ class Regenerator(object):
             setattr(o, prop, [])
 
         new_v = []
-        # print("Linkify Dict SRV/Host", v, o.get_name(), prop)
+        # print "Linkify Dict SRV/Host", v, o.get_name(), prop
         for name in v['services']:
             elts = name.split('/')
             hname = elts[0]
@@ -731,15 +725,15 @@ class Regenerator(object):
     # if not: create it and declare it in our main commands
     def manage_initial_timeperiod_status_brok(self, b):
         data = b.data
-        # print("Creating timeperiod", data)
+        # print "Creating timeperiod", data
         tpname = data['timeperiod_name']
 
         tp = self.timeperiods.find_by_name(tpname)
         if tp:
-            # print("Already existing timeperiod", tpname)
+            # print "Already existing timeperiod", tpname
             self.update_element(tp, data)
         else:
-            # print("Creating Timeperiod:", tpname)
+            # print "Creating Timeperiod:", tpname
             tp = Timeperiod({})
             self.update_element(tp, data)
             self.timeperiods.add_item(tp)
@@ -754,10 +748,10 @@ class Regenerator(object):
 
         c = self.commands.find_by_name(cname)
         if c:
-            # print("Already existing command", cname, "updating it")
+            # print "Already existing command", cname, "updating it"
             self.update_element(c, data)
         else:
-            # print("Creating a new command", cname)
+            # print "Creating a new command", cname
             c = Command({})
             self.update_element(c, data)
             self.commands.add_item(c)
@@ -797,7 +791,7 @@ class Regenerator(object):
 
         self.update_element(broker, data)
 
-        # print("CMD:", c)
+        # print "CMD:", c
         self.brokers[broker_name] = broker
 
 
@@ -851,11 +845,10 @@ class Regenerator(object):
     def manage_update_host_status_brok(self, b):
         # There are some properties that should not change and are already linked
         # so just remove them
-        clean_prop = ['id', 'check_command', 'maintenance_check_command',
-                      'hostgroups', 'contacts', 'notification_period',
-                      'contact_groups', 'check_period', 'event_handler',
-                      'maintenance_period', 'maintenance_check_period',
-                      'realm', 'customs', 'escalations']
+        clean_prop = ['id', 'check_command', 'hostgroups',
+                      'contacts', 'notification_period', 'contact_groups',
+                      'check_period', 'event_handler',
+                      'maintenance_period', 'realm', 'customs', 'escalations']
 
         # some are only use when a topology change happened
         toplogy_change = b.data['topology_change']
@@ -895,11 +888,10 @@ class Regenerator(object):
     def manage_update_service_status_brok(self, b):
         # There are some properties that should not change and are already linked
         # so just remove them
-        clean_prop = ['id', 'check_command', 'maintenance_check_command',
-                      'servicegroups', 'contacts', 'notification_period',
-                      'contact_groups', 'check_period', 'event_handler',
-                      'maintenance_period', 'maintenance_check_period',
-                      'customs', 'escalations']
+        clean_prop = ['id', 'check_command', 'servicegroups',
+                      'contacts', 'notification_period', 'contact_groups',
+                      'check_period', 'event_handler',
+                      'maintenance_period', 'customs', 'escalations']
 
         # some are only use when a topology change happened
         toplogy_change = b.data['topology_change']
@@ -978,7 +970,7 @@ class Regenerator(object):
         try:
             s = self.schedulers[scheduler_name]
             self.update_element(s, data)
-            # print("S:", s)
+            # print "S:", s
         except Exception:
             pass
 

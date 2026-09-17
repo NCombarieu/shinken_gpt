@@ -22,8 +22,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 import copy
 from shinken_test import *
 
@@ -57,8 +57,8 @@ class TestHost(ShinkenTest):
         hst.__setstate__(state)
         # And it should be the same:then before :)
         for p in cls.properties:
-            ## print(getattr(hst_copy, p))
-            ## print(getattr(hst, p))
+            ## print getattr(hst_copy, p)
+            ## print getattr(hst, p)
             self.assertEqual(getattr(hst, p), getattr(hst_copy, p) )
 
 

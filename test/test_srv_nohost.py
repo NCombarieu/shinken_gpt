@@ -22,15 +22,15 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import absolute_import
 from shinken_test import *
 
 
 class TestServiceWhitNoHost(ShinkenTest):
     def setUp(self):
         self.setup_with_file('etc/shinken_srv_nohost.cfg')
-
+    
+    
     # Nagios allow service with no host to exist, it will just drop them
     def test_ServiceWhitNoHost(self):
         self.assertTrue(self.sched.conf.is_correct)
