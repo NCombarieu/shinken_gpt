@@ -27,7 +27,6 @@ about the configuration part. Parameters are merged in Hosts so it's
 no use in running part
 """
 
-from six import add_metaclass
 
 from .item import Item, Items
 
@@ -37,8 +36,7 @@ from shinken.property import StringProp
 
 # AutoSlots create the __slots__ with properties and
 # running_properties names
-@add_metaclass(AutoSlots)
-class HostExtInfo(Item):
+class HostExtInfo(Item, metaclass=AutoSlots):
     id = 1  # zero is reserved for host (primary node for parents)
     my_type = 'hostextinfo'
 

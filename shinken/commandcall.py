@@ -22,7 +22,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from six import add_metaclass
 
 from .autoslots import AutoSlots
 from .property import StringProp, BoolProp, IntegerProp
@@ -38,8 +37,7 @@ class DummyCommandCall(object):
 
 # AutoSlots create the __slots__ with properties and
 # running_properties names
-@add_metaclass(AutoSlots)
-class CommandCall(DummyCommandCall):
+class CommandCall(DummyCommandCall, metaclass=AutoSlots):
     """This class is use when a service, contact or host define
     a command with args.
     """

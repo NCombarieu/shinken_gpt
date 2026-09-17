@@ -24,7 +24,6 @@
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
 import time
-from six import add_metaclass
 
 from shinken.action import Action
 from shinken.brok import Brok
@@ -34,8 +33,7 @@ from shinken.autoslots import AutoSlots
 
 # AutoSlots create the __slots__ with properties and
 # running_properties names
-@add_metaclass(AutoSlots)
-class Notification(Action):
+class Notification(Action, metaclass=AutoSlots):
     my_type = 'notification'
 
     properties = {

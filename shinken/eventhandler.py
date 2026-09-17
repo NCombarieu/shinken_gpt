@@ -23,7 +23,6 @@
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
 import time
-from six import add_metaclass
 
 from .action import Action
 from shinken.property import IntegerProp, StringProp, FloatProp, BoolProp
@@ -32,8 +31,7 @@ from shinken.autoslots import AutoSlots
 
 # AutoSlots create the __slots__ with properties and
 # running_properties names
-@add_metaclass(AutoSlots)
-class EventHandler(Action):
+class EventHandler(Action, metaclass=AutoSlots):
     my_type = 'eventhandler'
 
     properties = {
