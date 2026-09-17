@@ -27,7 +27,7 @@ from __future__ import absolute_import
 import sys
 import os
 import time
-import six.moves.cPickle
+import pickle
 
 try:
     from cStringIO import StringIO
@@ -122,7 +122,7 @@ class LogCollectMixin:
         for obj in collector.list:
             self.assertIsInstance(obj, Brok)
             self.assertEqual(obj.type, 'log')
-            data = six.moves.cPickle.loads(obj.data)
+            data = pickle.loads(obj.data)
             self.assertEqual(list(data.keys()), ['log'])
             yield data['log']
 
