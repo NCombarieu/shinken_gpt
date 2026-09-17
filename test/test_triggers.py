@@ -26,7 +26,6 @@ from __future__ import print_function
 from __future__ import absolute_import
 from shinken_test import *
 from shinken.objects.trigger import Trigger
-from six.moves import range
 
 
 class TestTriggers(ShinkenTest):
