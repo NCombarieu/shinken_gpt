@@ -31,7 +31,6 @@ import re
 import time
 import copy
 import random
-import string
 # Always initialize random...
 random.seed(time.time())
 try:
@@ -135,7 +134,7 @@ class DiscoveredHost(object):
                         print('Prop', kprop, 'reset with new value')
                     d[kprop] = []
 
-                for prop in string.split(v, ','):
+                for prop in v.split(','):
                     prop = prop.strip()
                     # checks that prop does not already exist and adds
                     if prop not in d[kprop]:
@@ -150,7 +149,7 @@ class DiscoveredHost(object):
                 if k.startswith('-'):
                     kprop = k[1:]
                     if kprop in d:
-                        for prop in string.split(v, ','):
+                        for prop in v.split(','):
                             prop = prop.strip()
                             if prop in d[kprop]:
                                 print('Already got', ','.join(d[kprop]), 'rem', prop)
