@@ -1,0 +1,17 @@
+use strict;
+use warnings;
+use Monitoring::Livestatus;
+my $live = Monitoring::Livestatus->new(peer => $ARGV[0], keepalive => 1, timeout => 5);
+my $hosts = $live->selectall_hashref("GET hosts\nColumns: name state plugin_output", "name");
+die "host state not independent of services" unless $hosts->{edge}->{state} == 0;
+my $services = $live->selectall_hashref("GET services\nColumns: description state acknowledged\nFilter: host_name = edge", "description");
+die "passive result/ack missing" unless $services->{passive}->{state} == 2 && $services->{passive}->{acknowledged} == 1;
+my $stats = $live->selectall_arrayref("GET services\nStats: state = 2\nStats: state = 3\nStatsOr: 2");
+die "invalid stats result" unless $stats->[0]->[0] >= 2;
+my $columns = $live->selectall_arrayref("GET columns\nColumns: table name type");
+die "missing schema" unless scalar(@$columns) > 200;
+my $commands = Monitoring::Livestatus->new(peer => $ARGV[0], timeout => 5);
+$commands->do("COMMAND [".time()."] ADD_HOST_COMMENT;edge;1;thruk;upstream client test");
+my $comments = $live->selectall_arrayref("GET comments\nColumns: author comment\nFilter: author = thruk");
+die "command not applied" unless @$comments == 1;
+print "PASS: upstream Thruk Monitoring::Livestatus client, keepalive, queries, stats and command\n";

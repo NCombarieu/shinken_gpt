@@ -1,0 +1,22 @@
+[package]
+name = "shinken-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nix.workspace = true
+tempfile.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+shinken-config = { path = "../shinken-config" }
+shinken-core = { path = "../shinken-core" }
+shinken-livestatus = { path = "../shinken-livestatus" }
+shinken-model = { path = "../shinken-model" }
+thiserror.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true
