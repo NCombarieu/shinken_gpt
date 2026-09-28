@@ -22,8 +22,7 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import absolute_import
 from shinken_test import *
 import time
 
@@ -42,7 +41,7 @@ class TestPollerTagGetchecks(ShinkenTest):
 
         for c in checks.values():
             self.assertEqual(c.status, "scheduled")
-            self.assertEquals(c.worker, "none")
+            self.assertEqual(c.worker, "none")
 
         in_poller = self.sched.get_to_run_checks(
             do_checks=True,
@@ -53,7 +52,7 @@ class TestPollerTagGetchecks(ShinkenTest):
 
         for c in checks.values():
             self.assertEqual(c.status, "inpoller")
-            self.assertEquals(c.worker, "test")
+            self.assertEqual(c.worker, "test")
 
     def test_get_most_urgent_checks(self):
         self.sched.schedule()
@@ -65,7 +64,7 @@ class TestPollerTagGetchecks(ShinkenTest):
 
         for c in checks.values():
             self.assertEqual(c.status, "scheduled")
-            self.assertEquals(c.worker, "none")
+            self.assertEqual(c.worker, "none")
 
         in_poller = self.sched.get_to_run_checks(
             do_checks=True,
@@ -78,10 +77,10 @@ class TestPollerTagGetchecks(ShinkenTest):
         for c in checks.values():
             if c.priority == 10:
                 self.assertEqual(c.status, "inpoller")
-                self.assertEquals(c.worker, "test")
+                self.assertEqual(c.worker, "test")
             else:
                 self.assertEqual(c.status, "scheduled")
-                self.assertEquals(c.worker, "none")
+                self.assertEqual(c.worker, "none")
 
 
 if __name__ == '__main__':

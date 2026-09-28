@@ -22,7 +22,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
+
+from io import BytesIO
+from urllib import request
 
 from shinken.log import logger
 
@@ -33,26 +35,22 @@ def episode_iv():
 
     t = Telnet(hst)
     while True:
-        buf = t.read_until('mesfesses', 0.1)
-        logger.info(buf)
+        buf = t.read_until(b'mesfesses', 0.1)
+        logger.info(buf.decode(errors='ignore'))
 
 
 def perdu():
-    import requests
-    r = requests.get("http://www.perdu.com")
-    logger.info(r.content)
+    with request.urlopen("http://www.perdu.com") as f:
+        logger.info(f.read().decode(errors='ignore'))
 
 
 def myip():
-    import requests
-    r = requests.get("http://whatismyip.org/")
-    logger.info(r.content)
+    with request.urlopen("http://whatismyip.org/") as f:
+        logger.info(f.read().decode(errors='ignore'))
 
 
 def naheulbeuk():
     import os
-    import sys
-    import requests
 
     from PIL import Image
     import aalib
@@ -62,10 +60,11 @@ def naheulbeuk():
     else:
         screen = aalib.AnsiScreen
     screen = screen(width=128, height=128)
-    r = requests.get(
+    with request.urlopen(
         'http://www.penofchaos.com/warham/bd/images/NBK-win7portrait-Nain02.JPG'
-    )
-    image = Image.open(r.content).convert('L').resize(screen.virtual_size)
+    ) as remote:
+        fp = BytesIO(remote.read())
+    image = Image.open(fp).convert('L').resize(screen.virtual_size)
     screen.put_image((0, 0), image)
     logger.info(screen.render())
 
@@ -73,7 +72,8 @@ def naheulbeuk():
 
 def what_it_make_me_think(subject):
     import hashlib
-    if hashlib.md5(subject.lower()).hexdigest() == '6376e9755f8047391621b577ae03966a':
+    digest = hashlib.md5(subject.lower().encode('utf-8')).hexdigest()
+    if digest == '6376e9755f8047391621b577ae03966a':
         print("Thanks to %s now I feel like this:  https://youtu.be/efTZslkr5Fs?t=60" % subject)
 
 

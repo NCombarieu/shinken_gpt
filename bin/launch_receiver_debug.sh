@@ -23,9 +23,9 @@
 
 
 DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+BIN="$DIR"
 ETC="$DIR"/../etc
 DEBUG_PATH="/tmp/receiver.debug"
 
 echo "Launching receiver (which manages passive data) in debug mode to the file $DEBUG_PATH"
-"$BIN"/shinken_receiver.py -d -c "$ETC"/daemons/receiverd.ini --debug "$DEBUG_PATH"
+"$BIN"/shinken-receiver.py -d -c "$ETC"/daemons/receiverd.ini --debug "$DEBUG_PATH"

@@ -28,7 +28,6 @@ If you look at the scheduling part, look at the scheduling item class"""
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-import six
 import itertools
 import time
 import uuid
@@ -56,7 +55,7 @@ from shinken.util import filter_service_by_regex_name
 from shinken.util import filter_service_by_host_name
 
 
-class Service(six.with_metaclass(AutoSlots, SchedulingItem)):
+class Service(SchedulingItem, metaclass=AutoSlots):
     # Every service have a unique ID, and 0 is always special in
     # database and co...
     id = 1

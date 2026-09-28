@@ -22,8 +22,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 
@@ -50,7 +50,7 @@ class TestNotifMacros(ShinkenTest):
         svc.act_depend_of = []  # no hostchecks on critical checkresults
         self.scheduler_loop(2, [[host, 0, 'UP | value1=1 value2=2'], [router, 0, 'UP | rtt=10'], [svc, 2, 'BAD | value1=0 value2=0']])
         # Should got a notif here
-        self.assertGreater(len(svc.notifications_in_progress.values()), 0)
+        self.assertGreater(len(list(svc.notifications_in_progress.values())), 0)
         #n = svc.notifications_in_progress.values()[0]
         got_notif = False
         r = 'plugins/macros_check.sh "_HOSTADMINEMAIL=" "monemail@masociete.domain" ' \

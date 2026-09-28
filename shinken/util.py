@@ -21,9 +21,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import six
 import time
 import re
 import copy
@@ -33,6 +30,14 @@ import json
 import platform
 import traceback
 
+PY3 = sys.version_info >= (3,)
+if PY3:
+    basestring = str
+    unicode = str
+else:
+    basestring = basestring
+    unicode = unicode
+    
 try:
     from ClusterShell.NodeSet import NodeSet, NodeSetParseRangeError
 except ImportError:
@@ -43,7 +48,6 @@ try:
 except ImportError:
     resource = None
 
-from shinken.macroresolver import MacroResolver
 from shinken.log import logger
 
 try:
@@ -55,12 +59,29 @@ except Exception as exp:
 
 
 
+def my_sort(lst, cmp_f):
+    if not PY3:
+        lst = sorted(lst, cmp=cmp_f)
+    else:
+        from functools import cmp_to_key
+        lst = sorted(lst, key=cmp_to_key(cmp_f))
+    return lst
 
 # ########## Strings #############
-# Try to print(strings, but if there is an utf8 error, go in simple ascii mode)
+# Try to print strings, but if there is an utf8 error, go in simple ascii mode
 # (Like if the terminal do not have en_US.UTF8 as LANG for example)
 def safe_print(*args):
-    print(' '.join(lst))
+    # Python 3 strings are already unicode: no str/unicode distinction, and
+    # no decode/encode round-trip needed to make them printable.
+    l = []
+    for e in args:
+        if isinstance(e, str):
+            s = e if safe_stdout else e.encode('ascii', 'replace').decode('ascii', 'replace')
+        else:
+            s = str(e)
+        l.append(s)
+    # Ok, now print it :)
+    print(' '.join(l))
 
 
 def split_semicolon(line, maxsplit=None):
@@ -118,7 +139,7 @@ def jsonify_r(obj):
             return None
     properties = list(cls.properties.keys())
     if hasattr(cls, 'running_properties'):
-        properties.extend(list(cls.running_properties.keys()))
+        properties += list(cls.running_properties.keys())
     for prop in properties:
         if not hasattr(obj, prop):
             continue
@@ -146,7 +167,7 @@ def jsonify_r(obj):
                         lst.append(getattr(_t, t + '_name'))
                     else:
                         pass
-                        # print("CANNOT MANAGE OBJECT", _t, type(_t), t)
+                        # print "CANNOT MANAGE OBJECT", _t, type(_t), t
                 res[prop] = lst
             else:
                 t = getattr(v.__class__, 'my_type', '')
@@ -159,7 +180,7 @@ def jsonify_r(obj):
                 if t and hasattr(v, t + '_name'):
                     res[prop] = getattr(v, t + '_name')
                 # else:
-                #    print("CANNOT MANAGE OBJECT", v, type(v), t)
+                #    print "CANNOT MANAGE OBJECT", v, type(v), t
     return res
 
 # ################################## TIME ##################################
@@ -197,7 +218,7 @@ def get_sec_from_morning(t):
 
 # @memoized
 def get_start_of_day(year, month_id, day):
-    start_time = (year, month_id, day, 0, 0, 0, 0, 0, -1)
+    start_time = (year, month_id, day, 00, 00, 00, 0, 0, -1)
     try:
         start_time_epoch = time.mktime(start_time)
     except OverflowError:
@@ -344,6 +365,7 @@ def to_svc_hst_distinct_lists(ref, tab):
 # Will expand the value with macros from the
 # host/service ref before brok it
 def expand_with_macros(ref, value):
+    from shinken.macroresolver import MacroResolver
     return MacroResolver().resolve_simple_macros_in_string(value, ref.get_data_for_checks())
 
 
@@ -352,7 +374,7 @@ def expand_with_macros(ref, value):
 def get_obj_name(obj):
     # Maybe we do not have a real object but already a string. If so
     # return the string
-    if isinstance(obj, six.string_types):
+    if isinstance(obj, basestring):
         return obj
     return obj.get_name()
 
@@ -382,7 +404,7 @@ def get_customs_keys(d):
 
 # return the values of the dict
 def get_customs_values(d):
-    return d.values()
+    return list(d.values())
 
 
 # Checks that a parameter has an unique value. If it's a list, the last
@@ -407,22 +429,24 @@ def scheduler_no_spare_first(x, y):
         return -1
 
 
-def alive_then_spare_then_deads(satellites):
-    dead = []
-    alive = []
-    spare = []
-    for s in satellites:
-        if not s.alive:
-            dead.append(s)
-        elif s.spare:
-            spare.append(s)
-        else:
-            alive.append(s)
-    sorted_satellites = []
-    sorted_satellites.extend(alive)
-    sorted_satellites.extend(spare)
-    sorted_satellites.extend(dead)
-    return sorted_satellites
+# -1 is x first, 0 equal, 1 is y first
+def alive_then_spare_then_deads(x, y):
+    # First are alive
+    if x.alive and not y.alive:
+        return -1
+    if y.alive and not x.alive:
+        return 0
+    # if not alive both, I really don't care...
+    if not x.alive and not y.alive:
+        return -1
+    # Ok, both are alive... now spare after no spare
+    if not x.spare:
+        return -1
+    # x is a spare, so y must be before, even if
+    # y is a spare
+    if not y.spare:
+        return 1
+    return 0
 
 
 # -1 is x first, 0 equal, 1 is y first
@@ -443,17 +467,17 @@ def nighty_five_percent(t):
     t2 = copy.copy(t)
     t2.sort()
 
-    l_t = len(t)
+    l = len(t)
 
     # If void tab, wtf??
-    if l_t == 0:
+    if l == 0:
         return (None, None, None)
 
     t_reduce = t2
     # only take a part if we got more
     # than 100 elements, or it's a non sense
-    if l_t > 100:
-        offset = int(l_t * 0.05)
+    if l > 100:
+        offset = int(l * 0.05)
         t_reduce = t_reduce[offset:-offset]
 
     reduce_len = len(t_reduce)
@@ -521,16 +545,15 @@ def got_generation_rule_pattern_change(xy_couples):
 # rule = [1, '[1-5]', [2, '[1-4]', [3, '[1-3]', []]]]
 # output = Unit 3 Port 2 Admin 1
 def apply_change_recursive_pattern_change(s, rule):
-    # print("Try to change %s" % s, 'with', rule)
+    # print "Try to change %s" % s, 'with', rule
     # new_s = s
     (i, m, t) = rule
-    # print("replace %s by %s" % (r'%s' % m, str(i)), 'in', s)
-    s = s.replace(r'%s' % m, "%s" % i)
-    # print("And got", s)
+    # print "replace %s by %s" % (r'%s' % m, str(i)), 'in', s
+    s = s.replace(r'%s' % m, str(i))
+    # print "And got", s
     if t == []:
         return s
     return apply_change_recursive_pattern_change(s, t)
-
 
 # For service generator, get dict from a _custom properties
 # as _disks   C$(80%!90%),D$(80%!90%)$,E$(80%!90%)$
@@ -556,9 +579,9 @@ def get_key_value_sequence(entry, default_value=None):
     # match a whole sequence of key$(value1..n)$
     all_keyval_pattern = re.compile('(?x)^(' + keyval_pattern_txt + ')+$')
     # match a single value
-    value_pattern = re.compile(r'(?:\s*\$\((?P<val>.*?)\)\$\s*)')
+    value_pattern = re.compile('(?:\s*\$\((?P<val>.*?)\)\$\s*)')
     # match a sequence of values
-    all_value_pattern = re.compile(r'^(?:\s*\$\(.*?\)\$\s*)+$')
+    all_value_pattern = re.compile('^(?:\s*\$\(.*?\)\$\s*)+$')
 
     if all_keyval_pattern.match(conf_entry):
         for mat in re.finditer(keyval_pattern, conf_entry):
@@ -570,7 +593,7 @@ def get_key_value_sequence(entry, default_value=None):
                     # If there are multiple values, loop over them
                     valnum = 1
                     for val in re.finditer(value_pattern, mat.group('values')):
-                        r['VALUE%s' % valnum] = val.group('val')
+                        r['VALUE' + str(valnum)] = val.group('val')
                         valnum += 1
                 else:
                     # Value syntax error
@@ -598,7 +621,7 @@ def get_key_value_sequence(entry, default_value=None):
 
     if NodeSet is None:
         # The pattern that will say if we have a [X-Y] key.
-        pat = re.compile(r'\[(\d*)-(\d*)\]')
+        pat = re.compile('\[(\d*)-(\d*)\]')
 
     for r in array1:
 
@@ -676,7 +699,7 @@ def get_key_value_sequence(entry, default_value=None):
             # There were no wildcards
             array2.append(r)
     # t1 = time.time()
-    # print("***********Diff", t1 -t0)
+    # print "***********Diff", t1 -t0
 
     return (array2, GET_KEY_VALUE_SEQUENCE_ERROR_NOERROR)
 
@@ -934,3 +957,28 @@ def free_memory():
     except Exception:
         logger.error("Failed to free memory")
         logger.debug(traceback.format_exc())
+
+
+# Bytes to unicode
+def string_decode(s):
+    return bytes_to_unicode(s)
+
+
+# Bytes to unicode
+def bytes_to_unicode(s):
+    if isinstance(s, str) and not PY3:  # python3 already is unicode in str
+        return s.decode('utf8', 'ignore')
+    if PY3 and isinstance(s, bytes):
+        return s.decode('utf8', 'ignore')
+    return s
+
+
+# Unicode to bytes
+def string_encode(s):
+    return unicode_to_bytes(s)
+
+
+def unicode_to_bytes(s):
+    if isinstance(s, str) and PY3:
+        return s.encode('utf8', 'ignore')
+    return s

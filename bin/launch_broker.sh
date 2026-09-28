@@ -23,8 +23,8 @@
 
 
 DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+BIN="$DIR"
 ETC="$DIR"/../etc
 
 echo "Launching Broker (which exports all data)"
-"$BIN"/shinken_broker.py -d -c "$ETC"/daemons/brokerd.ini
+"$BIN"/shinken-broker.py -d -c "$ETC"/daemons/brokerd.ini

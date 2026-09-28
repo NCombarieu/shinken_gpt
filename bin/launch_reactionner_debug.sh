@@ -23,9 +23,9 @@
 
 
 DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+BIN="$DIR"
 ETC="$DIR"/../etc
 DEBUG_PATH="/tmp/reactionner.debug"
 
 echo "Launching Reactionner (which sends notifications) in debug mode to the file $DEBUG_PATH"
-"$BIN"/shinken_reactionner.py -d -c "$ETC"/daemons/reactionnerd.ini --debug "$DEBUG_PATH"
+"$BIN"/shinken-reactionner.py -d -c "$ETC"/daemons/reactionnerd.ini --debug "$DEBUG_PATH"

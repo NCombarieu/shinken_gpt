@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shinken-broker"
+version = "2.4.3"
+description = "Shinken Broker daemon - status and log data centralization"
+requires-python = ">=3.11"
+dependencies = [
+  "Bottle>=0.13.4,<0.14",
+  "cheroot>=11.1.2,<12",
+  "pycurl>=7.45.2",
+  "Pyro5>=5.15",
+]
+
+[project.optional-dependencies]
+sqlite = ["pysqlite3>=2.6"]
+mysql = ["PyMySQL>=1.1"]
+oracle = ["cx_Oracle>=8.3"]
+
+[tool.setuptools]
+packages = ["shinken"]

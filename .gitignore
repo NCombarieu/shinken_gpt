@@ -51,3 +51,10 @@ test/tmp/.cov*
 # Pbr
 pbr-*.egg/
 
+# Secrets: real certs/keys dropped in etc/certs or etc/ssh_keys for
+# check_nrpe_ssl / check_by_ssh should never end up in this public repo.
+etc/certs/*
+!etc/certs/README.md
+etc/ssh_keys/*
+!etc/ssh_keys/README.md
+

@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,9 +22,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
+from .item import Item, Items
 
-from shinken.objects.item import Item, Items
 from shinken.util import strip_and_uniq
 from shinken.property import BoolProp, IntegerProp, StringProp, ListProp
 from shinken.log import logger, naglog_result
@@ -290,7 +288,7 @@ class Contacts(Items):
                     setattr(c, p, c.properties[p].default)
 
             if need_notificationway:
-                # print("Create notif way with", params)
+                # print "Create notif way with", params
                 cname = getattr(c, 'contact_name', getattr(c, 'alias', ''))
                 nw_name = cname + '_inner_notificationway'
                 notificationways.new_inner_member(nw_name, params)
@@ -298,5 +296,4 @@ class Contacts(Items):
                 if not hasattr(c, 'notificationways'):
                     c.notificationways = [nw_name]
                 else:
-                    c.notificationways = list(c.notificationways)
                     c.notificationways.append(nw_name)

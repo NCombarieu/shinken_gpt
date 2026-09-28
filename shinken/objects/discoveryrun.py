@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,11 +22,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 from copy import copy
 
-from shinken.objects.item import Item, Items
+from .item import Item, Items
+
 from shinken.objects.matchingitem import MatchingItem
 from shinken.property import StringProp
 from shinken.eventhandler import EventHandler
@@ -120,7 +118,7 @@ class Discoveryrun(MatchingItem):
 
     def check_finished(self):
         max_output = 10 ** 9
-        # print("Max output", max_output)
+        # print "Max output", max_output
         self.current_launch.check_finished(max_output)
 
     # Look if the current launch is done or not

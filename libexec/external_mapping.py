@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 #
 # This file is part of Shinken.
 #
@@ -14,8 +14,6 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
-
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 """
 This program transforms a flat dependency file into a json one so it
@@ -43,7 +41,7 @@ For example, you can use a script like this in your crontab::
 
 import os
 import sys
-import optparse
+from shinken.cli_compat import optparse
 
 # Try to load json (2.5 and higer) or simplejson if failed (python2.4)
 try:

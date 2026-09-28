@@ -1,35 +1,32 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, print_function
 
+import copy
+import datetime  # not used but "sub-"imported by livestatus test.. (to be corrected..)
 import os
 import re
-import copy
-import time
-import subprocess
 import shutil
-import datetime # not used but "sub-"imported by livestatus test.. (to be corrected..)
-import sys # not here used but "sub-"imported by livestatus test.. (to be corrected..)
+import subprocess
+import sys  # not here used but "sub-"imported by livestatus test.. (to be corrected..)
+import time
 
-#
 from shinken.modulesctx import modulesctx
 from shinken.objects.module import Module
 from shinken.modulesmanager import ModulesManager
 from shinken.misc.datamanager import datamgr
 from shinken.log import logger
 
-#
-from  shinken_test import (
+from shinken_test import (
     modules_dir,
     ShinkenTest,
-    time_hacker, # not used here but "sub"-imported by lvestatus test (to be corrected)
+    time_hacker,  # not used here but "sub"-imported by lvestatus test (to be corrected)
 )
 
 modulesctx.set_modulesdir(modules_dir)
 
 
 # Special Livestatus module opening since the module rename
-#from shinken.modules.livestatus import module as livestatus_broker
 livestatus_broker = modulesctx.get_module('livestatus')
 LiveStatus_broker = livestatus_broker.LiveStatus_broker
 LiveStatus = livestatus_broker.LiveStatus
@@ -47,7 +44,6 @@ livestatus_modconf.module_type = livestatus_broker.properties['type']
 livestatus_modconf.properties = livestatus_broker.properties.copy()
 
 
-
 class ShinkenModulesTest(ShinkenTest):
 
     def do_load_modules(self):
@@ -56,13 +52,10 @@ class ShinkenModulesTest(ShinkenTest):
 
     def update_broker(self, dodeepcopy=False):
         # The brok should be manage in the good order
-        ids = self.sched.brokers['Default-Broker']['broks'].keys()
+        ids = list(self.sched.brokers['Default-Broker']['broks'].keys())
         ids.sort()
         for brok_id in ids:
             brok = self.sched.brokers['Default-Broker']['broks'][brok_id]
-            #print("Managing a brok type", brok.type, "of id", brok_id)
-            #if brok.type == 'update_service_status':
-            #    print("Problem?", brok.data['is_problem'])
             if dodeepcopy:
                 brok = copy.deepcopy(brok)
             brok.prepare()
@@ -79,7 +72,7 @@ class ShinkenModulesTest(ShinkenTest):
                 'pnp_path': 'tmp/pnp4nagios_test' + self.testid,
                 'host': '127.0.0.1',
                 'socket': 'live',
-                'name': 'test', #?
+                'name': 'test',
             })
 
         if dbmodconf is None:
@@ -94,20 +87,16 @@ class ShinkenModulesTest(ShinkenTest):
         self.livestatus_broker = LiveStatus_broker(modconf)
         self.livestatus_broker.create_queues()
 
-        #--- livestatus_broker.main
         self.livestatus_broker.log = logger
-        # this seems to damage the logger so that the scheduler can't use it
-        #self.livestatus_broker.log.load_obj(self.livestatus_broker)
         self.livestatus_broker.debug_output = []
         self.livestatus_broker.modules_manager = ModulesManager('livestatus', modules_dir, [])
         self.livestatus_broker.modules_manager.set_modules(self.livestatus_broker.modules)
-        # We can now output some previouly silented debug ouput
         self.livestatus_broker.do_load_modules()
         for inst in self.livestatus_broker.modules_manager.instances:
             if inst.properties["type"].startswith('logstore'):
                 f = getattr(inst, 'load', None)
                 if f and callable(f):
-                    f(self.livestatus_broker)  # !!! NOT self here !!!!
+                    f(self.livestatus_broker)
                 break
         for s in self.livestatus_broker.debug_output:
             print("errors during load", s)
@@ -119,17 +108,20 @@ class ShinkenModulesTest(ShinkenTest):
         if not needcache:
             self.livestatus_broker.query_cache.disable()
         self.livestatus_broker.rg.register_cache(self.livestatus_broker.query_cache)
-        #--- livestatus_broker.main
 
         self.livestatus_broker.init()
         self.livestatus_broker.db = self.livestatus_broker.modules_manager.instances[0]
-        self.livestatus_broker.livestatus = LiveStatus(self.livestatus_broker.datamgr, self.livestatus_broker.query_cache, self.livestatus_broker.db, self.livestatus_broker.pnp_path, self.livestatus_broker.from_q)
+        self.livestatus_broker.livestatus = LiveStatus(
+            self.livestatus_broker.datamgr,
+            self.livestatus_broker.query_cache,
+            self.livestatus_broker.db,
+            self.livestatus_broker.pnp_path,
+            self.livestatus_broker.from_q,
+        )
 
-        #--- livestatus_broker.do_main
         self.livestatus_broker.db.open()
         if hasattr(self.livestatus_broker.db, 'prepare_log_db_table'):
             self.livestatus_broker.db.prepare_log_db_table()
-        #--- livestatus_broker.do_main
 
 
 class TestConfig(ShinkenModulesTest):
@@ -150,7 +142,6 @@ class TestConfig(ShinkenModulesTest):
             os.remove('var/status.dat')
         self.livestatus_broker = None
 
-
     def contains_line(self, text, pattern):
         regex = re.compile(pattern)
         for line in text.splitlines():
@@ -160,13 +151,10 @@ class TestConfig(ShinkenModulesTest):
 
     def update_broker(self, dodeepcopy=False):
         # The brok should be manage in the good order
-        ids = self.sched.brokers['Default-Broker']['broks'].keys()
+        ids = list(self.sched.brokers['Default-Broker']['broks'].keys())
         ids.sort()
         for brok_id in ids:
             brok = self.sched.brokers['Default-Broker']['broks'][brok_id]
-            #print("Managing a brok type", brok.type, "of id", brok_id)
-            #if brok.type == 'update_service_status':
-            #    print("Problem?", brok.data['is_problem'])
             if dodeepcopy:
                 brok = copy.deepcopy(brok)
             brok.prepare()
@@ -178,48 +166,38 @@ class TestConfig(ShinkenModulesTest):
         # lifestatus output may not be in alphabetical order, so this
         # function is used to compare unordered output with unordered
         # expected output
-        # sometimes mklivestatus returns 0 or 1 on an empty result
         text1 = text1.replace("200           1", "200           0")
         text2 = text2.replace("200           1", "200           0")
         text1 = text1.rstrip()
         text2 = text2.rstrip()
-        #print("text1 //%s//" % text1)
-        #print("text2 //%s//" % text2)
         sorted1 = "\n".join(sorted(text1.split("\n")))
         sorted2 = "\n".join(sorted(text2.split("\n")))
         len1 = len(text1.split("\n"))
         len2 = len(text2.split("\n"))
-        #print("%s == %s text cmp %s" % (len1, len2, sorted1 == sorted2))
-        #print("text1 //%s//" % sorted(text1.split("\n")))
-        #print("text2 //%s//" % sorted(text2.split("\n")))
         if sorted1 == sorted2 and len1 == len2:
             return True
-        else:
-            # Maybe list members are different
-            # allhosts;test_host_0;test_ok_0;servicegroup_02,servicegroup_01,ok
-            # allhosts;test_host_0;test_ok_0;servicegroup_02,ok,servicegroup_01
-            # break it up to
-            # [['allhosts'], ['test_host_0'], ['test_ok_0'],
-            #     ['ok', 'servicegroup_01', 'servicegroup_02']]
-            [line for line in sorted(text1.split("\n"))]
-            data1 = [[sorted(c.split(',')) for c in columns] for columns in [line.split(';') for line in sorted(text1.split("\n")) if line]]
-            data2 = [[sorted(c.split(',')) for c in columns] for columns in [line.split(';') for line in sorted(text2.split("\n")) if line]]
-            #print("text1 //%s//" % data1)
-            #print("text2 //%s//" % data2)
-            # cmp is clever enough to handle nested arrays
-            return cmp(data1, data2) == 0
+
+        # Maybe list members are different. Normalize each comma-separated
+        # cell so equivalent nested lists compare directly on Python 3.
+        data1 = [
+            [sorted(cell.split(',')) for cell in line.split(';')]
+            for line in sorted(text1.split("\n"))
+            if line
+        ]
+        data2 = [
+            [sorted(cell.split(',')) for cell in line.split(';')]
+            for line in sorted(text2.split("\n"))
+            if line
+        ]
+        return data1 == data2
 
     def show_broks(self, title):
-        print
+        print()
         print("--- ", title)
-        for brok in sorted(self.sched.broks, lambda x, y: x.id - y.id):
+        for brok in sorted(self.sched.broks, key=lambda item: item.id):
             if re.compile('^service_').match(brok.type):
                 pass
-                #print("BROK:", brok.type)
-                #print("BROK   ", brok.data['in_checking'])
         self.update_broker()
         request = 'GET services\nColumns: service_description is_executing\n'
         response, keepalive = self.livestatus_broker.livestatus.handle_request(request)
         print(response)
-
-

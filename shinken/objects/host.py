@@ -30,7 +30,6 @@ scheduling/consume check smart things :)
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-import six
 import time
 import itertools
 
@@ -49,7 +48,7 @@ from shinken.log import logger, naglog_result
 
 import uuid
 
-class Host(six.with_metaclass(AutoSlots, SchedulingItem)):
+class Host(SchedulingItem, metaclass=AutoSlots):
 
     id = 1  # zero is reserved for host (primary node for parents)
     ok_up = 'UP'
@@ -704,6 +703,11 @@ class Host(six.with_metaclass(AutoSlots, SchedulingItem)):
             self.address = self.host_name
         if hasattr(self, 'host_name') and not hasattr(self, 'alias'):
             self.alias = self.host_name
+        # Unlike Service (which does this for service_description),
+        # display_name always had a '' default and nothing ever fell back
+        # to host_name -> Livestatus/Thruk showed a blank host column.
+        if getattr(self, 'display_name', '') == '':
+            self.display_name = getattr(self, 'host_name', '')
 
 
     # Check is required prop are set:

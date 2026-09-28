@@ -29,8 +29,6 @@
  so we do not have to add manually all properties to the __slots__
  list when we add a new entry"""
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 
 class AutoSlots(type):
 
@@ -44,7 +42,7 @@ class AutoSlots(type):
     # Host, so we must tag them in properties with no_slots
     def __new__(cls, name, bases, dct):
         # Thanks to Bertrand Mathieu to the set idea
-        slots = set(dct.get('__slots__', set()))
+        slots = dct.get('__slots__', set())
         # Now get properties from properties and running_properties
         if 'properties' in dct:
             props = dct['properties']

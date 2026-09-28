@@ -22,8 +22,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 import re
 from shinken_test import *
 
@@ -1524,7 +1524,7 @@ class TestConfigBroken(ShinkenTest):
         self.assertFalse(self.conf.conf_is_correct)
 
         # Get the arbiter's log broks
-        #[b.prepare() for b in self.broks]
+        [b.prepare() for b in self.broks]
         logs = [b.data['log'] for b in self.broks if b.type == 'log']
 
         # Info: Simple_1Of_1unk_svc: my business rule is invalid

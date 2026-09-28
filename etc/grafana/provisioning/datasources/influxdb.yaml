@@ -1,0 +1,18 @@
+apiVersion: 1
+
+datasources:
+  - name: Shinken InfluxDB
+    type: influxdb
+    url: http://influxdb:8086
+    access: proxy
+    database: shinken
+    user: admin
+    secureJsonData:
+      password: shinkenpass
+    isDefault: true
+    editable: true
+    jsonData:
+      version: Flux
+      organization: default
+      defaultBucket: shinken
+      tlsSkipVerify: false

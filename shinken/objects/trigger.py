@@ -1,11 +1,11 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
 #    Gabes Jean, naparuba@gmail.com
 #    Gerhard Lausser, Gerhard.Lausser@consol.de
 #    Gregory Starck, g.starck@gmail.com
-#    Hartmut Goebel, h.goebel@goebel-consult.de
+#    Hartmut Goebel, h.goebel-consult.de
 #
 # This file is part of Shinken.
 #
@@ -22,12 +22,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import six
 import os
 import re
-import sys
 import traceback
 
 from shinken.objects.item import Item, Items
@@ -63,20 +59,15 @@ class Trigger(Item):
     # ctx is the object we are evaluating the code. In the code
     # it will be "self".
     def eval(myself, ctx):
-        self = ctx
+        namespace = {'self': ctx}
+        namespace.update(trigger_functions)
 
-        # Ok we can declare for this trigger call our functions
-        for (n, f) in trigger_functions.items():
-            locals()[n] = f
-
-        code = myself.code_bin  # Comment? => compile(myself.code_bin, "<irc>", "exec")
         try:
-            six.exec_(code)
+            exec(myself.code_bin, globals(), namespace)
         except Exception as err:
-            set_value(self, "UNKNOWN: Trigger error: %s" % err, "", 3)
+            set_value(ctx, "UNKNOWN: Trigger error: %s" % err, "", 3)
             logger.error('%s Trigger %s failed: %s ; '
-                         '%s' % (self.host_name, myself.trigger_name, err, traceback.format_exc()))
-
+                         '%s' % (ctx.host_name, myself.trigger_name, err, traceback.format_exc()))
 
     def __getstate__(self):
         return {'trigger_name': self.trigger_name,
@@ -101,10 +92,9 @@ class Triggers(Items):
                 if re.search(r"\.trig$", file):
                     p = os.path.join(root, file)
                     try:
-                        fd = open(p, 'r')
-                        buf = fd.read()
-                        fd.close()
-                    except IOError as exp:
+                        with open(p, 'r', encoding='utf-8') as fd:
+                            buf = fd.read()
+                    except OSError as exp:
                         logger.error("Cannot open trigger file '%s' for reading: %s", p, exp)
                         # ok, skip this one
                         continue

@@ -22,8 +22,7 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import absolute_import
 from shinken_test import *
 
 
@@ -38,7 +37,7 @@ class TestConfig(ShinkenTest):
         # service always ok, host stays pending
         now = time.time()
         host = self.sched.hosts.find_by_name("test_host_0")
-        for c in host.get_checks_in_progress():
+        for c in host.checks_in_progress:
             # hurry up, we need an immediate result
             c.t_to_go = 0
         # scheduler.schedule() always schedules a check, even for this

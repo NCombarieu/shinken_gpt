@@ -23,8 +23,6 @@ This script will take the sqlite database of the livestatus module and
 split up the contents in single datafiles (1 for each day of data found).
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import sys
 import optparse
 import os
@@ -68,7 +66,7 @@ if __name__ == '__main__':
         dbh.log_db_do_archive()
         dbh.close()
     else:
-        print("database %s does not exist" % opts.database)
+        print "database %s does not exist" % opts.database
 
 
 # For perf tuning:

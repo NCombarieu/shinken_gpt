@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,15 +22,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import time
 import os
 import re
-try:
-    import json
-except ImportError:
-    json = None
+import json
 
 from shinken.objects.item import Item, Items
 from shinken.property import StringProp
@@ -65,10 +58,10 @@ class Packs(Items):
         # Now walk for it
         for root, dirs, files in os.walk(path):
             for file in files:
-                if re.search(r"\.pack$", file):
+                if re.search("\.pack$", file):
                     p = os.path.join(root, file)
                     try:
-                        fd = open(p, 'r')
+                        fd = open(p, 'rU')
                         buf = fd.read()
                         fd.close()
                     except IOError as exp:

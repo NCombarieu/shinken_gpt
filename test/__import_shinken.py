@@ -31,18 +31,23 @@ for looking up and loading the module `shinken` from the directory one
 level above this module.
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import
+import os
+import sys
+import importlib.util
 
 try:
     import shinken
 except ImportError:
-    import imp, os
-    # For security reasons, try not to load `shinken` from parent
-    # directory when running as root.
-    if True or not hasattr(os, 'getuid') or os.getuid() != 0:
-        imp.load_module('shinken', *imp.find_module('shinken',
-            [os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]))
-    else:
-        # running as root: re-raise the exception
-        raise
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, parent_dir)
+    try:
+        spec = importlib.util.find_spec('shinken')
+        if spec is None:
+            raise
+        module = importlib.util.module_from_spec(spec)
+        sys.modules['shinken'] = module
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.pop(0)
 

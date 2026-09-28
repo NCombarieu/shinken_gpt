@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shinken-arbiter"
+version = "2.4.3"
+description = "Shinken Arbiter daemon - configuration and orchestration"
+requires-python = ">=3.11"
+dependencies = [
+  "Bottle>=0.13.4,<0.14",
+  "cheroot>=11.1.2,<12",
+  "pycurl>=7.45.2",
+  "Pyro5>=5.15",
+]
+
+[tool.setuptools]
+packages = ["shinken"]

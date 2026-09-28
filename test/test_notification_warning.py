@@ -22,8 +22,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 from shinken.notification import Notification
@@ -41,7 +41,7 @@ class TestConfig(ShinkenTest):
         n = Notification('PROBLEM', 'scheduled', 'BADCOMMAND', cmd, host, None, 0)
         n.execute()
         time.sleep(0.2)
-        if n.status is not 'done':
+        if n.status != 'done':
             n.check_finished(8000)
         print(n.__dict__)
         self.sched.actions[n.id] = n
