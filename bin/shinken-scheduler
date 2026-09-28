@@ -105,7 +105,7 @@ except ImportError:
 
 
 from shinken.daemons.schedulerdaemon import Shinken
-from shinken.bin_utils import add_logging_options, setup_logging_from_options
+from shinken.bin_utils import add_logging_options, daemon_kwargs, setup_logging_from_options
 from shinken.bin import VERSION
 
 
@@ -135,7 +135,7 @@ def main():
     if args:
         parser.error("Does not accept any argument.")
 
-    daemon = Shinken(debug=opts.debug_file is not None, **opts.__dict__)
+    daemon = Shinken(debug=opts.debug_file is not None, **daemon_kwargs(opts))
     if not opts.profile:
         daemon.main()
     else:

@@ -54,6 +54,9 @@ def add_common_options(parser: optparse.OptionParser) -> None:
     )
 
 
+LOGGING_OPTION_DESTS = ('verbose', 'debug', 'json_logs', 'log_file')
+
+
 def add_logging_options(parser: optparse.OptionParser) -> None:
     """Add logging controls without reintroducing daemon-specific parsers."""
     parser.add_option('--verbose', action='store_true', default=False,
@@ -64,6 +67,16 @@ def add_logging_options(parser: optparse.OptionParser) -> None:
                       help='Emit structured JSON logs')
     parser.add_option('--logfile', dest='log_file', metavar='FILE', default=None,
                       help='Also write logs to FILE')
+
+
+def daemon_kwargs(options: optparse.Values) -> dict:
+    """Return parsed options without the logging controls.
+
+    Daemon constructors do not accept the logging options, and ``debug`` would
+    clash with the ``debug`` keyword computed from ``--debugfile``.
+    """
+    return {key: value for key, value in vars(options).items()
+            if key not in LOGGING_OPTION_DESTS}
 
 
 def setup_logging_from_options(
