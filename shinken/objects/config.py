@@ -831,6 +831,12 @@ class Config(Item):
 
     def load_params(self, params):
         clean_params = self.clean_params(params)
+        # Remember which parameters the administrator actually wrote, so the
+        # "useless/unmanaged parameter" notices only mention those.
+        explicit = getattr(self, '_explicit_params', None)
+        if explicit is None:
+            explicit = self._explicit_params = set()
+        explicit.update(clean_params)
 
         for key, value in clean_params.items():
 
@@ -1438,8 +1444,9 @@ class Config(Item):
     def notice_about_useless_parameters(self):
         if not self.disable_old_nagios_parameters_whining:
             properties = self.__class__.properties
+            explicit = getattr(self, '_explicit_params', set())
             for prop, entry in properties.items():
-                if isinstance(entry, UnusedProp):
+                if isinstance(entry, UnusedProp) and prop in explicit:
                     logger.warning("The parameter %s is useless and can be removed "
                                    "from the configuration (Reason: %s)", prop, entry.text)
 
@@ -1450,7 +1457,7 @@ class Config(Item):
         properties = self.__class__.properties
         unmanaged = []
         for prop, entry in properties.items():
-            if not entry.managed and hasattr(self, prop):
+            if not entry.managed and prop in getattr(self, '_explicit_params', set()):
                 if entry.help:
                     s = "%s: %s" % (prop, entry.help)
                 else:

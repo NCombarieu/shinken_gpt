@@ -147,14 +147,12 @@ class ModulesManager(object):
 
         modules_files = [fname
                          for fname in listdir(self.modules_path)
-                         if isdir(join(self.modules_path, fname))]
+                         if isdir(join(self.modules_path, fname))
+                         # Skip hidden folders (.git) and Python bytecode caches
+                         and not fname.startswith(('.', '__'))]
 
         del self.imported_modules[:]
         for mod_name in modules_files:
-            # No look to .git folder
-            if mod_name == ".git":
-                logger.info("Found '.git' directory in modules, skip it.")
-                continue
             mod_file = abspath(join(self.modules_path, mod_name, 'module.py'))
             mod_dir = os.path.normpath(os.path.dirname(mod_file))
             mod = self.try_load(mod_name, mod_dir)
