@@ -70,3 +70,65 @@ def test_shinken_discovery_help(tmp_path):
     proc = _run(str(ROOT / "bin" / "shinken-discovery"), "--help", cwd=tmp_path)
     assert proc.returncode == 0, proc.stderr
     assert "--cfg-input" in proc.stdout
+
+
+def _load_healthcheck():
+    import importlib.machinery
+    import importlib.util
+    loader = importlib.machinery.SourceFileLoader(
+        "shinken_healthcheck", str(ROOT / "bin" / "shinken-healthcheck"))
+    spec = importlib.util.spec_from_loader("shinken_healthcheck", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+def test_healthcheck_detects_role_from_container_cmdline(tmp_path, monkeypatch):
+    healthcheck = _load_healthcheck()
+    monkeypatch.delenv("SHINKEN_ROLE", raising=False)
+    cmdline = tmp_path / "cmdline"
+    cmdline.write_bytes(b"/usr/bin/tini\0--\0/usr/local/bin/shinken-entrypoint\0poller\0")
+    assert healthcheck.detect_role(str(cmdline)) == "poller"
+    cmdline.write_bytes(b"/usr/bin/python3\0/usr/local/bin/shinken-broker\0-c\0x\0")
+    assert healthcheck.detect_role(str(cmdline)) == "broker"
+    cmdline.write_bytes(b"/bin/sh\0")
+    assert healthcheck.detect_role(str(cmdline)) is None
+    monkeypatch.setenv("SHINKEN_ROLE", "arbiter")
+    assert healthcheck.detect_role(str(cmdline)) == "arbiter"
+
+
+def test_healthcheck_probe_reflects_daemon_state():
+    import http.server
+    import threading
+
+    class Pong(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            body = b'"pong"' if self.path == "/ping" else b"nope"
+            self.send_response(200 if self.path == "/ping" else 404)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Pong)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    script = str(ROOT / "bin" / "shinken-healthcheck")
+    try:
+        proc = _run(script, "--daemon", "scheduler", "--daemon-port", str(port))
+        assert proc.returncode == 0, proc.stdout
+        assert proc.stdout.startswith("OK - scheduler")
+        # Livestatus required but absent: unhealthy.
+        proc = _run(script, "--daemon", "broker", "--daemon-port", str(port),
+                    "--livestatus", "--port", str(port), "--timeout", "2")
+        assert proc.returncode == 1
+        assert "livestatus" in proc.stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+    proc = _run(script, "--daemon", "scheduler", "--daemon-port", str(port), "--timeout", "2")
+    assert proc.returncode == 1
+    assert proc.stdout.startswith("CRITICAL - scheduler")
