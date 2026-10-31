@@ -1,0 +1,59 @@
+# Shinken (fork Python 3) — une image, six démons.
+#
+# Construction, depuis la racine du dépôt :
+#   podman build -t localhost/shinken:1.0.0 -f contrib/container/Containerfile .
+#   podman save -o shinken-1.0.0.tar localhost/shinken:1.0.0
+#
+# Exécution : le premier argument choisit le démon (arbiter, scheduler, poller,
+# broker, reactionner, receiver). Un conteneur par démon, tous sur le même
+# réseau Podman, joints par leur alias DNS (voir contrib/container/etc/).
+#
+#   podman run --rm --network shinken --network-alias scheduler \
+#       localhost/shinken:1.0.0 scheduler
+#
+# La configuration de l'arbiter est montée sur /etc/shinken (lecture seule),
+# les plugins sur /usr/lib64/shinken, l'état (rétention, spool) sur
+# /var/lib/shinken. Le démon tourne en avant-plan, journaux sur stdout.
+FROM python:3.12-slim
+
+ARG SHINKEN_UID=10001
+
+# pycurl se compile contre libcurl ; les sondes usuelles ont besoin de
+# ping (NET_RAW), ssh, curl, snmp et des monitoring-plugins (check_nrpe,
+# check_nt, check_tcp...).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential libcurl4-openssl-dev libssl-dev \
+        iputils-ping openssh-client curl snmp \
+        monitoring-plugins-basic monitoring-plugins-standard nagios-nrpe-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/shinken
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY shinken ./shinken
+COPY bin ./bin
+COPY modules ./modules
+COPY contrib/container/daemons /opt/shinken/daemons
+COPY contrib/container/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN apt-get purge -y build-essential && apt-get autoremove -y \
+    && groupadd -g ${SHINKEN_UID} shinken \
+    && useradd -u ${SHINKEN_UID} -g shinken -d /var/lib/shinken -M -s /usr/sbin/nologin shinken \
+    && mkdir -p /etc/shinken /var/lib/shinken/modules /var/run/shinken /var/log/shinken /usr/lib64/shinken \
+    && chown -R shinken:shinken /var/lib/shinken /var/run/shinken /var/log/shinken \
+    && chmod +x /usr/local/bin/entrypoint.sh
+
+ENV PYTHONPATH=/opt/shinken \
+    PYTHONUNBUFFERED=1 \
+    SHINKEN_CFG=/etc/shinken/shinken.cfg \
+    SHINKEN_LOG_LEVEL=WARNING
+
+USER shinken
+VOLUME ["/etc/shinken", "/var/lib/shinken", "/usr/lib64/shinken"]
+# 7768 scheduler, 7769 reactionner, 7770 arbiter, 7771 poller, 7772 broker,
+# 7773 receiver, 50000 livestatus (module broker)
+EXPOSE 7768 7769 7770 7771 7772 7773 50000
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["arbiter"]
