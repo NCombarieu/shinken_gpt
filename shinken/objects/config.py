@@ -28,7 +28,6 @@
  them into independent parts. The main user of this is Arbiter, but schedulers
  use it too (but far less)"""
 
-import io
 import re
 import sys
 import string
@@ -81,7 +80,7 @@ from shinken.log import logger
 from shinken.property import (UnusedProp, BoolProp, IntegerProp, CharProp,
                               StringProp, LogLevelProp, ListProp, ToGuessProp)
 from shinken.daemon import get_cur_user, get_cur_group
-from shinken.util import jsonify_r, string_decode, string_encode
+from shinken.util import jsonify_r, string_decode, string_encode, read_text_file
 
 
 no_longer_used_txt = ('This parameter is not longer take from the main file, but must be defined '
@@ -876,12 +875,9 @@ class Config(Item):
             if self.read_config_silent == 0:
                 logger.info("[config] opening '%s' configuration file", file)
             try:
-                # Open in Universal way for Windows, Mac, Linux
-                fd = io.open(file, mode='r', encoding='utf8')
-                buf = fd.readlines()
-                fd.close()
+                buf = read_text_file(file).splitlines(True)
                 self.config_base_dir = os.path.dirname(file)
-            except IOError as exp:
+            except (IOError, OSError) as exp:
                 logger.error("[config] cannot open config file '%s' for reading: %s", file, exp)
                 # The configuration is invalid because we have a bad file!
                 self.conf_is_correct = False
@@ -901,16 +897,14 @@ class Config(Item):
                         cfg_file_name = os.path.join(self.config_base_dir, elts[1])
                     cfg_file_name = cfg_file_name.strip()
                     try:
-                        fd = io.open(cfg_file_name, mode='r', encoding='utf8')
+                        txt = read_text_file(cfg_file_name)
                         if self.read_config_silent == 0:
                             logger.info("Processing object config file '%s'", cfg_file_name)
                         res.write(os.linesep + '# IMPORTEDFROM=%s' % (cfg_file_name) + os.linesep)
-                        txt = fd.read()
                         res.write(txt)
                         # Be sure to add a line return so we won't mix files
                         res.write(os.linesep)
-                        fd.close()
-                    except IOError as exp:
+                    except (IOError, OSError) as exp:
                         logger.error("Cannot open config file '%s' for reading: %s",
                                      cfg_file_name, exp)
                         # The configuration is invalid because we have a bad file!
@@ -937,14 +931,13 @@ class Config(Item):
                                     logger.info("Processing object config file '%s'",
                                                 os.path.join(root, file))
                                 try:
+                                    txt = read_text_file(os.path.join(root, file))
                                     res.write(os.linesep + '# IMPORTEDFROM=%s' %
                                               (os.path.join(root, file)) + os.linesep)
-                                    fd = io.open(os.path.join(root, file), mode='r', encoding='utf8')
-                                    res.write(fd.read())
+                                    res.write(txt)
                                     # Be sure to separate files data
                                     res.write(os.linesep)
-                                    fd.close()
-                                except IOError as exp:
+                                except (IOError, OSError) as exp:
                                     logger.error("Cannot open config file '%s' for reading: %s",
                                                  os.path.join(root, file), exp)
                                     # The configuration is invalid

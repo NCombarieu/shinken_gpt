@@ -29,6 +29,7 @@ import json
 from shinken.objects.item import Item, Items
 from shinken.property import StringProp
 from shinken.log import logger
+from shinken.util import read_text_file
 
 
 class Pack(Item):
@@ -61,10 +62,8 @@ class Packs(Items):
                 if re.search("\.pack$", file):
                     p = os.path.join(root, file)
                     try:
-                        fd = open(p, 'rU')
-                        buf = fd.read()
-                        fd.close()
-                    except IOError as exp:
+                        buf = read_text_file(p)
+                    except (IOError, OSError) as exp:
                         logger.error("Cannot open pack file '%s' for reading: %s", p, exp)
                         # ok, skip this one
                         continue

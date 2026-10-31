@@ -960,6 +960,32 @@ def free_memory():
 
 
 # Bytes to unicode
+def read_text_file(path):
+    """Read a configuration text file and return its content as ``str``.
+
+    The file is decoded as UTF-8 (an optional BOM is dropped). Legacy
+    Nagios/Shinken configurations are often encoded in latin-1: when the
+    content is not valid UTF-8 it is decoded as latin-1 instead, as
+    Shinken 2.4 (Python 2) accepted such files, and a warning naming the
+    file is logged. Line endings are normalized to ``\\n``.
+
+    :param str path: path of the file to read
+    :raise IOError: (OSError) if the file cannot be read; the message
+        always contains the file name
+    :rtype: str
+    """
+    with open(path, 'rb') as fd:
+        raw = fd.read()
+    try:
+        text = raw.decode('utf-8-sig')
+    except UnicodeDecodeError as exp:
+        logger.warning("[config] file '%s' is not valid UTF-8 (%s), reading it as "
+                       "latin-1; consider converting it with: iconv -f latin1 -t utf-8",
+                       path, exp)
+        text = raw.decode('latin-1')
+    return text.replace('\r\n', '\n').replace('\r', '\n')
+
+
 def string_decode(s):
     return bytes_to_unicode(s)
 
