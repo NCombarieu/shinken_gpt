@@ -14,7 +14,6 @@ recursive-include plugins-local *
 recursive-include integration *
 recursive-include doc *
 recursive-include share *
-recursive-include inventory *
 recursive-include manpages *
 recursive-include test *.py *.cfg *.txt *.json *.ini *.sh
 prune etc/certs

@@ -38,5 +38,5 @@ echo "Launching Arbiter (which reads configuration and dispatches it) " \
     "in debug mode to the file $DEBUG_PATH"
 
 "$BIN"/shinken-arbiter.py -d \
-    -c "$ETC"/shinken.cfg  -c "$ETC"/sample.cfg -c "$ETC"/dev.cfg\
+    -c "$ETC"/shinken.cfg \
     --debug "$DEBUG_PATH" -p /tmp/arbiter.profile

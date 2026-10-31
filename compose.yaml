@@ -123,6 +123,7 @@ services:
       DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD:-change-me-please}
       DOCKER_INFLUXDB_INIT_ORG: shinken
       DOCKER_INFLUXDB_INIT_BUCKET: shinken
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_ADMIN_TOKEN:-change-me-please}
     volumes:
       - influxdb-data:/var/lib/influxdb2:Z
     healthcheck:
@@ -142,6 +143,7 @@ services:
       TZ: ${TZ:-Europe/Paris}
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-please}
+      INFLUXDB_ADMIN_TOKEN: ${INFLUXDB_ADMIN_TOKEN:-change-me-please}
     volumes:
       - grafana-data:/var/lib/grafana:Z
       - ./etc/grafana/provisioning:/etc/grafana/provisioning:ro,z
