@@ -579,9 +579,9 @@ def get_key_value_sequence(entry, default_value=None):
     # match a whole sequence of key$(value1..n)$
     all_keyval_pattern = re.compile('(?x)^(' + keyval_pattern_txt + ')+$')
     # match a single value
-    value_pattern = re.compile('(?:\s*\$\((?P<val>.*?)\)\$\s*)')
+    value_pattern = re.compile(r'(?:\s*\$\((?P<val>.*?)\)\$\s*)')
     # match a sequence of values
-    all_value_pattern = re.compile('^(?:\s*\$\(.*?\)\$\s*)+$')
+    all_value_pattern = re.compile(r'^(?:\s*\$\(.*?\)\$\s*)+$')
 
     if all_keyval_pattern.match(conf_entry):
         for mat in re.finditer(keyval_pattern, conf_entry):
@@ -621,7 +621,7 @@ def get_key_value_sequence(entry, default_value=None):
 
     if NodeSet is None:
         # The pattern that will say if we have a [X-Y] key.
-        pat = re.compile('\[(\d*)-(\d*)\]')
+        pat = re.compile(r'\[(\d*)-(\d*)\]')
 
     for r in array1:
 
@@ -960,6 +960,77 @@ def free_memory():
 
 
 # Bytes to unicode
+def die_with_parent(parent_pid, sig=None):
+    """Make the calling (child) process die when its parent process dies.
+
+    A poller or reactionner killed with SIGKILL (or by the OOM killer)
+    cannot stop its workers: they used to survive with PPID 1 and keep the
+    copy of the listening HTTP socket, so the restarted daemon could not
+    bind its port.
+
+    On Linux the kernel is asked to send ``sig`` (SIGKILL by default) to
+    this process when its parent dies (``prctl(PR_SET_PDEATHSIG)``). If the
+    parent is already gone, the process exits at once. Callers that loop
+    should also call :func:`parent_is_gone` periodically (portable fallback).
+
+    :param int parent_pid: pid of the expected parent process
+    :param int sig: signal sent to this process when the parent dies
+    :return: True if the kernel death signal could be set up
+    """
+    import signal
+    if sig is None:
+        sig = signal.SIGKILL
+    armed = False
+    if sys.platform.startswith('linux'):
+        try:
+            import ctypes
+            import ctypes.util
+            libc = ctypes.CDLL(ctypes.util.find_library('c') or 'libc.so.6', use_errno=True)
+            pr_set_pdeathsig = 1
+            armed = libc.prctl(pr_set_pdeathsig, int(sig), 0, 0, 0) == 0
+        except Exception:  # pragma: no cover - no libc / no prctl
+            armed = False
+    # The parent may have died before the death signal was armed
+    if parent_is_gone(parent_pid):
+        os._exit(0)
+    return armed
+
+
+def parent_is_gone(parent_pid):
+    """Return True if the parent of the calling process is not ``parent_pid``.
+
+    When the parent dies, the process is re-parented (to init or to a
+    subreaper), so its parent pid changes.
+    """
+    return os.getppid() != parent_pid
+
+
+def read_text_file(path):
+    """Read a configuration text file and return its content as ``str``.
+
+    The file is decoded as UTF-8 (an optional BOM is dropped). Legacy
+    Nagios/Shinken configurations are often encoded in latin-1: when the
+    content is not valid UTF-8 it is decoded as latin-1 instead, as
+    Shinken 2.4 (Python 2) accepted such files, and a warning naming the
+    file is logged. Line endings are normalized to ``\\n``.
+
+    :param str path: path of the file to read
+    :raise IOError: (OSError) if the file cannot be read; the message
+        always contains the file name
+    :rtype: str
+    """
+    with open(path, 'rb') as fd:
+        raw = fd.read()
+    try:
+        text = raw.decode('utf-8-sig')
+    except UnicodeDecodeError as exp:
+        logger.warning("[config] file '%s' is not valid UTF-8 (%s), reading it as "
+                       "latin-1; consider converting it with: iconv -f latin1 -t utf-8",
+                       path, exp)
+        text = raw.decode('latin-1')
+    return text.replace('\r\n', '\n').replace('\r', '\n')
+
+
 def string_decode(s):
     return bytes_to_unicode(s)
 

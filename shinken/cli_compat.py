@@ -16,6 +16,21 @@ def _convert_type(value):
     return value
 
 
+def _convert_help(text):
+    """Convert an optparse help text to the argparse syntax.
+
+    optparse expands ``%default`` and ``%prog`` and prints other ``%``
+    signs literally; argparse uses ``%(default)s``/``%(prog)s`` and
+    requires a literal ``%`` to be written ``%%``.
+    """
+    if not isinstance(text, str):
+        return text
+    marker_default, marker_prog = '\0DEFAULT\0', '\0PROG\0'
+    text = text.replace('%default', marker_default).replace('%prog', marker_prog)
+    text = text.replace('%', '%%')
+    return text.replace(marker_default, '%(default)s').replace(marker_prog, '%(prog)s')
+
+
 class OptionParser(argparse.ArgumentParser):
     """Accept the subset of optparse used by bundled Shinken commands."""
 
@@ -29,6 +44,8 @@ class OptionParser(argparse.ArgumentParser):
 
     def add_option(self, *option_strings, **kwargs):
         kwargs = dict(kwargs)
+        if 'help' in kwargs:
+            kwargs['help'] = _convert_help(kwargs['help'])
         option_type = kwargs.pop("type", None)
         if option_type == "choice":
             kwargs["type"] = str

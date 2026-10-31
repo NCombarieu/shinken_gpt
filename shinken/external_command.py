@@ -23,7 +23,31 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Nagios compatible external commands.
+
+External commands are text lines such as::
+
+    [1700000000] SCHEDULE_HOST_DOWNTIME;srv-web;1700000000;1700003600;1;0;3600;admin;upgrade
+
+They reach Shinken through the ``nagios.cmd`` named pipe (``named_pipe``
+module of the arbiter or receiver), Livestatus ``COMMAND`` requests, the
+HTTP API of the receivers, or are pushed by modules.
+
+:class:`ExternalCommand` is the line in transit between daemons, and
+:class:`ExternalCommandManager` parses the lines and applies them. The
+manager works in one of three modes:
+
+* ``dispatcher`` (arbiter): finds the scheduler that manages the host and
+  forwards the command to it (global commands go to every scheduler);
+* ``receiver`` (receiver): forwards host related commands to the scheduler
+  that manages the host;
+* ``applyer`` (scheduler): runs the command on the scheduler objects, one
+  method per command (``ACKNOWLEDGE_SVC_PROBLEM``, ``DISABLE_HOST_CHECK``...).
+"""
+
+import errno
 import os
+import stat
 import time
 import re
 import sys
@@ -44,16 +68,29 @@ from shinken.brok import Brok
 from shinken.misc.common import DICT_MODATTR
 
 
-""" TODO: Add some comment about this class for the doc"""
 class ExternalCommand:
+    """A raw external command line, as received from a command source.
+
+    Instances are pickled between daemons (receiver/arbiter -> scheduler),
+    so they only carry the text of the command.
+
+    :ivar str cmd_line: the command, e.g. ``[1700000000] DISABLE_HOST_CHECK;srv-web``
+    """
     my_type = 'externalcommand'
 
     def __init__(self, cmd_line):
         self.cmd_line = cmd_line
 
 
-""" TODO: Add some comment about this class for the doc"""
 class ExternalCommandManager:
+    """Parse external commands and dispatch or apply them.
+
+    :cvar dict commands: the known commands. For each command name:
+        ``global`` (True if it does not target a host, service, contact...),
+        ``args`` (the type of each argument: ``'host'``, ``'service'``,
+        ``'to_bool'``, ``'to_int'``, ``None`` for a raw string...) and
+        optionally ``internal`` (Shinken specific command).
+    """
 
     commands = {
         'CHANGE_CONTACT_MODSATTR':
@@ -417,6 +454,10 @@ class ExternalCommandManager:
     }
 
     def __init__(self, conf, mode):
+        """
+        :param conf: the configuration (arbiter) or the scheduler part of it
+        :param str mode: ``'dispatcher'``, ``'receiver'`` or ``'applyer'``
+        """
         self.mode = mode
         if conf:
             self.conf = conf
@@ -431,7 +472,7 @@ class ExternalCommandManager:
             self.pipe_path = conf.command_file
 
         self.fifo = None
-        self.cmd_fragments = ''
+        self.cmd_fragments = b''
         if self.mode == 'dispatcher':
             self.confs = conf.confs
         # Will change for each command read, so if a command need it,
@@ -448,47 +489,88 @@ class ExternalCommandManager:
         self.receiver = receiver
 
 
-    def open(self):
-        # At the first open del and create the fifo
-        if self.fifo is None:
-            if os.path.exists(self.pipe_path):
-                os.unlink(self.pipe_path)
+    # Size of a read on the command pipe
+    PIPE_READ_SIZE = 8096
 
-            if not os.path.exists(self.pipe_path):
-                os.umask(0)
-                try:
-                    os.mkfifo(self.pipe_path, 660)
-                    open(self.pipe_path, 'w+', os.O_NONBLOCK)
-                except OSError as exp:
-                    self.error("Pipe creation failed (%s): %s" % (self.pipe_path, str(exp)))
-                    return None
-        self.fifo = os.open(self.pipe_path, os.O_NONBLOCK)
+    def open(self):
+        """Open the external command named pipe (``command_file``) for reading.
+
+        At the first call, any existing file is removed and the FIFO is
+        created with the mode 0660. The pipe is opened in non blocking mode
+        so that the daemon main loop can poll it with select().
+
+        :return: the file descriptor of the pipe, or None on error (the
+            error is logged with the pipe path)
+        """
+        if self.fifo is None:
+            try:
+                if os.path.lexists(self.pipe_path):
+                    os.unlink(self.pipe_path)
+                os.mkfifo(self.pipe_path, 0o660)
+                # mkfifo() honours the umask: force the expected mode
+                os.chmod(self.pipe_path, 0o660)
+            except OSError as exp:
+                logger.error("Pipe creation failed (%s): %s", self.pipe_path, exp)
+                return None
+        try:
+            if not stat.S_ISFIFO(os.stat(self.pipe_path).st_mode):
+                logger.error("The command file %s is not a named pipe", self.pipe_path)
+                return None
+            self.fifo = os.open(self.pipe_path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError as exp:
+            logger.error("Cannot open the command pipe %s: %s", self.pipe_path, exp)
+            return None
         return self.fifo
 
-
     def get(self):
-        buf = os.read(self.fifo, 8096)
-        r = []
-        fullbuf = len(buf) == 8096 and True or False
+        """Read the available external commands from the named pipe.
+
+        The pipe carries bytes: complete lines are decoded as UTF-8
+        (invalid sequences are replaced, never fatal) and turned into
+        :class:`ExternalCommand` objects. A command split by a full read is
+        kept and completed by the next read.
+
+        When the writer closed the pipe (end of file), the descriptor is
+        closed and an empty list is returned: the caller then re-opens the
+        pipe with :meth:`open`.
+
+        :return: the list of :class:`ExternalCommand` read
+        """
+        try:
+            buf = os.read(self.fifo, self.PIPE_READ_SIZE)
+        except OSError as exp:
+            if exp.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EINTR):
+                # No data available right now
+                return []
+            raise
+        fullbuf = len(buf) == self.PIPE_READ_SIZE
         # If the buffer ended with a fragment last time, prepend it here
         buf = self.cmd_fragments + buf
-        buflen = len(buf)
-        self.cmd_fragments = ''
-        if fullbuf and buf[-1] != '\n':
-            # The buffer was full but ends with a command fragment
-            r.extend([ExternalCommand(s) for s in (buf.split('\n'))[:-1] if s])
-            self.cmd_fragments = (buf.split('\n'))[-1]
-        elif buflen:
-            # The buffer is either half-filled or full with a '\n' at the end.
-            r.extend([ExternalCommand(s) for s in buf.split('\n') if s])
-        else:
-            # The buffer is empty. We "reset" the fifo here. It will be
-            # re-opened in the main loop.
+        self.cmd_fragments = b''
+        if not buf:
+            # End of file: every writer closed the pipe. "Reset" the fifo
+            # here, it will be re-opened in the main loop.
             os.close(self.fifo)
-        return r
+            return []
+        lines = buf.split(b'\n')
+        if fullbuf and not buf.endswith(b'\n'):
+            # The buffer was full but ends with a command fragment
+            self.cmd_fragments = lines.pop()
+        return [ExternalCommand(line.decode('utf-8', 'replace').rstrip('\r'))
+                for line in lines if line.strip()]
 
 
     def resolve_command(self, excmd):
+        """Parse an external command and apply or dispatch it.
+
+        In ``dispatcher`` mode the command is logged (if
+        ``log_external_commands``) and forwarded to the scheduler(s); in
+        ``applyer`` mode the method named after the command is called with
+        the resolved arguments. Invalid commands are ignored (logged at
+        debug level).
+
+        :param ExternalCommand excmd: the command to resolve
+        """
         # Maybe the command is invalid. Bailout
         try:
             command = excmd.cmd_line
@@ -527,6 +609,16 @@ class ExternalCommandManager:
     # by the hostname which scheduler have the host. Then send
     # the command
     def search_host_and_dispatch(self, host_name, command, extcmd):
+        """Forward a host related command to the scheduler managing the host.
+
+        Passive check results for unknown hosts are turned into
+        ``unknown_*_check_result`` broks when
+        ``accept_passive_unknown_check_results`` is set.
+
+        :param str host_name: the host targeted by the command
+        :param str command: the command line
+        :param ExternalCommand extcmd: the command object (receiver mode)
+        """
         logger.debug("Calling search_host_and_dispatch for %s", host_name)
         host_found = False
 
@@ -568,12 +660,12 @@ class ExternalCommandManager:
     def get_unknown_check_result_brok(cmd_line):
 
         match = re.match(
-            '^\[([0-9]{10})] PROCESS_(SERVICE)_CHECK_RESULT;'
-            '([^\;]*);([^\;]*);([^\;]*);([^\|]*)(?:\|(.*))?', cmd_line)
+            r'^\[([0-9]{10})] PROCESS_(SERVICE)_CHECK_RESULT;'
+            r'([^\;]*);([^\;]*);([^\;]*);([^\|]*)(?:\|(.*))?', cmd_line)
         if not match:
             match = re.match(
-                '^\[([0-9]{10})] PROCESS_(HOST)_CHECK_RESULT;'
-                '([^\;]*);([^\;]*);([^\|]*)(?:\|(.*))?', cmd_line)
+                r'^\[([0-9]{10})] PROCESS_(HOST)_CHECK_RESULT;'
+                r'([^\;]*);([^\;]*);([^\|]*)(?:\|(.*))?', cmd_line)
 
         if not match:
             return None
@@ -599,6 +691,7 @@ class ExternalCommandManager:
 
     # The command is global, so sent it to every schedulers
     def dispatch_global_command(self, command):
+        """Send a global command (not tied to an object) to every live scheduler."""
         for sched in self.conf.schedulers:
             logger.debug("Sending a command '%s' to scheduler %s", command, sched)
             if sched.alive:
@@ -608,6 +701,17 @@ class ExternalCommandManager:
 
     # We need to get the first part, the command name, and the reference ext command object
     def get_command_and_args(self, command, extcmd=None):
+        """Split and check an external command line.
+
+        :param str command: ``[timestamp] COMMAND_NAME;arg1;arg2...``
+        :param ExternalCommand extcmd: the original command object
+        :return: None if the command is malformed, unknown or targets an
+            unknown object. Otherwise a dict: ``{'global': True, 'cmd':
+            command}`` for a global command (dispatcher mode), or
+            ``{'global': False, 'c_name': name, 'args': resolved_args}``
+            with the arguments converted to objects (hosts, services,
+            contacts...) and Python types.
+        """
         # safe_print("Trying to resolve", command)
         command = command.rstrip()
         elts = split_semicolon(command)  # danger!!! passive checkresults with perfdata
@@ -2058,7 +2162,7 @@ if __name__ == '__main__':
 
     if not os.path.exists(FIFO_PATH):
         os.umask(0)
-        os.mkfifo(FIFO_PATH, 660)
+        os.mkfifo(FIFO_PATH, 0o660)
         my_fifo = open(FIFO_PATH, 'w+')
         logger.debug("my_fifo: %s", my_fifo)
 

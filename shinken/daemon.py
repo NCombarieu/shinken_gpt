@@ -57,8 +57,9 @@ from shinken.property import StringProp, BoolProp, PathProp, ConfigPathProp, Int
 from shinken.misc.common import setproctitle
 from shinken.profilermgr import profiler
 from shinken.safepickle import SafeUnpickler
-from shinken.util import get_memory
-from shinken.imports import ConfigParser, cpickle as cPickle, StringIO as cStringIO
+from shinken.util import get_memory, die_with_parent
+import pickle
+from shinken.imports import ConfigParser, StringIO as cStringIO
 from shinken.imports import Empty
 
 try:
@@ -365,7 +366,7 @@ class Daemon(object):
             return False
         logger.info("Reloading daemon [pid=%s]", p.pid)
         try:
-            raw_conf = cPickle.dumps(self.new_conf)
+            raw_conf = pickle.dumps(self.new_conf)
             p.stdin.write(raw_conf)
             p.stdin.close()
         except Exception as e:
@@ -414,11 +415,18 @@ class Daemon(object):
                 break
 
 
-    # Loads configuration sent by parent process only if available
     def load_parent_config(self):
+        """Load the configuration sent by the parent process, if any.
+
+        On a graceful reload the parent spawns a new daemon and writes the
+        pickled configuration on its standard input. The pickle is binary
+        data: it is read from the underlying binary buffer of stdin (reading
+        the text stream would decode it and corrupt the payload).
+        """
         if self.is_switched_process():
             logger.info("Loading configuration from parent")
-            raw_config = sys.stdin.read()
+            stdin = getattr(sys.stdin, 'buffer', sys.stdin)
+            raw_config = stdin.read()
             new_conf = SafeUnpickler.loads(raw_config)
             logger.info("Successfully loaded configuration from parent")
             logger.info("Waiting for parent to stop")
@@ -724,7 +732,16 @@ class Daemon(object):
         # a socket of your http server alive
         def _create_manager(self):
             manager = SyncManager(('127.0.0.1', 0))
+            parent_pid = os.getpid()
+
             def close_http_daemon(daemon):
+                # Runs in the manager process: die with the daemon and do
+                # not keep its listening port bound
+                die_with_parent(parent_pid)
+                try:
+                    daemon.close_listening_sockets()
+                except Exception:
+                    pass
                 try:
                     # Be sure to release the lock so there won't be lock in shutdown phase
                     daemon.lock.release()

@@ -29,7 +29,7 @@ import traceback
 import sys
 import base64
 import zlib
-from shinken.imports import cpickle as cPickle
+import pickle
 
 from multiprocessing import active_children
 
@@ -65,7 +65,7 @@ They connect here and get all broks (data for brokers). Data must be ORDERED!
     # A broker ask us broks
     def get_broks(self, bname, broks_batch=0):
         res = self.app.get_broks(broks_batch)
-        return base64.b64encode(zlib.compress(cPickle.dumps(res), 2))
+        return base64.b64encode(zlib.compress(pickle.dumps(res), 2))
     get_broks.encode = 'raw'
 
 # Our main APP class

@@ -72,6 +72,28 @@ class HumanFormatter(Formatter):
         return msg
 
 
+SHINKEN_LOGGER_NAME = 'Shinken'
+
+
+class _NotShinkenFilter(logging.Filter):
+    """Reject the records of the ``Shinken`` logger hierarchy."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        name = record.name
+        return not (name == SHINKEN_LOGGER_NAME or
+                    name.startswith(SHINKEN_LOGGER_NAME + '.'))
+
+
+def _remove_shinken_console_handlers() -> None:
+    """Remove the legacy console handlers of the ``Shinken`` logger."""
+    from shinken.log import ColorStreamHandler
+
+    shinken_logger = logging.getLogger(SHINKEN_LOGGER_NAME)
+    for handler in list(shinken_logger.handlers):
+        if isinstance(handler, ColorStreamHandler):
+            shinken_logger.removeHandler(handler)
+
+
 def setup_logging(
     daemon_name: str,
     level: str = 'INFO',
@@ -95,9 +117,18 @@ def setup_logging(
     formatter_class = StructuredFormatter if json_format else HumanFormatter
     formatter = formatter_class(daemon_name)
 
-    # Console (stderr) handler — always enabled
+    # Console (stderr) handler. The "Shinken" logger has its own console
+    # handler (legacy Shinken format on stdout) and propagates its records
+    # to the root logger: without care every line would be printed twice.
+    # - human format: the root console handler ignores Shinken records;
+    # - JSON format: the legacy console handler is removed so that JSON is
+    #   the only console output.
     console_handler = StreamHandler(sys.stderr)
     console_handler.setFormatter(formatter)
+    if json_format:
+        _remove_shinken_console_handlers()
+    else:
+        console_handler.addFilter(_NotShinkenFilter())
     root_logger.addHandler(console_handler)
 
     # File handler — if log file specified

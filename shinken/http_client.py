@@ -25,7 +25,7 @@
 import base64
 from io import BytesIO
 
-from shinken.imports import cpickle
+import pickle
 import zlib
 import json
 
@@ -168,7 +168,7 @@ class HTTPClient(object):
         encoded_args = {}
         for (k, v) in args.items():
             encoded_args[k] = base64.b64encode(
-                zlib.compress(cpickle.dumps(v), 2)
+                zlib.compress(pickle.dumps(v), 2)
             ).decode("ascii")
             size += len(encoded_args[k])
         # Ok go for it!

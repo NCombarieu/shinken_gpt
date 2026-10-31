@@ -266,8 +266,13 @@ class Daterange(object):
         return None
 
     def get_next_valid_time_from_t(self, t):
-        # print "\tDR Get next valid from:", time.asctime(time.localtime(t))
-        # print "DR Get next valid from:", t
+        """Return the first timestamp >= ``t`` inside this daterange.
+
+        :param int t: reference timestamp
+        :return: the next valid timestamp, or ``None`` when the daterange
+            has no valid time left after ``t`` (e.g. a fixed calendar date
+            in the past)
+        """
         if self.is_time_valid(t):
             return t
 
@@ -278,8 +283,10 @@ class Daterange(object):
         # print "DR: T next valid day", time.asctime(time.localtime(t_day))
 
         # We search for the min of all tr.start > sec_from_morning
-        # if it's the next day, use a start of the day search for timerange
-        if t < t_day:
+        # if it's the next day, use a start of the day search for timerange.
+        # t_day is None when there is no valid day left: Python 2 evaluated
+        # "t < None" as False, keep that behaviour explicitly.
+        if t_day is not None and t < t_day:
             sec_from_morning = self.get_next_future_timerange_valid(t_day)
         else:  # t is in this day, so look from t (can be in the evening or so)
             sec_from_morning = self.get_next_future_timerange_valid(t)
@@ -293,6 +300,8 @@ class Daterange(object):
         # The sec will be the min of the day
         t = get_day(t) + 86400
         t_day2 = self.get_next_valid_day(t)
+        if t_day2 is None:
+            return None
         sec_from_morning = self.get_next_future_timerange_valid(t_day2)
         if t_day2 is not None and sec_from_morning is not None:
             return t_day2 + sec_from_morning
@@ -341,6 +350,11 @@ class Daterange(object):
         return None
 
     def get_next_invalid_time_from_t(self, t):
+        """Return the first timestamp >= ``t`` outside this daterange.
+
+        :param int t: reference timestamp
+        :return: the next invalid timestamp, or ``None`` if none was found
+        """
         if not self.is_time_valid(t):
             return t
 
@@ -350,7 +364,9 @@ class Daterange(object):
 
         # We search for the min of all tr.start > sec_from_morning
         # if it's the next day, use a start of the day search for timerange
-        if t < t_day:
+        # t_day may be None (no invalid day found): Python 2 evaluated
+        # "t < None" as False, keep that behaviour explicitly.
+        if t_day is not None and t < t_day:
             sec_from_morning = self.get_next_future_timerange_invalid(t_day)
         else:  # t is in this day, so look from t (can be in the evening or so)
             sec_from_morning = self.get_next_future_timerange_invalid(t)
@@ -374,6 +390,8 @@ class Daterange(object):
         # The sec will be the min of the day
         t = get_day(t) + 86400
         t_day2 = self.get_next_invalid_day(t)
+        if t_day2 is None:
+            return None
         sec_from_morning = self.get_next_future_timerange_invalid(t_day2)
         if t_day2 is not None and sec_from_morning is not None:
             return t_day2 + sec_from_morning + 1

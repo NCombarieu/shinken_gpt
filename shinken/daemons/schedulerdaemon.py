@@ -26,7 +26,7 @@ import os
 import signal
 import time
 import traceback
-from shinken.imports import cpickle as cPickle
+import pickle
 from shinken.safepickle import SafeUnpickler
 import zlib
 import base64
@@ -73,8 +73,8 @@ if not, they must drop their checks """
         # print "Sending %d checks" % len(res)
         self.app.nb_checks_send += len(res)
 
-        return base64.b64encode(zlib.compress(cPickle.dumps(res), 2))
-        # return zlib.compress(cPickle.dumps(res), 2)
+        return base64.b64encode(zlib.compress(pickle.dumps(res), 2))
+        # return zlib.compress(pickle.dumps(res), 2)
     get_checks.encode = 'raw'
 
 
@@ -121,8 +121,8 @@ They connect here and get all broks (data for brokers). Data must be ORDERED!
         self.app.nb_broks_send += len(res)
         # we do not more have a full broks in queue
         self.app.brokers[bname]['has_full_broks'] = False
-        return base64.b64encode(zlib.compress(cPickle.dumps(res), 2))
-        # return zlib.compress(cPickle.dumps(res), 2)
+        return base64.b64encode(zlib.compress(pickle.dumps(res), 2))
+        # return zlib.compress(pickle.dumps(res), 2)
     get_broks.encode = 'raw'
 
 

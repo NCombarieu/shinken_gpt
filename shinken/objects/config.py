@@ -28,7 +28,6 @@
  them into independent parts. The main user of this is Arbiter, but schedulers
  use it too (but far less)"""
 
-import io
 import re
 import sys
 import string
@@ -41,7 +40,8 @@ import tempfile
 from multiprocessing import Process, Manager
 import json
 
-from shinken.imports import cpickle as cPickle, StringIO
+import pickle
+from shinken.imports import StringIO
 from .item import Item
 from .timeperiod import Timeperiod, Timeperiods
 from .service import Service, Services
@@ -81,7 +81,7 @@ from shinken.log import logger
 from shinken.property import (UnusedProp, BoolProp, IntegerProp, CharProp,
                               StringProp, LogLevelProp, ListProp, ToGuessProp)
 from shinken.daemon import get_cur_user, get_cur_group
-from shinken.util import jsonify_r, string_decode, string_encode
+from shinken.util import jsonify_r, string_decode, string_encode, read_text_file
 
 
 no_longer_used_txt = ('This parameter is not longer take from the main file, but must be defined '
@@ -865,7 +865,18 @@ class Config(Item):
         return r
 
     def read_config(self, files):
-        # just a first pass to get the cfg_file and all files in a buf
+        """Read the main configuration files and the files they include.
+
+        ``cfg_file``, ``resource_file`` and ``cfg_dir`` (``*.cfg`` files) are
+        followed. Files are decoded as UTF-8, with a latin-1 fallback (see
+        :func:`shinken.util.read_text_file`). A file that cannot be read is
+        logged with its name and makes the configuration incorrect.
+
+        :param list files: paths of the main configuration files
+        :return: the concatenated content, each file preceded by an
+            ``# IMPORTEDFROM=<path>`` marker
+        :rtype: str
+        """
         res = StringIO()
 
         for file in files:
@@ -876,12 +887,9 @@ class Config(Item):
             if self.read_config_silent == 0:
                 logger.info("[config] opening '%s' configuration file", file)
             try:
-                # Open in Universal way for Windows, Mac, Linux
-                fd = io.open(file, mode='r', encoding='utf8')
-                buf = fd.readlines()
-                fd.close()
+                buf = read_text_file(file).splitlines(True)
                 self.config_base_dir = os.path.dirname(file)
-            except IOError as exp:
+            except (IOError, OSError) as exp:
                 logger.error("[config] cannot open config file '%s' for reading: %s", file, exp)
                 # The configuration is invalid because we have a bad file!
                 self.conf_is_correct = False
@@ -901,16 +909,14 @@ class Config(Item):
                         cfg_file_name = os.path.join(self.config_base_dir, elts[1])
                     cfg_file_name = cfg_file_name.strip()
                     try:
-                        fd = io.open(cfg_file_name, mode='r', encoding='utf8')
+                        txt = read_text_file(cfg_file_name)
                         if self.read_config_silent == 0:
                             logger.info("Processing object config file '%s'", cfg_file_name)
                         res.write(os.linesep + '# IMPORTEDFROM=%s' % (cfg_file_name) + os.linesep)
-                        txt = fd.read()
                         res.write(txt)
                         # Be sure to add a line return so we won't mix files
                         res.write(os.linesep)
-                        fd.close()
-                    except IOError as exp:
+                    except (IOError, OSError) as exp:
                         logger.error("Cannot open config file '%s' for reading: %s",
                                      cfg_file_name, exp)
                         # The configuration is invalid because we have a bad file!
@@ -932,19 +938,18 @@ class Config(Item):
                     # Now walk for it.
                     for root, dirs, files in os.walk(cfg_dir_name, followlinks=True):
                         for file in files:
-                            if re.search("\.cfg$", file):
+                            if re.search(r"\.cfg$", file):
                                 if self.read_config_silent == 0:
                                     logger.info("Processing object config file '%s'",
                                                 os.path.join(root, file))
                                 try:
+                                    txt = read_text_file(os.path.join(root, file))
                                     res.write(os.linesep + '# IMPORTEDFROM=%s' %
                                               (os.path.join(root, file)) + os.linesep)
-                                    fd = io.open(os.path.join(root, file), mode='r', encoding='utf8')
-                                    res.write(fd.read())
+                                    res.write(txt)
                                     # Be sure to separate files data
                                     res.write(os.linesep)
-                                    fd.close()
-                                except IOError as exp:
+                                except (IOError, OSError) as exp:
                                     logger.error("Cannot open config file '%s' for reading: %s",
                                                  os.path.join(root, file), exp)
                                     # The configuration is invalid
@@ -996,34 +1001,34 @@ class Config(Item):
             line = split_semicolon(line)[0].strip()
 
             # A backslash means, there is more to come
-            if re.search("\\\s*$", line) is not None:
+            if re.search(r"\\s*$", line) is not None:
                 continuation_line = True
-                line = re.sub("\\\s*$", "", line)
-                line = re.sub("^\s+", " ", line)
+                line = re.sub(r"\\s*$", "", line)
+                line = re.sub(r"^\s+", " ", line)
                 tmp_line += line
                 continue
             elif continuation_line:
                 # Now the continuation line is complete
-                line = re.sub("^\s+", "", line)
+                line = re.sub(r"^\s+", "", line)
                 line = tmp_line + line
                 tmp_line = ''
                 continuation_line = False
             # } alone in a line means stop the object reading
-            if re.search("^\s*}\s*$", line) is not None:
+            if re.search(r"^\s*}\s*$", line) is not None:
                 in_define = False
 
             # { alone in a line can mean start object reading
-            if re.search("^\s*\{\s*$", line) is not None and almost_in_define:
+            if re.search(r"^\s*\{\s*$", line) is not None and almost_in_define:
                 almost_in_define = False
                 in_define = True
                 continue
 
-            if re.search("^\s*#|^\s*$|^\s*}", line) is not None:
+            if re.search(r"^\s*#|^\s*$|^\s*}", line) is not None:
                 pass
             # A define must be catch and the type save
             # The old entry must be save before
             elif re.search("^define", line) is not None:
-                if re.search(".*\{.*$", line) is not None:
+                if re.search(r".*\{.*$", line) is not None:
                     in_define = True
                 else:
                     almost_in_define = True
@@ -1034,7 +1039,7 @@ class Config(Item):
                 tmp = []
                 tmp.append("imported_from " + filefrom + ':%d' % line_nb)
                 # Get new type
-                elts = re.split('\s', line)
+                elts = re.split(r'\s', line)
                 # Maybe there was space before and after the type
                 # so we must get all and strip it
                 tmp_type = ' '.join(elts[1:]).strip()
@@ -1329,13 +1334,13 @@ class Config(Item):
                     conf.hostgroups.prepare_for_sending()
                     logger.debug('[%s] Serializing the configuration %d', r.get_name(), i)
                     t0 = time.time()
-                    r.serialized_confs[i] = cPickle.dumps(conf, 0)  # cPickle.HIGHEST_PROTOCOL)
+                    r.serialized_confs[i] = pickle.dumps(conf, 0)  # pickle.HIGHEST_PROTOCOL)
                     logger.debug("[config] time to serialize the conf %s:%s is %s (size:%s)",
                                  r.get_name(), i, time.time() - t0, len(r.serialized_confs[i]))
                     logger.debug("PICKLE LEN : %d", len(r.serialized_confs[i]))
             # Now pickle the whole conf, for easy and quick spare send
             t0 = time.time()
-            whole_conf_pack = cPickle.dumps(self, cPickle.HIGHEST_PROTOCOL)
+            whole_conf_pack = pickle.dumps(self, pickle.HIGHEST_PROTOCOL)
             logger.debug("[config] time to serialize the global conf : %s (size:%s)",
                          time.time() - t0, len(whole_conf_pack))
             self.whole_conf_pack = whole_conf_pack
@@ -1359,7 +1364,7 @@ class Config(Item):
                         conf.hostgroups.prepare_for_sending()
                         logger.debug('[%s] Serializing the configuration %d', rname, i)
                         t0 = time.time()
-                        res = cPickle.dumps(conf, cPickle.HIGHEST_PROTOCOL)
+                        res = pickle.dumps(conf, pickle.HIGHEST_PROTOCOL)
                         logger.debug("[config] time to serialize the conf %s:%s is %s (size:%s)",
                                      rname, i, time.time() - t0, len(res))
                         q.append((i, res))
@@ -1402,7 +1407,7 @@ class Config(Item):
             # The function that just compute the whole conf pickle string, but n a children
             def create_whole_conf_pack(whole_queue, self):
                 logger.debug("[config] sub processing the whole configuration pack creation")
-                whole_queue.append(cPickle.dumps(self, cPickle.HIGHEST_PROTOCOL))
+                whole_queue.append(pickle.dumps(self, pickle.HIGHEST_PROTOCOL))
                 logger.debug("[config] sub processing the whole configuration pack creation "
                              "finished")
             # Go for it
