@@ -1,5 +1,27 @@
+# Contexte de construction de l'image : ne jamais y envoyer de secret.
+# Le Containerfile ne copie que shinken/, bin/, modules/, libexec/, cli/ et
+# containers/ ; la configuration est montée à l'exécution.
+
+# Secrets : clés privées, certificats, mots de passe, réglages locaux
+etc/certs
+etc/ssh_keys
+**/*.key
+**/*.pem
+**/*.p12
+**/*secret*
+.env
+.env.*
+!.env.example
+
+# Scripts de check de l'administrateur : montés à l'exécution, pas embarqués
+plugins-local
+
+# Données et état locaux
+var
 .git
 .github
+**/__pycache__
+**/*.py[cod]
 .pytest_cache
 .ruff_cache
 .coverage
@@ -7,7 +29,12 @@ htmlcov
 build
 dist
 *.egg-info
-__pycache__
-*.py[cod]
 .venv
 venv
+
+# Inutiles dans l'image
+doc
+test
+manpages
+inventory
+deploy

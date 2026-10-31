@@ -36,29 +36,11 @@ trap cleanup EXIT
 
 cp -a "$ROOT_DIR/etc/." "$CONFIG_DIR/"
 
-sed -i -E 's/^([[:space:]]*address[[:space:]]+).*/\1scheduler/' "$CONFIG_DIR/schedulers/scheduler-master.cfg"
-sed -i -E 's/^([[:space:]]*address[[:space:]]+).*/\1poller/' "$CONFIG_DIR/pollers/poller-master.cfg"
-sed -i -E 's/^([[:space:]]*address[[:space:]]+).*/\1reactionner/' "$CONFIG_DIR/reactionners/reactionner-master.cfg"
-sed -i -E 's/^([[:space:]]*address[[:space:]]+).*/\1broker/' "$CONFIG_DIR/brokers/broker-master.cfg"
-sed -i -E 's/^([[:space:]]*address[[:space:]]+).*/\1receiver/' "$CONFIG_DIR/receivers/receiver-master.cfg"
-
-sed -i -E 's#^modules_dir=.*#modules_dir=/usr/local/lib/shinken/modules#' "$CONFIG_DIR/shinken.cfg"
-for daemon_ini in "$CONFIG_DIR"/daemons/*.ini; do
-    sed -i -E 's#^modules_dir=.*#modules_dir=/usr/local/lib/shinken/modules#' "$daemon_ini"
-done
-sed -i -E 's/^([[:space:]]*)modules[[:space:]]*$/\1modules             status-webui/' "$CONFIG_DIR/brokers/broker-master.cfg"
-
+# Addresses, modules_dir and the status web UI are adapted by the image
+# entrypoint itself (SHINKEN_CONTAINER_DNS=1, SHINKEN_STATUS_WEBUI=1), exactly
+# as in compose.yaml: only test-specific settings are changed here.
 sed -i -E 's/^max_service_check_spread=.*/max_service_check_spread=0/' "$CONFIG_DIR/shinken.cfg"
 sed -i -E 's/^max_host_check_spread=.*/max_host_check_spread=0/' "$CONFIG_DIR/shinken.cfg"
-
-cat >"$CONFIG_DIR/modules/status-webui.cfg" <<'EOF'
-define module {
-    module_name     status-webui
-    module_type     status_webui
-    host            0.0.0.0
-    port            8080
-}
-EOF
 
 cat >"$CONFIG_DIR/commands/integration-lab.cfg" <<'EOF'
 define command {
@@ -145,6 +127,9 @@ common_args=(
     --network "$NETWORK"
     --security-opt no-new-privileges
     --cap-drop ALL
+    -e SHINKEN_CONTAINER_DNS=1
+    -e SHINKEN_STATUS_WEBUI=1
+    -e TZ=Europe/Paris
     -v "$CONFIG_DIR:/etc/shinken:ro,Z"
     -v "$ROOT_DIR/integration:/opt/shinken-integration:ro,Z"
 )
@@ -160,18 +145,18 @@ run_daemon() {
 }
 
 podman run -d --name lab-http --network "$NETWORK" "$IMAGE" \
-    shell -c 'python -m http.server 8000 --bind 0.0.0.0 --directory /usr/local/share/shinken/etc' >/dev/null
+    shell -c 'python -m http.server 8000 --bind 0.0.0.0 --directory /usr/local/lib/shinken/libexec' >/dev/null
 
 run_daemon scheduler
 run_daemon poller
 run_daemon reactionner
-run_daemon broker -p 127.0.0.1:18080:8080
+run_daemon broker -p 127.0.0.1:18080:8080 -p 127.0.0.1:15000:50000
 run_daemon receiver
 
 podman run --rm "${common_args[@]}" \
     -v "$STATE_DIR/arbiter/data:/var/lib/shinken:Z" \
     -v "$STATE_DIR/arbiter/log:/var/log/shinken:Z" \
-    "$IMAGE" shinken-arbiter -v -c /etc/shinken/shinken.cfg
+    "$IMAGE" check
 run_daemon arbiter
 
 deadline=$((SECONDS + 120))
@@ -187,8 +172,14 @@ while (( SECONDS < deadline )); do
     markers=$(cat "$STATE_DIR/poller/data/integration-checks.log" 2>/dev/null || true)
     status_json=$(curl -fsS http://127.0.0.1:18080/api/status 2>/dev/null || true)
     dashboard=$(curl -fsS http://127.0.0.1:18080/ 2>/dev/null || true)
+    livestatus=$(python3 "$ROOT_DIR/bin/shinken-healthcheck" --port 15000 --no-color 2>/dev/null || true)
+    healthy=1
+    for role in scheduler poller reactionner broker receiver arbiter; do
+        podman exec "lab-$role" shinken-healthcheck --daemon auto >/dev/null 2>&1 || healthy=0
+    done
 
-    if (( all_running )) \
+    if (( all_running )) && (( healthy )) \
+        && grep -q 'integration-http' <<<"$livestatus" \
         && grep -q '^host-ok lab-http ' <<<"$markers" \
         && grep -q '^host-ok broker ' <<<"$markers" \
         && grep -q '^http-ok lab-http 200$' <<<"$markers" \
