@@ -472,7 +472,7 @@ class Timeperiod(Item):
         # print "Trying to resolve ", entry
 
         res = re.search(
-            '(\d{4})-(\d{2})-(\d{2}) - (\d{4})-(\d{2})-(\d{2}) / (\d+)[\s\t]*([0-9:, -]+)', entry
+            r'(\d{4})-(\d{2})-(\d{2}) - (\d{4})-(\d{2})-(\d{2}) / (\d+)[\s\t]*([0-9:, -]+)', entry
         )
         if res is not None:
             # print "Good catch 1"
@@ -485,7 +485,7 @@ class Timeperiod(Item):
             )
             return
 
-        res = re.search('(\d{4})-(\d{2})-(\d{2}) / (\d+)[\s\t]*([0-9:, -]+)', entry)
+        res = re.search(r'(\d{4})-(\d{2})-(\d{2}) / (\d+)[\s\t]*([0-9:, -]+)', entry)
         if res is not None:
             # print "Good catch 2"
             (syear, smon, smday, skip_interval, other) = res.groups()
@@ -499,7 +499,7 @@ class Timeperiod(Item):
             return
 
         res = re.search(
-            '(\d{4})-(\d{2})-(\d{2}) - (\d{4})-(\d{2})-(\d{2})[\s\t]*([0-9:, -]+)', entry
+            r'(\d{4})-(\d{2})-(\d{2}) - (\d{4})-(\d{2})-(\d{2})[\s\t]*([0-9:, -]+)', entry
         )
         if res is not None:
             # print "Good catch 3"
@@ -509,7 +509,7 @@ class Timeperiod(Item):
             )
             return
 
-        res = re.search('(\d{4})-(\d{2})-(\d{2})[\s\t]*([0-9:, -]+)', entry)
+        res = re.search(r'(\d{4})-(\d{2})-(\d{2})[\s\t]*([0-9:, -]+)', entry)
         if res is not None:
             # print "Good catch 4"
             (syear, smon, smday, other) = res.groups()
@@ -522,7 +522,7 @@ class Timeperiod(Item):
             return
 
         res = re.search(
-            '([a-z]*) ([\d-]+) ([a-z]*) - ([a-z]*) ([\d-]+) ([a-z]*) / (\d+)[\s\t]*([0-9:, -]+)',
+            r'([a-z]*) ([\d-]+) ([a-z]*) - ([a-z]*) ([\d-]+) ([a-z]*) / (\d+)[\s\t]*([0-9:, -]+)',
             entry
         )
         if res is not None:
@@ -535,7 +535,7 @@ class Timeperiod(Item):
             )
             return
 
-        res = re.search('([a-z]*) ([\d-]+) - ([a-z]*) ([\d-]+) / (\d+)[\s\t]*([0-9:, -]+)', entry)
+        res = re.search(r'([a-z]*) ([\d-]+) - ([a-z]*) ([\d-]+) / (\d+)[\s\t]*([0-9:, -]+)', entry)
         if res is not None:
             # print "Good catch 6"
             (t0, smday, t1, emday, skip_interval, other) = res.groups()
@@ -564,7 +564,7 @@ class Timeperiod(Item):
                 )
                 return
 
-        res = re.search('([a-z]*) ([\d-]+) - ([\d-]+) / (\d+)[\s\t]*([0-9:, -]+)', entry)
+        res = re.search(r'([a-z]*) ([\d-]+) - ([\d-]+) / (\d+)[\s\t]*([0-9:, -]+)', entry)
         if res is not None:
             # print "Good catch 7"
             (t0, smday, emday, skip_interval, other) = res.groups()
@@ -594,7 +594,7 @@ class Timeperiod(Item):
                 return
 
         res = re.search(
-            '([a-z]*) ([\d-]+) ([a-z]*) - ([a-z]*) ([\d-]+) ([a-z]*) [\s\t]*([0-9:, -]+)', entry
+            r'([a-z]*) ([\d-]+) ([a-z]*) - ([a-z]*) ([\d-]+) ([a-z]*) [\s\t]*([0-9:, -]+)', entry
         )
         if res is not None:
             # print "Good catch 8"
@@ -606,7 +606,7 @@ class Timeperiod(Item):
             )
             return
 
-        res = re.search('([a-z]*) ([\d-]+) - ([\d-]+)[\s\t]*([0-9:, -]+)', entry)
+        res = re.search(r'([a-z]*) ([\d-]+) - ([\d-]+)[\s\t]*([0-9:, -]+)', entry)
         if res is not None:
             # print "Good catch 9"
             (t0, smday, emday, other) = res.groups()
@@ -636,7 +636,7 @@ class Timeperiod(Item):
                 )
                 return
 
-        res = re.search('([a-z]*) ([\d-]+) - ([a-z]*) ([\d-]+)[\s\t]*([0-9:, -]+)', entry)
+        res = re.search(r'([a-z]*) ([\d-]+) - ([a-z]*) ([\d-]+)[\s\t]*([0-9:, -]+)', entry)
         if res is not None:
             # print "Good catch 10"
             (t0, smday, t1, emday, other) = res.groups()
@@ -665,7 +665,7 @@ class Timeperiod(Item):
                 )
                 return
 
-        res = re.search('([a-z]*) ([\d-]+) ([a-z]*)[\s\t]*([0-9:, -]+)', entry)
+        res = re.search(r'([a-z]*) ([\d-]+) ([a-z]*)[\s\t]*([0-9:, -]+)', entry)
         if res is not None:
             # print "Good catch 11"
             (t0, swday_offset, t1, other) = res.groups()
@@ -681,7 +681,7 @@ class Timeperiod(Item):
                 )
                 return
 
-        res = re.search('([a-z]*) ([\d-]+)[\s\t]+([0-9:, -]+)', entry)
+        res = re.search(r'([a-z]*) ([\d-]+)[\s\t]+([0-9:, -]+)', entry)
         if res is not None:
             # print "Good catch 12"
             (t0, smday, other) = res.groups()
@@ -712,7 +712,7 @@ class Timeperiod(Item):
                 )
                 return
 
-        res = re.search('([a-z]*)[\s\t]+([0-9:, -]+)', entry)
+        res = re.search(r'([a-z]*)[\s\t]+([0-9:, -]+)', entry)
         if res is not None:
             # print "Good catch 13"
             (t0, other) = res.groups()
