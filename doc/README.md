@@ -26,6 +26,7 @@ prérequis, ses étapes et sa validation.
 
 | Je veux… | Fiche |
 |---|---|
+| Savoir si cette branche peut remplacer un Shinken master en production (revue du 31/10/2026) | [Revue de migration — synthèse](revue/SYNTHESE.md) |
 | Comprendre ce qu'est Shinken et comment ce fork est organisé | [Shinken, qu'est-ce que c'est ?](presentation.md) |
 | Installer et lancer la stack sur un serveur | [Installer et lancer Shinken](installation.md) |
 | Ajouter des hôtes, services, contacts à superviser | [Configurer Shinken](configuration.md) |
