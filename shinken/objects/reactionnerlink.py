@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -22,8 +21,6 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
-
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 from shinken.objects.satellitelink import SatelliteLink, SatelliteLinks
 from shinken.property import BoolProp, IntegerProp, StringProp, ListProp

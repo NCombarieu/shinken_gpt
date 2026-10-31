@@ -22,8 +22,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 
@@ -49,7 +49,7 @@ class TestMacroModulations(ShinkenTest):
         self.assertIn(mod, host.macromodulations)
 
         c = None
-        for c in host.get_checks_in_progress():
+        for c in host.checks_in_progress:
             print(c.command)
             # THE hst got 2 modulations. The first with the value MODULATED
             # and the second with NOT_THE_GOOD. Both are currently active, but we want the firt one

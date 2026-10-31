@@ -23,13 +23,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import time
 from shinken.log import logger
 
 """ TODO: Add some comment about this class for the doc"""
-class ContactDowntime(object):
+class ContactDowntime:
     id = 1
 
     # Just to list the properties we will send as pickle
@@ -100,8 +98,10 @@ class ContactDowntime(object):
         self.ref.raise_cancel_downtime_log_entry()
         self.can_be_deleted = True
 
+    # Call by pickle to dataify the comment
+    # because we DO NOT WANT REF in this pickleisation!
     def __getstate__(self):
-        # print("Asking a getstate for a downtime on", self.ref.get_dbg_name())
+        # print "Asking a getstate for a downtime on", self.ref.get_dbg_name()
         cls = self.__class__
         # id is not in *_properties
         res = [self.id]

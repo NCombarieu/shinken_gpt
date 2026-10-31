@@ -1,117 +1,82 @@
-===================================
-Presentation of the Shinken project
-===================================
+=======
+Shinken
+=======
 
-Welcome to the Shinken project.
+Moteur de supervision compatible Nagios, porté en **Python 3** et déployé
+par **conteneurs Podman**.
 
-.. image:: https://api.travis-ci.org/naparuba/shinken.svg?branch=master
-  :target: https://travis-ci.org/naparuba/shinken
+Cette version reprend `Shinken <https://github.com/naparuba/shinken>`_ 2.4,
+dont le développement s'est arrêté en Python 2. Elle conserve le format de
+configuration (``define host { ... }``, modèles, macros, ``$USER1$``,
+business rules, realms), les plugins Nagios, les commandes externes et
+l'interface Livestatus utilisée par Thruk.
 
+Fonctionnalités
+===============
 
-Shinken is a modern, Nagios compatible monitoring framework, written in
-Python. Its main goal is to give users a flexible architecture for
-their monitoring system that is designed to scale to large environments.
+- Six daemons spécialisés (arbiter, scheduler, poller, reactionner, broker,
+  receiver), distribuables sur plusieurs machines.
+- Plugins standard (monitoring-plugins, NRPE, SNMP) et scripts maison
+  déposés dans ``plugins-local/``.
+- Notifications par e-mail via un relais SMTP.
+- Livestatus avec historique SQLite, pour Thruk et les outils compatibles.
+- Rétention de l'état (acquittements, downtimes) entre les redémarrages,
+  y compris la reprise d'un fichier de Shinken 2.4.
+- Tube ``nagios.cmd`` pour les commandes externes.
+- Image conteneur versionnée, quadlets systemd, tests de santé.
 
-Shinken is backwards-compatible with the Nagios configuration standard
-and plugins. It works on any operating system and architecture that
-supports Python, which includes Windows, GNU/Linux and FreeBSD.
+Démarrage rapide
+================
 
-Requirements
-============
+Prérequis : Linux, Podman 4.7 ou plus, ``podman-compose``, ``git``.
 
-See the `Documentation`__ 
+.. code-block:: bash
 
-__ https://shinken.readthedocs.org/en/latest/02_gettingstarted/installations/shinken-installation.html#requirements
+  git clone <url-du-depot> shinken
+  cd shinken
+  cp .env.example .env                       # fuseau horaire, version, ports
+  # adapter etc/contacts/admin.cfg et etc/resource.d/notifications.cfg
+  podman-compose build
+  podman-compose run --rm --no-deps arbiter check
+  podman-compose up -d
+  podman-compose exec broker shinken-healthcheck
 
-There are mandatory and conditional requirements for the installation
-methods which are described below.
+La page d'état est servie sur ``http://127.0.0.1:8081/`` et Livestatus sur
+``127.0.0.1:50000``. Détails : `installation <doc/exploitation/01-installation.md>`_.
 
+Documentation
+=============
 
-Installing Shinken
-==================
+Toute la documentation est en français dans `doc/ <doc/README.md>`_ :
 
-See the `Documentation`__ 
+- `administrateur de la supervision <doc/admin/README.md>`_ : configuration,
+  plugins, recettes, du niveau simple au niveau expert ;
+- `exploitant système <doc/exploitation/README.md>`_ : installation,
+  sauvegarde, mise à jour, sécurité, dépannage ;
+- `migration depuis Shinken 2.4 <doc/migration-depuis-shinken-master.md>`_ ;
+- `développeur <doc/dev/README.md>`_ et `DEVELOPMENT.md <DEVELOPMENT.md>`_.
 
-__ https://shinken.readthedocs.org/en/latest/02_gettingstarted/installations/shinken-installation.html
+Statut du projet
+================
 
+- Version 2.4.3, Python 3.11 à 3.13. Les changements sont listés dans le
+  `Changelog <Changelog>`_.
+- Le remplacement d'une installation Shinken 2.4 se fait en une seule
+  bascule (les daemons des deux versions ne communiquent pas) ; plusieurs
+  modules tiers de Shinken 2.4 (``webui``, ``graphite``, ``mongodb``…) ne
+  sont pas disponibles. Voir le `guide de migration
+  <doc/migration-depuis-shinken-master.md>`_.
+- Les échanges entre daemons ne sont pas authentifiés : ils doivent rester
+  sur un réseau privé (voir `sécurité <doc/exploitation/09-securite.md>`_).
 
+Contribuer
+==========
 
-Update
-------
+Voir `CONTRIBUTING.rst <CONTRIBUTING.rst>`_. Les anomalies propres à cette
+version (Python 3, conteneurs) sont à signaler sur ce dépôt et non sur le
+projet d'origine.
 
-Launch:
+Licence
+=======
 
-  python setup.py install --update
-
-It will only update the shinken lib and scripts, but won't touch your current configuration
-
-
-Running
--------
-
-Shinken is installed with `init.d` scripts, enables them at boot time and starts them right after the install process ends. Based on your linux distro you only need to do:
-
-  chkconfig --add shinken
-  chkconfig shinken on
-
-or :
-
-  update-rc.d shinken defaults 20
-
-
-
-Where is the configuration?
-===========================
-
-The configuration is on the directory, `/etc/shinken`.
-
-
-Where are the logs?
-===================
-
-Logs are in /var/log/shinken
-(what did you expect?)
-
-
-I got a bug, how to launch the daemons in debug mode?
-=====================================================
-
-You only need to launch:
-
-  /etc/init.d/shinken -d start
-
-Debug logs will be based on the log directory (/var/log/shinken)
-
-
-I switched from Nagios, do I need to change my existing Nagios configuration?
-=============================================================================
-
-No, there is no need to change the existing configuration - unless
-you want to add some new hosts and services. Once you are comfortable
-with Shinken you can start to use its unique and powerful features.
-
-
-Learn more about how to use and configure Shinken
-=================================================
-
-Jump to the Shinken documentation__.
-
-__ https://shinken.readthedocs.org/en/latest/
-
-
-If you find a bug
-================================
-
-Bugs are tracked in the `issue list on GitHub`__ . Always search for existing issues before filing a new one (use the search field at the top of the page).
-When filing a new bug, please remember to include:
-
-*	A helpful title - use descriptive keywords in the title and body so others can find your bug (avoiding duplicates).
-*	Steps to reproduce the problem, with actual vs. expected results
-*	Shinken version (or if you're pulling directly from the Git repo, your current commit SHA - use git rev-parse HEAD)
-*	OS version
-*	If the problem happens with specific code, link to test files (`gist.github.com`__  is a great place to upload code).
-*	Screenshots are very helpful if you're seeing an error message or a UI display problem. (Just drag an image into the issue description field to include it).
-
-__ https://github.com/naparuba/shinken/issues/
-__ https://gist.github.com/
-
+GNU Affero General Public License v3 ou ultérieure (voir ``COPYING``).

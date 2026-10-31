@@ -10,8 +10,8 @@ Shinken reactionner daemon
                     Arthur Gautier,
                     David Hannequin,
                     Thibault Cohen
-:Date:              2014-04-24
-:Version:           2.0.1
+:Date:              2026-10-31
+:Version:           2.4.3
 :Manual section:    8
 :Manual group:      Shinken commands
 
@@ -37,5 +37,8 @@ OPTIONS
   -h, --help                                    Show this help message
   --version                                     Show program's version number 
   --debugfile=DEBUGFILE                         Enable debug logging to *DEBUGFILE*
-  -p PROFILE, --profile=PROFILE                 Dump a profile file. Need the python cProfile library
-
+  -p PROFILE, --profile=PROFILE                 Dump a profile file. Need the python cProfile librairy
+  --verbose                                 Log at INFO level on the console
+  --debug                                   Log at DEBUG level on the console
+  --json-logs                               Emit one JSON object per log line (for log aggregation)
+  --logfile=FILE                            Also write the logs to *FILE*

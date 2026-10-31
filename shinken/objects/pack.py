@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,19 +22,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import time
 import os
 import re
-try:
-    import json
-except ImportError:
-    json = None
+import json
 
 from shinken.objects.item import Item, Items
 from shinken.property import StringProp
 from shinken.log import logger
+from shinken.util import read_text_file
 
 
 class Pack(Item):
@@ -60,18 +54,16 @@ class Packs(Items):
     name_property = "pack_name"
     inner_class = Pack
 
-    # We will dig into the path and load all .pack files
     def load_file(self, path):
+        """Load every ``*.pack`` (JSON) file found under ``path``."""
         # Now walk for it
         for root, dirs, files in os.walk(path):
             for file in files:
                 if re.search(r"\.pack$", file):
                     p = os.path.join(root, file)
                     try:
-                        fd = open(p, 'r')
-                        buf = fd.read()
-                        fd.close()
-                    except IOError as exp:
+                        buf = read_text_file(p)
+                    except (IOError, OSError) as exp:
                         logger.error("Cannot open pack file '%s' for reading: %s", p, exp)
                         # ok, skip this one
                         continue

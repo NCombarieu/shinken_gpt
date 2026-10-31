@@ -22,8 +22,8 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 
@@ -42,11 +42,11 @@ class TestNoHostCheck(ShinkenTest):
         now = time.time()
         host = self.sched.hosts.find_by_name("test_host_0")
         print(host.checks_in_progress)
-        self.assertEqual(0, len(host.get_checks_in_progress()))
+        self.assertEqual(0, len(host.checks_in_progress))
         #
         svc = self.sched.services.find_srv_by_name_and_hostname("test_host_0", "test_ok_0")
         print(svc.checks_in_progress)
-        self.assertNotEqual(len(svc.get_checks_in_progress()), 0)
+        self.assertNotEqual(len(svc.checks_in_progress), 0)
 
         # Now launch passive checks
         cmd = "[%lu] PROCESS_HOST_CHECK_RESULT;test_host_0;1;bobo" % now

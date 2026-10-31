@@ -22,18 +22,19 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import absolute_import
 from shinken_test import *
 
 
 class TestUnknownEventHandler(ShinkenTest):
-
+    
     def setUp(self):
         self.setup_with_file('etc/shinken_uknown_event_handler.cfg')
-
+    
+    
     def test_dummy(self):
         self.assertFalse(self.conf.conf_is_correct)
+
 
 if __name__ == '__main__':
     unittest.main()

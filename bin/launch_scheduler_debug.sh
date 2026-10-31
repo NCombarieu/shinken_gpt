@@ -22,10 +22,13 @@
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
 
-DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+DIR="$(cd "$(dirname "$0")"; pwd)"
+# Run from the source checkout without installing the package.
+PYTHONPATH="$DIR/..${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+BIN="$DIR"
 ETC="$DIR"/../etc
 DEBUG_PATH="/tmp/scheduler.debug"
 
 echo "Launching Scheduler (that is only in charge of scheduling) in debug mode to the file $DEBUG_PATH"
-"$BIN"/shinken_scheduler.py -d -c "$ETC"/daemons/schedulerd.ini --debug "$DEBUG_PATH"  --profile /tmp/scheduler.profile
+"$BIN"/shinken-scheduler.py -d -c "$ETC"/daemons/schedulerd.ini --debug "$DEBUG_PATH"  --profile /tmp/scheduler.profile

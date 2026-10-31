@@ -1,9 +1,7 @@
-# this is the requirements dedicated to tests.
+# Test dependencies (Python 3). Used by the CI and for local runs:
+#   python -m pip install -e . -r test/requirements.txt
+#   cd test && python -m pytest -q
 -r ../requirements.txt
-mock
-coveralls==0.5
-nose-cov==1.6
-coverage==3.7.1
-nose==1.3.4
-pylint==1.4.1
-pep8==1.5.7
+pytest
+pytest-timeout
+requests

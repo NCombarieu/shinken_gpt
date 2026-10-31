@@ -22,15 +22,16 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 
 class TestConfig(ShinkenTest):
     def setUp(self):
         self.setup_with_file('etc/shinken_spaces_in_commands.cfg')
-
+    
+    
     def test_dummy(self):
         #
         # Config is not correct because of a wrong relative path
@@ -53,6 +54,7 @@ class TestConfig(ShinkenTest):
         cc = untaggued_checks[0]
         # There must still be a sequence of 10 blanks
         self.assertNotEqual(cc.command.find("Port 2          "), -1)
+
 
 if __name__ == '__main__':
     unittest.main()

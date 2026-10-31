@@ -22,10 +22,13 @@
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
 
-DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+DIR="$(cd "$(dirname "$0")"; pwd)"
+# Run from the source checkout without installing the package.
+PYTHONPATH="$DIR/..${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+BIN="$DIR"
 ETC="$DIR"/../etc
 DEBUG_PATH="/tmp/poller.debug"
 
 echo "Launching Poller (which launches checks) in debug mode to the file $DEBUG_PATH"
-"$BIN"/shinken_poller.py -d -c "$ETC"/daemons/pollerd.ini --debug "$DEBUG_PATH" --profile /tmp/poller.profile
+"$BIN"/shinken-poller.py -d -c "$ETC"/daemons/pollerd.ini --debug "$DEBUG_PATH" --profile /tmp/poller.profile

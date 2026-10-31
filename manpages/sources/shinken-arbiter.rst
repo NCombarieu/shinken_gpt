@@ -10,8 +10,8 @@ Shinken arbiter daemon
                     Arthur Gautier,
                     David Hannequin,
                     Thibault Cohen
-:Date:              2014-04-24
-:Version:           2.0.1
+:Date:              2026-10-31
+:Version:           2.4.3
 :Manual section:    8
 :Manual group:      Shinken commands
 
@@ -40,14 +40,17 @@ OPTIONS
 =======
 
   -v, --verify-config                       Verify config file and exit
-  -c CONFIGFILE, --config=CONFIGFILE        Config file (your nagios.cfg). Multiple -c can be used, it will be like if all files was just one
+  -c CONFIGFILE, --config=CONFIGFILE        Main configuration file (shinken.cfg). Multiple -c can be used, it will be like if all files was just one
   -d, --daemon                              Run in daemon mode
   -r, --replace                             Replace previous running arbiter
   -h, --help                                Show this help message
   --version                                 Show program's version number
   --debugfile=DEBUGFILE                     Enable debug logging to *DEBUGFILE*
-  -p PROFILE, --profile=PROFILE             Dump a profile file. Need the python cProfile library
+  -p PROFILE, --profile=PROFILE             Dump a profile file. Need the python cProfile librairy
   -a ANALYSE, --analyse=ANALYSE             Dump an analyse statistics file, for support
   -m MIGRATE, --migrate=MIGRATE             Migrate the raw configuration read from the arbiter to another module. --> VERY EXPERIMENTAL!
   -n ARB_NAME, --name=ARB_NAME              Give the arbiter name to use. Optionnal, will use the hostaddress if not provide to find it.
-
+  --verbose                                 Log at INFO level on the console
+  --debug                                   Log at DEBUG level on the console
+  --json-logs                               Emit one JSON object per log line (for log aggregation)
+  --logfile=FILE                            Also write the logs to *FILE*

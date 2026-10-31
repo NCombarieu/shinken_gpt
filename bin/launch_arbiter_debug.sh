@@ -22,8 +22,11 @@
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
 
-DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+DIR="$(cd "$(dirname "$0")"; pwd)"
+# Run from the source checkout without installing the package.
+PYTHONPATH="$DIR/..${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+BIN="$DIR"
 ETC="$DIR"/../etc
 DEBUG_PATH="/tmp/arbiter.debug"
 
@@ -34,6 +37,6 @@ cd /var/run/shinken
 echo "Launching Arbiter (which reads configuration and dispatches it) " \
     "in debug mode to the file $DEBUG_PATH"
 
-"$BIN"/shinken_arbiter.py -d \
-    -c "$ETC"/shinken.cfg  -c "$ETC"/sample.cfg -c "$ETC"/dev.cfg\
+"$BIN"/shinken-arbiter.py -d \
+    -c "$ETC"/shinken.cfg \
     --debug "$DEBUG_PATH" -p /tmp/arbiter.profile

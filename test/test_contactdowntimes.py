@@ -22,8 +22,8 @@
 # This file is used to test host- and service-downtimes.
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 from shinken_test import *
 
 
@@ -66,7 +66,7 @@ class TestContactDowntime(ShinkenTest):
         print("downtime was scheduled. check its activity and the comment\n"*5)
         self.assertEqual(1, len(self.sched.contact_downtimes))
         self.assertEqual(1, len(test_contact.downtimes))
-        self.assertIn(test_contact.downtimes[0], self.sched.contact_downtimes.values())
+        self.assertIn(test_contact.downtimes[0], list(self.sched.contact_downtimes.values()))
 
         self.assertTrue(test_contact.downtimes[0].is_in_effect)
         self.assertFalse(test_contact.downtimes[0].can_be_deleted)
@@ -147,7 +147,7 @@ class TestContactDowntime(ShinkenTest):
         print("downtime was scheduled. check its activity and the comment")
         self.assertEqual(1, len(self.sched.contact_downtimes))
         self.assertEqual(1, len(test_contact.downtimes))
-        self.assertIn(test_contact.downtimes[0], self.sched.contact_downtimes.values())
+        self.assertIn(test_contact.downtimes[0], list(self.sched.contact_downtimes.values()))
 
         self.assertTrue(test_contact.downtimes[0].is_in_effect)
         self.assertFalse(test_contact.downtimes[0].can_be_deleted)

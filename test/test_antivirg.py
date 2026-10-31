@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import absolute_import
 from shinken_test import *
 
 class TestConfig(ShinkenTest):
@@ -41,9 +40,9 @@ class TestConfig(ShinkenTest):
 
     def test_escaped_semicolon(self):
         """Check that it is possible to have a host with a semicolon in its hostname
-
-           The consequences of this aren't tested. We try just to send a command but
-           I think that others programs which send commands don't think to escape
+           
+           The consequences of this aren't tested. We try just to send a command but 
+           I think that others programs which send commands don't think to escape 
            the semicolon.
 
         """
@@ -61,7 +60,7 @@ class TestConfig(ShinkenTest):
         # We can send a command by escaping the semicolon.
 
 
-        command = '[%lu] PROCESS_HOST_CHECK_RESULT;test_host_2\;with_semicolon;2;down' % (time.time())
+        command = r'[%lu] PROCESS_HOST_CHECK_RESULT;test_host_2\;with_semicolon;2;down' % (time.time())
         self.sched.run_external_command(command)
 
         # can need 2 run for get the consum (I don't know why)

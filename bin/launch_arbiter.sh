@@ -22,8 +22,11 @@
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
 
-DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+DIR="$(cd "$(dirname "$0")"; pwd)"
+# Run from the source checkout without installing the package.
+PYTHONPATH="$DIR/..${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+BIN="$DIR"
 ETC="$DIR"/../etc
 
 # Need to change directory to .../var because arbiter doesn't have a
@@ -31,4 +34,4 @@ ETC="$DIR"/../etc
 cd "$DIR/../var"
 
 echo "Launching Arbiter (which reads configuration and dispatches it)"
-"$BIN"/shinken_arbiter.py -d -c "$ETC"/shinken.cfg
+"$BIN"/shinken-arbiter.py -d -c "$ETC"/shinken.cfg

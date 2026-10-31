@@ -22,38 +22,32 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
+from shinken.imports import Empty
 
 # In android, we should use threads, not process
-
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+is_android = True
 try:
     import android
-    is_android = True
 except ImportError:
     is_android = False
 
-if is_android:
-    from threading import Thread as Process
+if not is_android:
+    from multiprocessing import Process, Queue
 else:
-    from multiprocessing import Process
+    from Queue import Queue
+    from threading import Thread as Process
 
-import six
 import os
-import io
 import time
 import sys
 import signal
 import traceback
-import multiprocessing
-if six.PY2:
-    from Queue import Queue, Empty
-else:
-    from queue import Queue, Empty
+from shinken.imports import StringIO as cStringIO
 
 
 from shinken.log import logger, BrokHandler
 from shinken.misc.common import setproctitle
+from shinken.util import die_with_parent, parent_is_gone
 
 class Worker(object):
     """This class is used for poller and reactionner to work.
@@ -82,10 +76,7 @@ class Worker(object):
         self._timeout = timeout
         self.s = None
         self.processes_by_worker = processes_by_worker
-        if is_android:
-            self._c = Queue()  # Private Control queue for the Worker
-        else:
-            self._c = multiprocessing.Queue()  # Private Control queue for the Worker
+        self._c = Queue()  # Private Control queue for the Worker
         # By default, take our own code
         if target is None:
             target = self.work
@@ -93,14 +84,30 @@ class Worker(object):
         self.returns_queue = returns_queue
         self.max_plugins_output_length = max_plugins_output_length
         self.i_am_dying = False
+        # pid of the daemon owning this worker: the worker must not outlive it
+        self._parent_pid = os.getpid()
         # Keep a trace where the worker is launch from (poller or reactionner?)
         self.loaded_into = loaded_into
         if os.name != 'nt':
             self.http_daemon = http_daemon
-        else:  # windows forker do not like serialize http/lock
+        else:  # windows forker do not like pickle http/lock
             self.http_daemon = None
 
     def _prework(self, real_work, *args):
+        """Prepare the forked worker process, then run ``real_work``.
+
+        The worker dies with its parent daemon and closes its copy of the
+        daemon listening socket, so that a daemon killed with SIGKILL can be
+        restarted on the same port.
+        """
+        if not is_android:
+            die_with_parent(self._parent_pid)
+            if self.http_daemon is not None:
+                try:
+                    self.http_daemon.close_listening_sockets()
+                except Exception as exp:
+                    logger.warning("[%d] cannot close the inherited HTTP socket: %s",
+                                   self.id, exp)
         for handler in list(logger.handlers):
             if isinstance(handler, BrokHandler):
                 logger.info("Cleaning BrokHandler %r from logger.handlers..", handler)
@@ -160,18 +167,18 @@ class Worker(object):
     def get_new_checks(self):
         try:
             while(len(self.checks) < self.processes_by_worker):
-                # print("I", self.id, "wait for a message")
+                # print "I", self.id, "wait for a message"
                 msg = self.s.get(block=False)
                 if msg is not None:
                     self.checks.append(msg.get_data())
-                # print("I", self.id, "I've got a message!")
-        except Empty as exp:
+                # print "I", self.id, "I've got a message!"
+        except Empty:
             if len(self.checks) == 0:
                 self._idletime = self._idletime + 1
                 time.sleep(1)
         # Maybe the Queue() is not available, if so, just return
         # get back to work :)
-        except IOError as exp:
+        except IOError:
             return
 
 
@@ -242,9 +249,9 @@ class Worker(object):
     def work(self, s, returns_queue, c):
         try:
             self.do_work(s, returns_queue, c)
-        # Catch any exception, try to print(it and exit anyway)
+        # Catch any exception, try to print it and exit anyway
         except Exception as exp:
-            output = io.StringIO()
+            output = cStringIO.StringIO()
             traceback.print_exc(file=output)
             logger.error("Worker '%d' exit with an unmanaged exception : %s",
                          self.id, output.getvalue())
@@ -266,9 +273,14 @@ class Worker(object):
 
         self.set_proctitle()
 
-        print("I STOP THE http_daemon", self.http_daemon)
         if self.http_daemon:
-            self.http_daemon.shutdown()
+            # The worker is forked after the Cheroot server has started its
+            # thread pool.  Stopping that copied server in the child can wait
+            # forever for threads which only exist in the parent process.
+            # Workers are terminated with their owning satellite, so discard
+            # the inherited Python object without touching the parent's
+            # running server.
+            self.http_daemon = None
 
         timeout = 1.0
         self.checks = []
@@ -305,6 +317,12 @@ class Worker(object):
             if len(self.checks) == 0 and self.i_am_dying:
                 logger.warning("[%d] I DIE because I cannot do my job as I should"
                                "(too many open files?)... forgot me please.", self.id)
+                break
+
+            # Our daemon was killed (no 'Die' message could be sent): exit
+            # instead of becoming an orphan
+            if not is_android and parent_is_gone(self._parent_pid):
+                logger.warning("[%d] My parent daemon is gone, I exit", self.id)
                 break
 
             # Manage a possible time change (our avant will be change with the diff)

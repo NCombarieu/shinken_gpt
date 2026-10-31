@@ -3,8 +3,6 @@
 # Copyright (C) 2009-2014:
 #     Gabes Jean, naparuba@gmail.com
 #     Gerhard Lausser, Gerhard.Lausser@consol.de
-#     Gregory Starck, g.starck@gmail.com
-#     Hartmut Goebel, h.goebel@goebel-consult.de
 #
 # This file is part of Shinken.
 #
@@ -21,120 +19,162 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
+"""Restricted unpickling of the data exchanged between Shinken daemons.
 
-import six
-import sys
+Daemons exchange pickled objects over HTTP (configuration, checks,
+notifications, broks, external commands...). Unpickling untrusted data can
+run arbitrary code, so every pickle received from the network must be
+loaded with :class:`SafeUnpickler`, which only resolves the globals listed
+in :data:`PICKLE_SAFE`: the Shinken classes that are really exchanged and a
+couple of harmless builtins. Any other global (``os.system``,
+``subprocess.Popen``, ``builtins.eval``, ``importlib.import_module``, a
+function of a Shinken module...) is refused with ``ValueError``.
+
+This is the strict, class by class whitelist of Shinken 2.4.4 (fix of the
+remote code execution through pickle), adapted to Python 3.
+"""
+
 import io
+import pickle
+import sys
 
-# Unpickle but strip and remove all __reduce__ things
-# so we don't allow external code to be executed
+# Python 2 module names that can still show up inside a pickle stream
+# (payload produced by Python 2, or protocol 0/1 streams) but no longer
+# exist under that name.
+_PY2_MODULE_ALIASES = {
+    'copy_reg': 'copyreg',
+    '__builtin__': 'builtins',
+}
+
+# module -> names that may be resolved while unpickling.
+# Be sure to whitelist ONLY what really needs to be unpickled, so that a
+# crafted payload cannot reach other callables (bottle, os, importlib...).
 PICKLE_SAFE = {
-    'copy_reg'                                : ['_reconstructor'],
-    '__builtin__'                             : ['object', 'set'],
-    'builtins'                                : ['object', 'set'],
+    'copy_reg': frozenset(['_reconstructor']),
+    'copyreg': frozenset(['_reconstructor']),
+    '__builtin__': frozenset(['object', 'set', 'frozenset']),
+    'builtins': frozenset(['object', 'set', 'frozenset']),
+    # Python 3 pickles bytes as _codecs.encode(str, 'latin1') with the
+    # protocols 0 to 2 (used for the realm configurations). Encoding a
+    # string with a registered codec cannot run arbitrary code.
+    '_codecs': frozenset(['encode']),
 
-    # Be sure to white list all we need to pickle.loads so user cannot exploit other modules (like bottle ^^)
-    'shinken.acknowledge'                     : ['Acknowledge'],
-    'shinken.basemodule'                      : ['BaseModule'],
-    'shinken.borg'                            : ['Borg'],
-    'shinken.check'                           : ['Check'],
-    'shinken.brok'                            : ['Brok'],
-    'shinken.commandcall'                     : ['CommandCall'],
-    'shinken.comment'                         : ['Comment'],
-    'shinken.complexexpression'               : ['ComplexExpressionNode'],
-    'shinken.contactdowntime'                 : ['ContactDowntime'],
-    'shinken.daterange'                       : ['Timerange',
-                                                     'Daterange',
-                                                     'CalendarDaterange',
-                                                     'StandardDaterange',
-                                                     'MonthWeekDayDaterange',
-                                                     'MonthDateDaterange',
-                                                     'WeekDayDaterange',
-                                                     'MonthDayDaterange',
-                                                     ],
-    'shinken.dependencynode'                  : ['DependencyNode'],
-    'shinken.downtime'                        : ['Downtime'],
-    'shinken.discovery.discoverymanager'      : ['DiscoveredHost'],
-    'shinken.eventhandler'                    : ['EventHandler'],
-    'shinken.external_command'                : ['ExternalCommand'],
-    'shinken.graph'                           : ['Graph'],
-    'shinken.message'                         : ['Message'],
-    'shinken.modulesctx'                      : ['ModulesContext'],
-    'shinken.modulesmanager'                  : ['ModulesManager'],
-    'shinken.notification'                    : ['Notification'],
-    'shinken.objects.command'                 : ['DummyCommand', 'Command', 'Commands'],
-    'shinken.objects.arbiterlink'             : ['ArbiterLink', 'ArbiterLinks'],
-    'shinken.objects.businessimpactmodulation': ['Businessimpactmodulation', 'Businessimpactmodulations'],
-    'shinken.objects.brokerlink'              : ['BrokerLink', 'BrokerLinks'],
-    'shinken.objects.checkmodulation'         : ['CheckModulation', 'CheckModulations'],
-    'shinken.objects.config'                  : ['Config'],
-    'shinken.objects.contact'                 : ['Contact', 'Contacts'],
-    'shinken.objects.contactgroup'            : ['Contactgroup', 'Contactgroups'],
-    'shinken.objects.discoveryrule'           : ['Discoveryrule', 'Discoveryrules'],
-    'shinken.objects.discoveryrun'            : ['Discoveryrun', 'Discoveryruns'],
-    'shinken.objects.escalation'              : ['Escalation', 'Escalations'],
-    'shinken.objects.hostdependency'          : ['Hostdependency', 'Hostdependencies'],
-    'shinken.objects.host'                    : ['Host', 'Hosts'],
-    'shinken.objects.hostescalation'          : ['Hostescalation', 'Hostescalations'],
-    'shinken.objects.itemgroup'               : ['Itemgroup', 'Itemgroups'],
-    'shinken.objects.hostgroup'               : ['Hostgroup', 'Hostgroups'],
-    'shinken.objects.hostextinfo'             : ['HostExtInfo', 'HostsExtInfo'],
-    'shinken.objects.item'                    : ['Item', 'Items'],
-    'shinken.objects.macromodulation'         : ['MacroModulation', 'MacroModulations'],
-    'shinken.objects.matchingitem'            : ['MatchingItem'],
-    'shinken.objects.pack'                    : ['Pack', 'Packs'],
-    'shinken.objects.notificationway'         : ['NotificationWay', 'NotificationWays'],
-    'shinken.objects.module'                  : ['Module', 'Modules'],
-    'shinken.objects.pollerlink'              : ['PollerLink', 'PollerLinks'],
-    'shinken.objects.reactionnerlink'         : ['ReactionnerLink', 'ReactionnerLinks'],
-    'shinken.objects.realm'                   : ['Realm', 'Realms'],
-    'shinken.objects.receiverlink'            : ['ReceiverLink', 'ReceiverLinks'],
-    'shinken.objects.resultmodulation'        : ['Resultmodulation', 'Resultmodulations'],
-    'shinken.objects.satellitelink'           : ['SatelliteLink', 'SatelliteLinks'],
-    'shinken.objects.schedulingitem'          : ['SchedulingItem'],
-    'shinken.objects.schedulerlink'           : ['SchedulerLink', 'SchedulerLinks'],
-    'shinken.objects.service'                 : ['Service', 'Services'],
-    'shinken.objects.servicedependency'       : ['Servicedependency', 'Servicedependencies'],
-    'shinken.objects.serviceescalation'       : ['Serviceescalation', 'Serviceescalations'],
-    'shinken.objects.serviceextinfo'          : ['ServiceExtInfo', 'ServicesExtInfo'],
-    'shinken.objects.servicegroup'            : ['Servicegroup', 'Servicegroups'],
-    'shinken.objects.timeperiod'              : ['Timeperiod', 'Timeperiods'],
-    'shinken.objects.trigger'                 : ['Trigger', 'Triggers'],
-
+    'shinken.acknowledge': frozenset(['Acknowledge']),
+    'shinken.basemodule': frozenset(['BaseModule']),
+    'shinken.borg': frozenset(['Borg']),
+    'shinken.brok': frozenset(['Brok']),
+    'shinken.check': frozenset(['Check']),
+    'shinken.commandcall': frozenset(['CommandCall', 'DummyCommandCall']),
+    'shinken.comment': frozenset(['Comment']),
+    'shinken.complexexpression': frozenset(['ComplexExpressionNode']),
+    'shinken.contactdowntime': frozenset(['ContactDowntime']),
+    'shinken.daterange': frozenset(['Timerange',
+                                    'Daterange',
+                                    'CalendarDaterange',
+                                    'StandardDaterange',
+                                    'MonthWeekDayDaterange',
+                                    'MonthDateDaterange',
+                                    'WeekDayDaterange',
+                                    'MonthDayDaterange']),
+    'shinken.dependencynode': frozenset(['DependencyNode']),
+    'shinken.discovery.discoverymanager': frozenset(['DiscoveredHost']),
+    'shinken.downtime': frozenset(['Downtime']),
+    'shinken.eventhandler': frozenset(['EventHandler']),
+    'shinken.external_command': frozenset(['ExternalCommand']),
+    'shinken.graph': frozenset(['Graph']),
+    'shinken.message': frozenset(['Message']),
+    'shinken.modulesctx': frozenset(['ModulesContext']),
+    'shinken.modulesmanager': frozenset(['ModulesManager']),
+    'shinken.notification': frozenset(['Notification']),
+    'shinken.objects.arbiterlink': frozenset(['ArbiterLink', 'ArbiterLinks']),
+    'shinken.objects.brokerlink': frozenset(['BrokerLink', 'BrokerLinks']),
+    'shinken.objects.businessimpactmodulation': frozenset(['Businessimpactmodulation',
+                                                           'Businessimpactmodulations']),
+    'shinken.objects.checkmodulation': frozenset(['CheckModulation', 'CheckModulations']),
+    'shinken.objects.command': frozenset(['DummyCommand', 'Command', 'Commands']),
+    'shinken.objects.config': frozenset(['Config']),
+    'shinken.objects.contact': frozenset(['Contact', 'Contacts']),
+    'shinken.objects.contactgroup': frozenset(['Contactgroup', 'Contactgroups']),
+    'shinken.objects.discoveryrule': frozenset(['Discoveryrule', 'Discoveryrules']),
+    'shinken.objects.discoveryrun': frozenset(['Discoveryrun', 'Discoveryruns']),
+    'shinken.objects.escalation': frozenset(['Escalation', 'Escalations']),
+    'shinken.objects.host': frozenset(['Host', 'Hosts']),
+    'shinken.objects.hostdependency': frozenset(['Hostdependency', 'Hostdependencies']),
+    'shinken.objects.hostescalation': frozenset(['Hostescalation', 'Hostescalations']),
+    'shinken.objects.hostextinfo': frozenset(['HostExtInfo', 'HostsExtInfo']),
+    'shinken.objects.hostgroup': frozenset(['Hostgroup', 'Hostgroups']),
+    'shinken.objects.item': frozenset(['Item', 'Items']),
+    'shinken.objects.itemgroup': frozenset(['Itemgroup', 'Itemgroups']),
+    'shinken.objects.macromodulation': frozenset(['MacroModulation', 'MacroModulations']),
+    'shinken.objects.matchingitem': frozenset(['MatchingItem']),
+    'shinken.objects.module': frozenset(['Module', 'Modules']),
+    'shinken.objects.notificationway': frozenset(['NotificationWay', 'NotificationWays']),
+    'shinken.objects.pack': frozenset(['Pack', 'Packs']),
+    'shinken.objects.pollerlink': frozenset(['PollerLink', 'PollerLinks']),
+    'shinken.objects.reactionnerlink': frozenset(['ReactionnerLink', 'ReactionnerLinks']),
+    'shinken.objects.realm': frozenset(['Realm', 'Realms']),
+    'shinken.objects.receiverlink': frozenset(['ReceiverLink', 'ReceiverLinks']),
+    'shinken.objects.resultmodulation': frozenset(['Resultmodulation', 'Resultmodulations']),
+    'shinken.objects.satellitelink': frozenset(['SatelliteLink', 'SatelliteLinks']),
+    'shinken.objects.schedulerlink': frozenset(['SchedulerLink', 'SchedulerLinks']),
+    'shinken.objects.schedulingitem': frozenset(['SchedulingItem']),
+    'shinken.objects.service': frozenset(['Service', 'Services']),
+    'shinken.objects.servicedependency': frozenset(['Servicedependency',
+                                                    'Servicedependencies']),
+    'shinken.objects.serviceescalation': frozenset(['Serviceescalation',
+                                                    'Serviceescalations']),
+    'shinken.objects.serviceextinfo': frozenset(['ServiceExtInfo', 'ServicesExtInfo']),
+    'shinken.objects.servicegroup': frozenset(['Servicegroup', 'Servicegroups']),
+    'shinken.objects.timeperiod': frozenset(['Timeperiod', 'Timeperiods']),
+    'shinken.objects.trigger': frozenset(['Trigger', 'Triggers']),
 }
 
 
 def find_class(module, name):
-    if module not in PICKLE_SAFE:
+    """Resolve a global of a pickle stream if, and only if, it is whitelisted.
+
+    :param str module: module name found in the pickle stream
+    :param str name: global name found in the pickle stream
+    :raise ValueError: if the module or the name is not in :data:`PICKLE_SAFE`
+    :return: the class (or harmless builtin) to use
+    """
+    allowed_names = PICKLE_SAFE.get(module)
+    if allowed_names is None:
         raise ValueError('Attempting to unpickle unsafe module %s' % module)
-    __import__(module)
-    mod = sys.modules[module]
-    if name not in PICKLE_SAFE[module]:
-        raise ValueError('Attempting to unpickle unsafe class %s/%s' %
-                         (module, name))
-    return getattr(mod, name)
+    if name not in allowed_names:
+        raise ValueError('Attempting to unpickle unsafe class %s/%s' % (module, name))
+    real_module = _PY2_MODULE_ALIASES.get(module, module)
+    __import__(real_module)
+    return getattr(sys.modules[real_module], name)
 
 
-if six.PY2:
-    # This is a dirty hack for python2 as it's impossible to subclass
-    # Unpickler from the cPickle module.
-    # This implementation mimics the Unpickler interface but use an external
-    # Unpickler instance
-    import cPickle
+class _RestrictedUnpickler(pickle.Unpickler):
+    """``pickle.Unpickler`` that resolves globals with :func:`find_class`."""
 
-    class SafeUnpickler(object):
+    def find_class(self, module, name):
+        return find_class(module, name)
 
-        def __init__(self, _bytes):
-            self._bytes = _bytes
 
-        def load(self):
-            pickle_obj = cPickle.Unpickler(self._bytes)
-            pickle_obj.find_global = find_class
-            return pickle_obj.load()
-else:
-    import pickle
+class SafeUnpickler(object):
+    """Entry point to unpickle data received from another daemon."""
 
-    class SafeUnpickler(pickle.Unpickler):
+    PICKLE_SAFE = PICKLE_SAFE
 
-        find_class = staticmethod(find_class)
+    @classmethod
+    def find_class(cls, module, name):
+        """Compatibility helper for callers using the historical API."""
+        return find_class(module, name)
+
+    @classmethod
+    def loads(cls, pickle_string):
+        """Unpickle ``pickle_string`` with the restricted whitelist.
+
+        :param pickle_string: the pickle, as ``bytes``. A ``str`` is accepted
+            for protocol 0 payloads that travelled through text streams; it
+            is encoded back with latin-1 (one to one byte mapping).
+        :raise ValueError: if the payload references a forbidden global
+        :raise pickle.UnpicklingError: if the payload is not a valid pickle
+        """
+        if isinstance(pickle_string, str):
+            pickle_string = pickle_string.encode('latin-1')
+        return _RestrictedUnpickler(io.BytesIO(pickle_string)).load()

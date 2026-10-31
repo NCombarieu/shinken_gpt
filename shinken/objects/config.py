@@ -28,49 +28,48 @@
  them into independent parts. The main user of this is Arbiter, but schedulers
  use it too (but far less)"""
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import six
 import re
 import sys
 import string
 import os
-import io
 import socket
 import itertools
 import time
 import random
 import tempfile
+from multiprocessing import Process, Manager
 import json
 
-from multiprocessing import Process, Manager
-from shinken.objects.item import Item
-from shinken.objects.timeperiod import Timeperiod, Timeperiods
-from shinken.objects.service import Service, Services
-from shinken.objects.command import Command, Commands
-from shinken.objects.resultmodulation import Resultmodulation, Resultmodulations
-from shinken.objects.businessimpactmodulation import Businessimpactmodulation, Businessimpactmodulations
-from shinken.objects.escalation import Escalation, Escalations
-from shinken.objects.serviceescalation import Serviceescalation, Serviceescalations
-from shinken.objects.hostescalation import Hostescalation, Hostescalations
-from shinken.objects.host import Host, Hosts
-from shinken.objects.hostgroup import Hostgroup, Hostgroups
-from shinken.objects.realm import Realm, Realms
-from shinken.objects.contact import Contact, Contacts
-from shinken.objects.contactgroup import Contactgroup, Contactgroups
-from shinken.objects.notificationway import NotificationWay, NotificationWays
-from shinken.objects.checkmodulation import CheckModulation, CheckModulations
-from shinken.objects.macromodulation import MacroModulation, MacroModulations
-from shinken.objects.servicegroup import Servicegroup, Servicegroups
-from shinken.objects.servicedependency import Servicedependency, Servicedependencies
-from shinken.objects.hostdependency import Hostdependency, Hostdependencies
-from shinken.objects.module import Module, Modules
-from shinken.objects.discoveryrule import Discoveryrule, Discoveryrules
-from shinken.objects.discoveryrun import Discoveryrun, Discoveryruns
-from shinken.objects.hostextinfo import HostExtInfo, HostsExtInfo
-from shinken.objects.serviceextinfo import ServiceExtInfo, ServicesExtInfo
-from shinken.objects.trigger import Triggers
-from shinken.objects.pack import Packs
+import pickle
+from shinken.imports import StringIO
+from .item import Item
+from .timeperiod import Timeperiod, Timeperiods
+from .service import Service, Services
+from .command import Command, Commands
+from .resultmodulation import Resultmodulation, Resultmodulations
+from .businessimpactmodulation import Businessimpactmodulation, Businessimpactmodulations
+from .escalation import Escalation, Escalations
+from .serviceescalation import Serviceescalation, Serviceescalations
+from .hostescalation import Hostescalation, Hostescalations
+from .host import Host, Hosts
+from .hostgroup import Hostgroup, Hostgroups
+from .realm import Realm, Realms
+from .contact import Contact, Contacts
+from .contactgroup import Contactgroup, Contactgroups
+from .notificationway import NotificationWay, NotificationWays
+from .checkmodulation import CheckModulation, CheckModulations
+from .macromodulation import MacroModulation, MacroModulations
+from .servicegroup import Servicegroup, Servicegroups
+from .servicedependency import Servicedependency, Servicedependencies
+from .hostdependency import Hostdependency, Hostdependencies
+from .module import Module, Modules
+from .discoveryrule import Discoveryrule, Discoveryrules
+from .discoveryrun import Discoveryrun, Discoveryruns
+from .hostextinfo import HostExtInfo, HostsExtInfo
+from .serviceextinfo import ServiceExtInfo, ServicesExtInfo
+from .trigger import Triggers
+from .pack import Packs
+from shinken.util import split_semicolon, unicode_to_bytes, bytes_to_unicode
 from shinken.objects.arbiterlink import ArbiterLink, ArbiterLinks
 from shinken.objects.schedulerlink import SchedulerLink, SchedulerLinks
 from shinken.objects.reactionnerlink import ReactionnerLink, ReactionnerLinks
@@ -82,8 +81,7 @@ from shinken.log import logger
 from shinken.property import (UnusedProp, BoolProp, IntegerProp, CharProp,
                               StringProp, LogLevelProp, ListProp, ToGuessProp)
 from shinken.daemon import get_cur_user, get_cur_group
-from shinken.util import split_semicolon, jsonify_r
-from shinken.serializer import serialize
+from shinken.util import jsonify_r, string_decode, string_encode, read_text_file
 
 
 no_longer_used_txt = ('This parameter is not longer take from the main file, but must be defined '
@@ -106,7 +104,7 @@ class Config(Item):
     #  same name
     # *unused: just to warn the user that the option he use is no more used
     #  in Shinken
-    # *usage_text: if present, will print(it to explain why it's no more useful)
+    # *usage_text: if present, will print it to explain why it's no more useful
     properties = {
         'prefix':
             StringProp(default='/usr/local/shinken/'),
@@ -120,14 +118,12 @@ class Config(Item):
         'modules_dir':
             StringProp(default='/var/lib/shinken/modules'),
 
-        'conflict_policy':
-            StringProp(default='loose'),
-
         'use_local_log':
             BoolProp(default=True),
 
         'log_level':
             LogLevelProp(default='WARNING'),
+
 
         'local_log':
             StringProp(default='/var/log/shinken/arbiterd.log'),
@@ -569,9 +565,6 @@ class Config(Item):
         'enable_problem_impacts_states_change':
             BoolProp(default=False, class_inherit=[(Host, None), (Service, None)]),
 
-        'enable_problem_impacts_states_reprocessing':
-            BoolProp(default=False, class_inherit=[(Host, None), (Service, None)]),
-
         # More a running value in fact
         'resource_macros_names':
             ListProp(default=[]),
@@ -805,9 +798,6 @@ class Config(Item):
         self.triggers = Triggers({})
         self.packs_dirs = []
         self.packs = Packs({})
-        # Initialize conflict_policy soon as it's required during object lists
-        # creation.
-        self.conflict_policy = self.properties["conflict_policy"].default
 
     def get_name(self):
         return 'global configuration file'
@@ -841,6 +831,12 @@ class Config(Item):
 
     def load_params(self, params):
         clean_params = self.clean_params(params)
+        # Remember which parameters the administrator actually wrote, so the
+        # "useless/unmanaged parameter" notices only mention those.
+        explicit = getattr(self, '_explicit_params', None)
+        if explicit is None:
+            explicit = self._explicit_params = set()
+        explicit.update(clean_params)
 
         for key, value in clean_params.items():
 
@@ -875,34 +871,43 @@ class Config(Item):
         return r
 
     def read_config(self, files):
-        # just a first pass to get the cfg_file and all files in a buf
-        res = io.StringIO()
+        """Read the main configuration files and the files they include.
+
+        ``cfg_file``, ``resource_file`` and ``cfg_dir`` (``*.cfg`` files) are
+        followed. Files are decoded as UTF-8, with a latin-1 fallback (see
+        :func:`shinken.util.read_text_file`). A file that cannot be read is
+        logged with its name and makes the configuration incorrect.
+
+        :param list files: paths of the main configuration files
+        :return: the concatenated content, each file preceded by an
+            ``# IMPORTEDFROM=<path>`` marker
+        :rtype: str
+        """
+        res = StringIO()
 
         for file in files:
             # We add a \n (or \r\n) to be sure config files are separated
             # if the previous does not finish with a line return
-            linesep = six.u(os.linesep)
-            res.write(linesep)
-            res.write('# IMPORTEDFROM=%s' % (file) + linesep)
+            res.write(os.linesep)
+            res.write('# IMPORTEDFROM=%s' % (file) + os.linesep)
             if self.read_config_silent == 0:
                 logger.info("[config] opening '%s' configuration file", file)
             try:
-                # Open in Universal way for Windows, Mac, Linux
-                with open(file, 'r') as f:
-                    buf = map(six.u, f.readlines())
+                buf = read_text_file(file).splitlines(True)
                 self.config_base_dir = os.path.dirname(file)
-            except IOError as exp:
+            except (IOError, OSError) as exp:
                 logger.error("[config] cannot open config file '%s' for reading: %s", file, exp)
                 # The configuration is invalid because we have a bad file!
                 self.conf_is_correct = False
                 continue
 
             for line in buf:
+                line = string_decode(line)
                 res.write(line)
                 if line.endswith('\n'):
                     line = line[:-1]
                 line = line.strip()
-                if re.search(r"^cfg_file", line) or re.search(r"^resource_file", line):
+                if re.search("^cfg_file", line) or re.search("^resource_file", line):
                     elts = line.split('=', 1)
                     if os.path.isabs(elts[1]):
                         cfg_file_name = elts[1]
@@ -910,23 +915,19 @@ class Config(Item):
                         cfg_file_name = os.path.join(self.config_base_dir, elts[1])
                     cfg_file_name = cfg_file_name.strip()
                     try:
-                        fd = open(cfg_file_name, 'r')
+                        txt = read_text_file(cfg_file_name)
                         if self.read_config_silent == 0:
                             logger.info("Processing object config file '%s'", cfg_file_name)
-                        res.write(linesep + '# IMPORTEDFROM=%s' % (cfg_file_name) + linesep)
-                        if six.PY2:
-                            res.write(fd.read().decode("utf-8"))
-                        else:
-                            res.write(fd.read())
+                        res.write(os.linesep + '# IMPORTEDFROM=%s' % (cfg_file_name) + os.linesep)
+                        res.write(txt)
                         # Be sure to add a line return so we won't mix files
-                        res.write(linesep)
-                        fd.close()
-                    except IOError as exp:
+                        res.write(os.linesep)
+                    except (IOError, OSError) as exp:
                         logger.error("Cannot open config file '%s' for reading: %s",
                                      cfg_file_name, exp)
                         # The configuration is invalid because we have a bad file!
                         self.conf_is_correct = False
-                elif re.search(r"^cfg_dir", line):
+                elif re.search("^cfg_dir", line):
                     elts = line.split('=', 1)
                     if os.path.isabs(elts[1]):
                         cfg_dir_name = elts[1]
@@ -948,20 +949,19 @@ class Config(Item):
                                     logger.info("Processing object config file '%s'",
                                                 os.path.join(root, file))
                                 try:
-                                    res.write(linesep + '# IMPORTEDFROM=%s' %
-                                              (os.path.join(root, file)) + linesep)
-                                    fd = open(os.path.join(root, file), 'r')
-                                    res.write(six.u(fd.read()))
+                                    txt = read_text_file(os.path.join(root, file))
+                                    res.write(os.linesep + '# IMPORTEDFROM=%s' %
+                                              (os.path.join(root, file)) + os.linesep)
+                                    res.write(txt)
                                     # Be sure to separate files data
-                                    res.write(linesep)
-                                    fd.close()
-                                except IOError as exp:
+                                    res.write(os.linesep)
+                                except (IOError, OSError) as exp:
                                     logger.error("Cannot open config file '%s' for reading: %s",
                                                  os.path.join(root, file), exp)
                                     # The configuration is invalid
                                     # because we have a bad file!
                                     self.conf_is_correct = False
-                elif re.search(r"^triggers_dir", line):
+                elif re.search("^triggers_dir", line):
                     elts = line.split('=', 1)
                     if os.path.isabs(elts[1]):
                         trig_dir_name = elts[1]
@@ -974,11 +974,6 @@ class Config(Item):
                         continue
                     # Ok it's a valid one, I keep it
                     self.triggers_dirs.append(trig_dir_name)
-                # Early read conflict_policy because it's necessary when
-                # parsing configuration files
-                elif re.search(r"^conflict_policy", line):
-                    elts = line.split('=', 1)
-                    self.conflict_policy = elts[1]
 
         config = res.getvalue()
         res.close()
@@ -1012,9 +1007,9 @@ class Config(Item):
             line = split_semicolon(line)[0].strip()
 
             # A backslash means, there is more to come
-            if re.search(r"\\\s*$", line) is not None:
+            if re.search(r"\\s*$", line) is not None:
                 continuation_line = True
-                line = re.sub(r"\\\s*$", "", line)
+                line = re.sub(r"\\s*$", "", line)
                 line = re.sub(r"^\s+", " ", line)
                 tmp_line += line
                 continue
@@ -1038,7 +1033,7 @@ class Config(Item):
                 pass
             # A define must be catch and the type save
             # The old entry must be save before
-            elif re.search(r"^define", line) is not None:
+            elif re.search("^define", line) is not None:
                 if re.search(r".*\{.*$", line) is not None:
                     in_define = True
                 else:
@@ -1069,7 +1064,7 @@ class Config(Item):
         objectscfg[tmp_type].append(tmp)
         objects = {}
 
-        # print("Params", params)
+        # print "Params", params
         self.load_params(params)
         # And then update our MACRO dict
         self.fill_resource_macros_names_macros()
@@ -1142,7 +1137,7 @@ class Config(Item):
             o.old_properties_names_to_new()
             lst.append(o)
         # we create the objects Class and we set it in prop
-        setattr(self, prop, clss(lst, initial_index, self.conflict_policy))
+        setattr(self, prop, clss(lst, initial_index))
 
 
     # Here arbiter and modules objects should be prepare and link
@@ -1153,7 +1148,7 @@ class Config(Item):
         if len(self.arbiters) == 0:
             logger.warning("There is no arbiter, I add one in localhost:7770")
             a = ArbiterLink({'arbiter_name': 'Default-Arbiter',
-                             'host_name': six.u(socket.gethostname()),
+                             'host_name': socket.gethostname(),
                              'address': 'localhost', 'port': '7770',
                              'spare': '0'})
             self.arbiters = ArbiterLinks([a])
@@ -1166,7 +1161,7 @@ class Config(Item):
         self.modules.fill_default()
 
 
-        # print("****************** Linkify ******************")
+        # print "****************** Linkify ******************"
         self.arbiters.linkify(self.modules)
         self.modules.linkify()
 
@@ -1198,7 +1193,7 @@ class Config(Item):
         self.linkify_one_command_with_commands(self.commands, 'global_host_event_handler')
         self.linkify_one_command_with_commands(self.commands, 'global_service_event_handler')
 
-        # print("Hosts")
+        # print "Hosts"
         # link hosts with timeperiods and commands
         self.hosts.linkify(self.timeperiods, self.commands,
                            self.contacts, self.realms,
@@ -1211,11 +1206,11 @@ class Config(Item):
         self.hostsextinfo.merge(self.hosts)
 
         # Do the simplify AFTER explode groups
-        # print("Hostgroups")
+        # print "Hostgroups"
         # link hostgroups with hosts
         self.hostgroups.linkify(self.hosts, self.realms)
 
-        # print("Services")
+        # print "Services"
         # link services with other objects
         self.services.linkify(self.hosts, self.commands,
                               self.timeperiods, self.contacts,
@@ -1227,7 +1222,7 @@ class Config(Item):
 
         self.servicesextinfo.merge(self.services)
 
-        # print("Service groups")
+        # print "Service groups"
         # link servicegroups members with services
         self.servicegroups.linkify(self.hosts, self.services)
 
@@ -1240,41 +1235,41 @@ class Config(Item):
         # Link with timeperiods
         self.macromodulations.linkify(self.timeperiods)
 
-        # print("Contactgroups")
+        # print "Contactgroups"
         # link contacgroups with contacts
         self.contactgroups.linkify(self.contacts)
 
-        # print("Contacts")
+        # print "Contacts"
         # link contacts with timeperiods and commands
         self.contacts.linkify(self.timeperiods, self.commands,
                               self.notificationways)
 
-        # print("Timeperiods")
+        # print "Timeperiods"
         # link timeperiods with timeperiods (exclude part)
         self.timeperiods.linkify()
 
-        # print("Servicedependency")
+        # print "Servicedependency"
         self.servicedependencies.linkify(self.hosts, self.services,
                                          self.timeperiods)
 
-        # print("Hostdependency")
+        # print "Hostdependency"
         self.hostdependencies.linkify(self.hosts, self.timeperiods)
-        # print("Resultmodulations")
+        # print "Resultmodulations"
         self.resultmodulations.linkify(self.timeperiods)
 
         self.businessimpactmodulations.linkify(self.timeperiods)
 
-        # print("Escalations")
+        # print "Escalations"
         self.escalations.linkify(self.timeperiods, self.contacts,
                                  self.services, self.hosts)
 
         # Link discovery commands
         self.discoveryruns.linkify(self.commands)
 
-        # print("Realms")
+        # print "Realms"
         self.realms.linkify()
 
-        # print("Schedulers and satellites")
+        # print "Schedulers and satellites"
         # Link all links with realms
         # self.arbiters.linkify(self.modules)
         self.schedulers.linkify(self.realms, self.modules)
@@ -1345,11 +1340,13 @@ class Config(Item):
                     conf.hostgroups.prepare_for_sending()
                     logger.debug('[%s] Serializing the configuration %d', r.get_name(), i)
                     t0 = time.time()
-                    r.serialized_confs[i] = serialize(conf)
+                    r.serialized_confs[i] = pickle.dumps(conf, 0)  # pickle.HIGHEST_PROTOCOL)
                     logger.debug("[config] time to serialize the conf %s:%s is %s (size:%s)",
                                  r.get_name(), i, time.time() - t0, len(r.serialized_confs[i]))
+                    logger.debug("PICKLE LEN : %d", len(r.serialized_confs[i]))
+            # Now pickle the whole conf, for easy and quick spare send
             t0 = time.time()
-            whole_conf_pack = serialize(self)
+            whole_conf_pack = pickle.dumps(self, pickle.HIGHEST_PROTOCOL)
             logger.debug("[config] time to serialize the global conf : %s (size:%s)",
                          time.time() - t0, len(whole_conf_pack))
             self.whole_conf_pack = whole_conf_pack
@@ -1367,17 +1364,18 @@ class Config(Item):
                 processes = []
                 for (i, conf) in r.confs.items():
                     # This function will be called by the children, and will give
+                    # us the pickle result
                     def Serialize_config(q, rname, i, conf):
                         # Remember to protect the local conf hostgroups too!
                         conf.hostgroups.prepare_for_sending()
                         logger.debug('[%s] Serializing the configuration %d', rname, i)
                         t0 = time.time()
-                        res = serialize(conf)
+                        res = pickle.dumps(conf, pickle.HIGHEST_PROTOCOL)
                         logger.debug("[config] time to serialize the conf %s:%s is %s (size:%s)",
                                      rname, i, time.time() - t0, len(res))
                         q.append((i, res))
 
-                    # Prepare a sub-process that will manage the serialization computation
+                    # Prepare a sub-process that will manage the pickle computation
                     p = Process(target=Serialize_config,
                                 name="serializer-%s-%d" % (r.get_name(), i),
                                 args=(q, r.get_name(), i, conf))
@@ -1409,18 +1407,15 @@ class Config(Item):
                 for (i, cfg) in q:
                     r.serialized_confs[i] = cfg
 
+            # Now pickle the whole configuration into one big pickle object, for the arbiter spares
             whole_queue = m.list()
             t0 = time.time()
-
-
-            # The function that just compute the whole conf serialized string, but n a children
+            # The function that just compute the whole conf pickle string, but n a children
             def create_whole_conf_pack(whole_queue, self):
                 logger.debug("[config] sub processing the whole configuration pack creation")
-                whole_queue.append(serialize(self))
+                whole_queue.append(pickle.dumps(self, pickle.HIGHEST_PROTOCOL))
                 logger.debug("[config] sub processing the whole configuration pack creation "
                              "finished")
-
-
             # Go for it
             p = Process(target=create_whole_conf_pack,
                         args=(whole_queue, self),
@@ -1445,12 +1440,13 @@ class Config(Item):
             m.shutdown()
 
 
-    # It's used to warn about useless parameter and print(why it's not use.)
+    # It's used to warn about useless parameter and print why it's not use.
     def notice_about_useless_parameters(self):
         if not self.disable_old_nagios_parameters_whining:
             properties = self.__class__.properties
+            explicit = getattr(self, '_explicit_params', set())
             for prop, entry in properties.items():
-                if isinstance(entry, UnusedProp):
+                if isinstance(entry, UnusedProp) and prop in explicit:
                     logger.warning("The parameter %s is useless and can be removed "
                                    "from the configuration (Reason: %s)", prop, entry.text)
 
@@ -1461,7 +1457,7 @@ class Config(Item):
         properties = self.__class__.properties
         unmanaged = []
         for prop, entry in properties.items():
-            if not entry.managed and hasattr(self, prop):
+            if not entry.managed and prop in getattr(self, '_explicit_params', set()):
                 if entry.help:
                     s = "%s: %s" % (prop, entry.help)
                 else:
@@ -1488,32 +1484,32 @@ class Config(Item):
     # (for host group ones)
     def explode(self):
         # first elements, after groups
-        # print("Contacts")
+        # print "Contacts"
         self.contacts.explode(self.contactgroups, self.notificationways)
-        # print("Contactgroups")
+        # print "Contactgroups"
         self.contactgroups.explode()
 
-        # print("Hosts")
+        # print "Hosts"
         self.hosts.explode(self.hostgroups, self.contactgroups, self.triggers)
 
-        # print("Hostgroups")
+        # print "Hostgroups"
         self.hostgroups.explode()
 
-        # print("Services")
-        # print("Initially got nb of services: %d" % len(self.services.items))
+        # print "Services"
+        # print "Initially got nb of services: %d" % len(self.services.items)
         self.services.explode(self.hosts, self.hostgroups, self.contactgroups,
                               self.servicegroups, self.servicedependencies,
                               self.triggers)
-        # print("finally got nb of services: %d" % len(self.services.items))
-        # print("Servicegroups")
+        # print "finally got nb of services: %d" % len(self.services.items)
+        # print "Servicegroups"
         self.servicegroups.explode()
 
-        # print("Timeperiods")
+        # print "Timeperiods"
         self.timeperiods.explode()
 
         self.hostdependencies.explode(self.hostgroups)
 
-        # print("Servicedependency")
+        # print "Servicedependency"
         self.servicedependencies.explode(self.hostgroups)
 
         # Serviceescalations hostescalations will create new escalations
@@ -1523,7 +1519,7 @@ class Config(Item):
                                  self.contactgroups)
 
         # Now the architecture part
-        # print("Realms")
+        # print "Realms"
         self.realms.explode()
 
 
@@ -1538,15 +1534,15 @@ class Config(Item):
     # So elements will have their configured properties
     def apply_inheritance(self):
         # inheritance properties by template
-        # print("Hosts")
+        # print "Hosts"
         self.hosts.apply_inheritance()
-        # print("Contacts")
+        # print "Contacts"
         self.contacts.apply_inheritance()
-        # print("Services")
+        # print "Services"
         self.services.apply_inheritance()
-        # print("Servicedependencies")
+        # print "Servicedependencies"
         self.servicedependencies.apply_inheritance()
-        # print("Hostdependencies")
+        # print "Hostdependencies"
         self.hostdependencies.apply_inheritance()
         # Also timeperiods
         self.timeperiods.apply_inheritance()
@@ -1563,7 +1559,7 @@ class Config(Item):
 
     # Use to apply implicit inheritance
     def apply_implicit_inheritance(self):
-        # print("Services")
+        # print "Services"
         self.services.apply_implicit_inheritance(self.hosts)
 
 
@@ -2061,7 +2057,7 @@ class Config(Item):
 
 
 
-    # Add an error in the configuration error list so we can print(them)
+    # Add an error in the configuration error list so we can print them
     # all in one place
     def add_error(self, txt):
         err = txt
@@ -2075,28 +2071,6 @@ class Config(Item):
         for err in self.configuration_errors:
             logger.error(err)
 
-
-    def get_least_loaded_scheduler_id(self, scheduler_ids, distribution):
-        """
-        Returns the scheduler id having the lowest number of objects to manage
-
-        :param dict distribution: The packs distribution
-        :rtype: int
-        :return: The least weighted scheduler id
-        """
-        distribution_ids = list(distribution.values())
-        # Scheduler not having config yet have precedence
-        no_conf = [i for i in scheduler_ids if i not in distribution_ids]
-        if no_conf:
-            return random.choice(no_conf)
-        # Returns the scheduler id having the least managed objects
-        weighted_ids = dict(
-            [
-                (distribution_ids.count(i), i)
-                for i in set(distribution_ids)
-            ]
-        )
-        return weighted_ids[min(weighted_ids.keys())]
 
     # Create packs of hosts and services so in a pack,
     # all dependencies are resolved
@@ -2214,12 +2188,13 @@ class Config(Item):
         # Count the numbers of elements in all the realms, to compare it the total number of hosts
         nb_elements_all_realms = 0
         for r in self.realms:
-            # print("Load balancing realm", r.get_name())
+            # print "Load balancing realm", r.get_name()
             packs = {}
             # create roundrobin iterator for id of cfg
             # So dispatching is loadbalanced in a realm
             # but add a entry in the roundrobin tourniquet for
             # every weight point schedulers (so Weight round robin)
+            weight_list = []
             no_spare_schedulers = [s for s in r.schedulers if not s.spare]
             nb_schedulers = len(no_spare_schedulers)
 
@@ -2239,12 +2214,15 @@ class Config(Item):
                 r.packs = []  # Dumb pack
                 continue
 
+            packindex = 0
             packindices = {}
-            weight_scheduler_ids = []
-            for i, s in enumerate(no_spare_schedulers):
-                packindices[s.id] = i
-                for _ in range(0, s.weight):
-                    weight_scheduler_ids.append(s.id)
+            for s in no_spare_schedulers:
+                packindices[s.id] = packindex
+                packindex += 1
+                for i in range(0, s.weight):
+                    weight_list.append(s.id)
+
+            rr = itertools.cycle(weight_list)
 
             # We must have nb_schedulers packs
             for i in range(0, nb_schedulers):
@@ -2255,20 +2233,47 @@ class Config(Item):
             assoc = {}
 
             # Now we explode the numerous packs into nb_packs reals packs:
-            # we 'load balance' them trying to equilibrate number of objects
-            # to check
+            # we 'load balance' them in a roundrobin way
             for pack in r.packs:
-                scheduler_id = self.get_least_loaded_scheduler_id(weight_scheduler_ids, assoc)
+                valid_value = False
+                old_pack = -1
                 for elt in pack:
-                    packs[packindices[scheduler_id]].append(elt)
+                    # print 'Look for host', elt.get_name(), 'in assoc'
+                    old_i = assoc.get(elt.get_name(), -1)
+                    # print 'Founded in ASSOC: ', elt.get_name(),old_i
+                    # Maybe it's a new, if so, don't count it
+                    if old_i == -1:
+                        continue
+                    # Maybe it is the first we look at, if so, take it's value
+                    if old_pack == -1 and old_i != -1:
+                        # print 'First value set', elt.get_name(), old_i
+                        old_pack = old_i
+                        valid_value = True
+                        continue
+                    if old_i == old_pack:
+                        # print 'I found a match between elements', old_i
+                        valid_value = True
+                    if old_i != old_pack:
+                        # print 'Outch found a change sorry', old_i, old_pack
+                        valid_value = False
+                # print 'Is valid?', elt.get_name(), valid_value, old_pack
+                i = None
+                # If it's a valid sub pack and the pack id really exist, use it!
+                if valid_value and old_pack in packindices:
+                    # print 'Use a old id for pack', old_pack, [h.get_name() for h in pack]
+                    i = old_pack
+                else:  # take a new one
+                    # print 'take a new id for pack', [h.get_name() for h in pack]
+                    i = next(rr)
+
+                for elt in pack:
+                    # print 'We got the element', elt.get_full_name(), ' in pack', i, packindices
+                    packs[packindices[i]].append(elt)
                     assoc[elt.get_name()] = i
-                    for svc in elt.services:
-                        assoc[svc.get_full_name()] = i
 
             # Now in packs we have the number of packs [h1, h2, etc]
             # equal to the number of schedulers.
             r.packs = packs
-
         logger.info("Total number of hosts : %d",
                     nb_elements_all_realms)
         if len(self.hosts) != nb_elements_all_realms:
@@ -2284,7 +2289,7 @@ class Config(Item):
     # New confs are independent with checks. The only communication
     # That can be need is macro in commands
     def cut_into_parts(self):
-        # print("Scheduler configured:", self.schedulers)
+        # print "Scheduler configured:", self.schedulers
         # I do not care about alive or not. User must have set a spare if need it
         nb_parts = len([s for s in self.schedulers if not s.spare])
 
@@ -2297,7 +2302,7 @@ class Config(Item):
         # theses configurations)
         self.confs = {}
         for i in range(0, nb_parts):
-            # print("Create Conf:", i, '/', nb_parts -1)
+            # print "Create Conf:", i, '/', nb_parts -1
             cur_conf = self.confs[i] = Config()
 
             # Now we copy all properties of conf into the new ones
@@ -2305,7 +2310,7 @@ class Config(Item):
                 if entry.managed and not isinstance(entry, UnusedProp):
                     val = getattr(self, prop)
                     setattr(cur_conf, prop, val)
-                    # print("Copy", prop, val)
+                    # print "Copy", prop, val
 
             # we need a deepcopy because each conf
             # will have new hostgroups
@@ -2361,9 +2366,9 @@ class Config(Item):
 
         # We've nearly have hosts and services. Now we want REALS hosts (Class)
         # And we want groups too
-        # print("Finishing packs")
+        # print "Finishing packs"
         for i in self.confs:
-            # print("Finishing pack Nb:", i)
+            # print "Finishing pack Nb:", i
             cfg = self.confs[i]
 
             # Create ours classes
@@ -2460,16 +2465,17 @@ class Config(Item):
         if f is None:
             d = tempfile.gettempdir()
             p = os.path.join(d, 'shinken-config-dump-%d' % time.time())
-            f = open(p, "w")
+            f = open(p, "wb")
             close = True
         else:
             close = False
         f.write(
-            json.dumps(
+            unicode_to_bytes(json.dumps(
                 dmp,
                 indent=4,
                 separators=(',', ': '),
                 sort_keys=True
+            )
             )
         )
         if close is True:
@@ -2480,9 +2486,9 @@ class Config(Item):
 def lazy():
     # let's compute the "USER" properties and macros..
     for n in range(1, 256):
-        Config.properties['$USER%s$' % n] = StringProp(default='')
-        Config.macros['USER%s' % n] = '$USER%s$' % n
-
+        n = str(n)
+        Config.properties['$USER' + str(n) + '$'] = StringProp(default='')
+        Config.macros['USER' + str(n)] = '$USER' + n + '$'
 
 lazy()
 del lazy

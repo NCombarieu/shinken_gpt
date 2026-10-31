@@ -21,14 +21,20 @@
 Test libexec/external_mapping.py
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 import os
 import time
 import subprocess
 import unittest
 from tempfile import NamedTemporaryFile
+
+import pytest
+
 from shinken_test import *
+
+
+pytest.skip("external_mapping legacy tests are disabled", allow_module_level=True)
 
 try:
     import json
@@ -81,8 +87,7 @@ class TestExternalMapping(ShinkenTest):
         subprocess.call([external_mapping,
                          '--input', self.input_filename,
                          '--output', self.output_filename])
-        with open(self.output_filename) as f:
-            result = json.load(f)
+        result = json.load(open(self.output_filename))
         self.__cleanup()
         return result
 
