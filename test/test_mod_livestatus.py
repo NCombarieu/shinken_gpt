@@ -38,6 +38,21 @@ import livestatus.module as livestatus_mod  # noqa: E402
 from livestatus.livestatus_client_thread import LiveStatusClientThread  # noqa: E402
 
 
+def real_time():
+    """The legacy test helpers (shinken_test.TimeHacker) fake time.time()
+    and time.sleep() process-wide; external processes need the real clock.
+    Switch every loaded hacker to real time and return them."""
+    hackers = []
+    # Restore in reverse import order: a later hacker saved the fake clock
+    # of an earlier one as its "original".
+    for name, module in reversed(list(sys.modules.items())):
+        hacker = getattr(module, 'time_hacker', None) if name.endswith('shinken_test') else None
+        if hacker is not None and hacker not in hackers:
+            hacker.set_real_time()
+            hackers.append(hacker)
+    return hackers
+
+
 def free_port():
     sock = socket.socket()
     sock.bind(('127.0.0.1', 0))
@@ -149,9 +164,7 @@ class TestLivestatusProcess(unittest.TestCase):
     def setUp(self):
         # The legacy test helpers fake time.time()/time.sleep() process-wide:
         # a real external process needs the real clock.
-        self.time_hacker = getattr(sys.modules.get('shinken_test'), 'time_hacker', None)
-        if self.time_hacker is not None:
-            self.time_hacker.set_real_time()
+        self.time_hackers = real_time()
         self.tmpdir = tempfile.mkdtemp()
         self.previous_modules_dir = modulesctx.get_modulesdir()
         modulesctx.set_modulesdir(MODULES_DIR)
@@ -162,8 +175,8 @@ class TestLivestatusProcess(unittest.TestCase):
             self.inst.stop_process()
         modulesctx.set_modulesdir(self.previous_modules_dir)
         shutil.rmtree(self.tmpdir, ignore_errors=True)
-        if self.time_hacker is not None:
-            self.time_hacker.set_my_time()
+        for hacker in reversed(self.time_hackers):
+            hacker.set_my_time()
 
     def start(self, submodules):
         self.port = free_port()
@@ -175,14 +188,15 @@ class TestLivestatusProcess(unittest.TestCase):
         self.inst.start()
 
     def query(self, request, timeout=20):
-        deadline = time.time() + timeout
+        deadline = time.monotonic() + timeout
         while True:
             try:
                 sock = socket.create_connection(('127.0.0.1', self.port), timeout=10)
                 break
             except OSError:
-                if time.time() > deadline or not self.inst.process.is_alive():
-                    self.fail('Livestatus did not open its port')
+                if time.monotonic() > deadline or not self.inst.process.is_alive():
+                    self.fail('Livestatus did not open its port (exit code %s)'
+                              % self.inst.process.exitcode)
                 time.sleep(0.2)
         try:
             sock.sendall(request.encode('utf-8'))

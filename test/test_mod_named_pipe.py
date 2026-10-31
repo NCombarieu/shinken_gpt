@@ -34,6 +34,21 @@ from shinken.objects.module import Module  # noqa: E402
 import named_pipe.module as pipe_mod  # noqa: E402
 
 
+def real_time():
+    """The legacy test helpers (shinken_test.TimeHacker) fake time.time()
+    and time.sleep() process-wide; external processes need the real clock.
+    Switch every loaded hacker to real time and return them."""
+    hackers = []
+    # Restore in reverse import order: a later hacker saved the fake clock
+    # of an earlier one as its "original".
+    for name, module in reversed(list(sys.modules.items())):
+        hacker = getattr(module, 'time_hacker', None) if name.endswith('shinken_test') else None
+        if hacker is not None and hacker not in hackers:
+            hacker.set_real_time()
+            hackers.append(hacker)
+    return hackers
+
+
 def make_module(path):
     modconf = Module({'module_name': 'named-pipe', 'module_type': 'named_pipe',
                       'command_file': path})
@@ -121,15 +136,13 @@ class TestNamedPipeProcess(unittest.TestCase):
     """Run the module as an external process, like the arbiter does."""
 
     def setUp(self):
-        self.time_hacker = getattr(sys.modules.get('shinken_test'), 'time_hacker', None)
-        if self.time_hacker is not None:
-            self.time_hacker.set_real_time()
+        self.time_hackers = real_time()
         self.tmpdir = tempfile.mkdtemp()
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
-        if self.time_hacker is not None:
-            self.time_hacker.set_my_time()
+        for hacker in reversed(self.time_hackers):
+            hacker.set_my_time()
 
     def test_external_process(self):
         path = os.path.join(self.tmpdir, 'nagios.cmd')
