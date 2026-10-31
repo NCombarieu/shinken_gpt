@@ -26,6 +26,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import unittest
 
@@ -48,6 +49,12 @@ w.start()
 print(w._process.pid, flush=True)
 time.sleep(600)
 '''
+
+
+def real_sleep(delay):
+    # time.sleep()/time.time() may be replaced by the fake clock of
+    # shinken_test: use the monotonic clock and an Event to really wait
+    threading.Event().wait(delay)
 
 
 def free_port():
@@ -102,9 +109,10 @@ class TestWorkerOrphans(unittest.TestCase):
             parent.send_signal(signal.SIGKILL)
             parent.wait(timeout=10)
 
-            deadline = time.time() + 15
-            while time.time() < deadline and (pid_alive(worker_pid) or not port_is_free(port)):
-                time.sleep(0.1)
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and (pid_alive(worker_pid) or
+                                                    not port_is_free(port)):
+                real_sleep(0.1)
             self.assertFalse(pid_alive(worker_pid), 'worker survived its daemon')
             self.assertTrue(port_is_free(port), 'daemon port still bound')
         finally:
