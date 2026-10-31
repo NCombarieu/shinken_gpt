@@ -1,5 +1,11 @@
 # Revue de la branche `modernize/podman-python3` — synthèse
 
+> **Note — État après corrections : voir le [Changelog](../../Changelog).**
+> Ces rapports décrivent la branche telle qu'elle était au moment de la revue
+> (31/10/2026). Ils sont conservés comme historique ; les corrections
+> apportées depuis sont listées dans le Changelog et la documentation à jour
+> se trouve dans [doc/README.md](../README.md).
+
 *Revue du 31/10/2026, menée par 5 relecteurs en parallèle (code Python 3,
 compatibilité master, test réel bout-en-bout, exploitation, documentation).*
 
