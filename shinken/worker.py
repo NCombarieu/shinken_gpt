@@ -47,6 +47,7 @@ from shinken.imports import StringIO as cStringIO
 
 from shinken.log import logger, BrokHandler
 from shinken.misc.common import setproctitle
+from shinken.util import die_with_parent, parent_is_gone
 
 class Worker(object):
     """This class is used for poller and reactionner to work.
@@ -83,6 +84,8 @@ class Worker(object):
         self.returns_queue = returns_queue
         self.max_plugins_output_length = max_plugins_output_length
         self.i_am_dying = False
+        # pid of the daemon owning this worker: the worker must not outlive it
+        self._parent_pid = os.getpid()
         # Keep a trace where the worker is launch from (poller or reactionner?)
         self.loaded_into = loaded_into
         if os.name != 'nt':
@@ -91,6 +94,20 @@ class Worker(object):
             self.http_daemon = None
 
     def _prework(self, real_work, *args):
+        """Prepare the forked worker process, then run ``real_work``.
+
+        The worker dies with its parent daemon and closes its copy of the
+        daemon listening socket, so that a daemon killed with SIGKILL can be
+        restarted on the same port.
+        """
+        if not is_android:
+            die_with_parent(self._parent_pid)
+            if self.http_daemon is not None:
+                try:
+                    self.http_daemon.close_listening_sockets()
+                except Exception as exp:
+                    logger.warning("[%d] cannot close the inherited HTTP socket: %s",
+                                   self.id, exp)
         for handler in list(logger.handlers):
             if isinstance(handler, BrokHandler):
                 logger.info("Cleaning BrokHandler %r from logger.handlers..", handler)
@@ -300,6 +317,12 @@ class Worker(object):
             if len(self.checks) == 0 and self.i_am_dying:
                 logger.warning("[%d] I DIE because I cannot do my job as I should"
                                "(too many open files?)... forgot me please.", self.id)
+                break
+
+            # Our daemon was killed (no 'Die' message could be sent): exit
+            # instead of becoming an orphan
+            if not is_android and parent_is_gone(self._parent_pid):
+                logger.warning("[%d] My parent daemon is gone, I exit", self.id)
                 break
 
             # Manage a possible time change (our avant will be change with the diff)

@@ -103,6 +103,20 @@ class CherootBackend:
     def get_sockets(self):
         return []
 
+    def close_listening_socket(self):
+        """Close this process' copy of the listening socket.
+
+        Called in a forked child (worker, manager): the parent server keeps
+        its own socket, but the child must not keep the port bound if it
+        outlives its parent.
+        """
+        sock = getattr(self.srv, 'socket', None)
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
     def stop(self):
         try:
             self.srv.stop()
@@ -160,6 +174,24 @@ class HTTPDaemon:
 
     def run(self):
         self.srv.run()
+
+    def close_listening_sockets(self):
+        """Close, in a forked child process, the inherited listening socket.
+
+        The parent daemon is not affected: only the child's file descriptor
+        is closed. See :meth:`CherootBackend.close_listening_socket`.
+        """
+        srv = self.srv
+        if srv is None:
+            return
+        close = getattr(srv, 'close_listening_socket', None)
+        if close is not None:
+            close()
+        for sock in self.get_sockets():
+            try:
+                sock.close()
+            except OSError:
+                pass
 
     def register(self, obj):
         methods = inspect.getmembers(obj, predicate=inspect.ismethod)

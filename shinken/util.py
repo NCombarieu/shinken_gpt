@@ -960,6 +960,51 @@ def free_memory():
 
 
 # Bytes to unicode
+def die_with_parent(parent_pid, sig=None):
+    """Make the calling (child) process die when its parent process dies.
+
+    A poller or reactionner killed with SIGKILL (or by the OOM killer)
+    cannot stop its workers: they used to survive with PPID 1 and keep the
+    copy of the listening HTTP socket, so the restarted daemon could not
+    bind its port.
+
+    On Linux the kernel is asked to send ``sig`` (SIGKILL by default) to
+    this process when its parent dies (``prctl(PR_SET_PDEATHSIG)``). If the
+    parent is already gone, the process exits at once. Callers that loop
+    should also call :func:`parent_is_gone` periodically (portable fallback).
+
+    :param int parent_pid: pid of the expected parent process
+    :param int sig: signal sent to this process when the parent dies
+    :return: True if the kernel death signal could be set up
+    """
+    import signal
+    if sig is None:
+        sig = signal.SIGKILL
+    armed = False
+    if sys.platform.startswith('linux'):
+        try:
+            import ctypes
+            import ctypes.util
+            libc = ctypes.CDLL(ctypes.util.find_library('c') or 'libc.so.6', use_errno=True)
+            pr_set_pdeathsig = 1
+            armed = libc.prctl(pr_set_pdeathsig, int(sig), 0, 0, 0) == 0
+        except Exception:  # pragma: no cover - no libc / no prctl
+            armed = False
+    # The parent may have died before the death signal was armed
+    if parent_is_gone(parent_pid):
+        os._exit(0)
+    return armed
+
+
+def parent_is_gone(parent_pid):
+    """Return True if the parent of the calling process is not ``parent_pid``.
+
+    When the parent dies, the process is re-parented (to init or to a
+    subreaper), so its parent pid changes.
+    """
+    return os.getppid() != parent_pid
+
+
 def read_text_file(path):
     """Read a configuration text file and return its content as ``str``.
 

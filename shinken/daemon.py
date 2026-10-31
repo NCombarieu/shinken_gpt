@@ -57,7 +57,7 @@ from shinken.property import StringProp, BoolProp, PathProp, ConfigPathProp, Int
 from shinken.misc.common import setproctitle
 from shinken.profilermgr import profiler
 from shinken.safepickle import SafeUnpickler
-from shinken.util import get_memory
+from shinken.util import get_memory, die_with_parent
 import pickle
 from shinken.imports import ConfigParser, StringIO as cStringIO
 from shinken.imports import Empty
@@ -732,7 +732,16 @@ class Daemon(object):
         # a socket of your http server alive
         def _create_manager(self):
             manager = SyncManager(('127.0.0.1', 0))
+            parent_pid = os.getpid()
+
             def close_http_daemon(daemon):
+                # Runs in the manager process: die with the daemon and do
+                # not keep its listening port bound
+                die_with_parent(parent_pid)
+                try:
+                    daemon.close_listening_sockets()
+                except Exception:
+                    pass
                 try:
                     # Be sure to release the lock so there won't be lock in shutdown phase
                     daemon.lock.release()
