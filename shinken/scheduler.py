@@ -875,8 +875,14 @@ class Scheduler(object):
                 self.pynag_con_init(p['instance_id'], type='reactionner')
 
 
-    # We should get returns from satellites
     def get_actions_from_passives_satellites(self):
+        """Fetch the results of the actions run by passive satellites.
+
+        Passive pollers and reactionners do not push their results: the
+        scheduler pulls them with ``get_returns``, which answers with a raw
+        pickle of the finished actions. They are unpickled with the
+        restricted unpickler and queued in ``waiting_results``.
+        """
         # We loop for our passive pollers
         for p in [p for p in self.pollers.values() if p['passive']]:
             logger.debug("I will get actions from the poller %s", str(p))
@@ -887,15 +893,10 @@ class Scheduler(object):
                     # initial ping must be quick
                     # Before ask a call that can be long, do a simple ping to be sure it is alive
                     con.get('ping')
+                    # The poller answers with the raw pickle bytes: give them
+                    # untouched to the restricted unpickler (converting them
+                    # to str would corrupt the payload)
                     results = con.get('get_returns', {'sched_id': self.instance_id}, wait='long')
-                    try:
-                        results = str(results)
-                    except UnicodeEncodeError:  # ascii not working, switch to utf8 so
-                        # if not eally utf8 will be a real problem
-                        results = results.encode("utf8", 'ignore')
-                        # and data will be invalid, socatch by the pickle.
-
-                    # now go the cpickle pass, and catch possible errors from it
                     try:
                         results = SafeUnpickler.loads(results)
                     except Exception as exp:
