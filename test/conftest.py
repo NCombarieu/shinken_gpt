@@ -66,3 +66,14 @@ def normalize_legacy_log_paths(monkeypatch):
         return result
 
     monkeypatch.setattr(Brok, "prepare", prepare_with_relative_test_paths)
+
+
+@pytest.fixture(autouse=True)
+def run_from_test_directory(monkeypatch):
+    """Run every test from the ``test`` directory.
+
+    The legacy tests use paths relative to ``test/`` (``etc/...``,
+    ``libexec/...``). Changing directory makes ``python -m pytest test``
+    from the repository root behave like ``pytest`` run inside ``test/``.
+    """
+    monkeypatch.chdir(os.path.dirname(os.path.abspath(__file__)))
