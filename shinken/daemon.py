@@ -414,11 +414,18 @@ class Daemon(object):
                 break
 
 
-    # Loads configuration sent by parent process only if available
     def load_parent_config(self):
+        """Load the configuration sent by the parent process, if any.
+
+        On a graceful reload the parent spawns a new daemon and writes the
+        pickled configuration on its standard input. The pickle is binary
+        data: it is read from the underlying binary buffer of stdin (reading
+        the text stream would decode it and corrupt the payload).
+        """
         if self.is_switched_process():
             logger.info("Loading configuration from parent")
-            raw_config = sys.stdin.read()
+            stdin = getattr(sys.stdin, 'buffer', sys.stdin)
+            raw_config = stdin.read()
             new_conf = SafeUnpickler.loads(raw_config)
             logger.info("Successfully loaded configuration from parent")
             logger.info("Waiting for parent to stop")
