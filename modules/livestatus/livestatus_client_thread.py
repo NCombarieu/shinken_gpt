@@ -235,8 +235,12 @@ class LiveStatusClientThread(threading.Thread):
         response, _ = self.livestatus.handle_request(request_data)
 
         try:
-            if not isinstance(response, (LiveStatusListResponse, type(b''))):
-                # must be a wait query..
+            if not response:
+                # COMMAND requests (and unparsable input) produce no
+                # output at all: there is nothing to send back.
+                return
+            if type(response) is list:
+                # A wait query is returned as [wait_query, query].
                 response = self.handle_wait_query(*response)
             if response:
                 self.send_response(response)
