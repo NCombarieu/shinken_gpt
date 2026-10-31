@@ -60,7 +60,7 @@ class TestConfig(ShinkenTest):
         # We can send a command by escaping the semicolon.
 
 
-        command = '[%lu] PROCESS_HOST_CHECK_RESULT;test_host_2\;with_semicolon;2;down' % (time.time())
+        command = r'[%lu] PROCESS_HOST_CHECK_RESULT;test_host_2\;with_semicolon;2;down' % (time.time())
         self.sched.run_external_command(command)
 
         # can need 2 run for get the consum (I don't know why)

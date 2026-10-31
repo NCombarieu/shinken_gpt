@@ -34,7 +34,7 @@ class TestBadRealmConf(ShinkenTest):
     def test_bad_conf(self):
         self.assertFalse(self.conf.conf_is_correct)
         self.assert_any_log_match(" Error : More than one realm are set to the default realm")
-        self.assert_any_log_match("\[host::.*\] the host .* got an invalid realm")
+        self.assert_any_log_match(r"\[host::.*\] the host .* got an invalid realm")
 
 
 if __name__ == '__main__':
