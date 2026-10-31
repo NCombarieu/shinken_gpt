@@ -39,6 +39,12 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+# Broks showing that a scheduler configuration reached the broker.
+CONFIGURATION_BROKS = frozenset((
+    "program_status", "initial_broks_done", "initial_host_status", "initial_service_status",
+))
+
+
 def get_instance(mod_conf):
     return StatusWebUI(mod_conf)
 
@@ -57,6 +63,11 @@ class StatusWebUI(BaseModule):
         self._server: ThreadingHTTPServer | None = None
         self._server_thread: threading.Thread | None = None
         self.started_at = time.time()
+        # Health tracking: /healthz answers 200 only when the broker gave us
+        # a configuration (initial broks) and broks keep flowing.
+        self.health_max_brok_age = float(getattr(mod_conf, "health_max_brok_age", 300))
+        self._configured = False
+        self._last_brok_at: float | None = None
 
     def init(self):
         module = self
@@ -69,7 +80,9 @@ class StatusWebUI(BaseModule):
 
             def do_GET(self):
                 if self.path == "/healthz":
-                    self._send(200, b"ok\n", "text/plain; charset=utf-8")
+                    healthy, reason = module.health()
+                    self._send(200 if healthy else 503, (reason + "\n").encode("utf-8"),
+                               "text/plain; charset=utf-8")
                     return
                 if self.path == "/api/status":
                     payload = json.dumps(module.snapshot(), sort_keys=True).encode("utf-8")
@@ -110,6 +123,9 @@ class StatusWebUI(BaseModule):
             "data": data,
         }
         with self._lock:
+            self._last_brok_at = event["timestamp"]
+            if brok_type in CONFIGURATION_BROKS:
+                self._configured = True
             self._events.append(event)
             if brok_type in ("initial_host_status", "update_host_status", "host_check_result"):
                 name = data.get("host_name") or data.get("name")
@@ -121,6 +137,27 @@ class StatusWebUI(BaseModule):
                 if description:
                     key = f"{host_name}/{description}"
                     self._services.setdefault(key, {}).update(data)
+
+    def health(self, now=None):
+        """Return ``(healthy, reason)`` for the /healthz endpoint.
+
+        Healthy means: the HTTP server thread is running, the broker has
+        sent us a configuration (initial status broks from a scheduler)
+        and the last brok is younger than ``health_max_brok_age`` seconds
+        (schedulers send a program status update regularly, so silence
+        means the broker lost its schedulers or stopped feeding modules).
+        """
+        now = time.time() if now is None else now
+        if self._server_thread is not None and not self._server_thread.is_alive():
+            return False, "unhealthy: HTTP server thread is not running"
+        with self._lock:
+            configured, last_brok_at = self._configured, self._last_brok_at
+        if not configured:
+            return False, "unhealthy: no configuration received from a scheduler yet"
+        age = now - last_brok_at
+        if age > self.health_max_brok_age:
+            return False, "unhealthy: no brok received for %d seconds" % age
+        return True, "ok"
 
     def snapshot(self):
         with self._lock:

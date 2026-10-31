@@ -156,6 +156,12 @@ class LiveStatusQuery(object):
                 _, self.table = self.split_command(line)
                 if self.table not in list(table_class_map.keys()):
                     raise LiveStatusQueryError(404, self.table)
+                if self.table == 'log':
+                    # Drop SQL filters a previous (e.g. cached or failed)
+                    # query on this connection may have left behind.
+                    reset_filters = getattr(self.db, 'reset_filters', None)
+                    if callable(reset_filters):
+                        reset_filters()
             elif keyword == 'Columns':  # Get the names of the desired columns
                 _, self.columns = self.split_option_with_columns(line)
                 self.response.columnheaders = 'off'

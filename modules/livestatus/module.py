@@ -85,6 +85,56 @@ from .log_line import (
 
 #############################################################################
 
+
+class BuiltinNullLogStore(BaseModule):
+    """Last-resort log store which stores nothing and returns no log line.
+
+    Used only when neither the configured log store nor the logstore-null
+    module can be loaded, so that Livestatus keeps answering queries.
+    """
+
+    def __init__(self):
+        modconf = Module({'module_name': 'builtin-null-logstore',
+                          'module_type': 'logstore_null'})
+        modconf.properties = {'daemons': ['livestatus'], 'type': 'logstore_null',
+                              'external': False, 'phases': ['running']}
+        BaseModule.__init__(self, modconf)
+        self.max_logs_age = 0
+
+    def load(self, app):
+        self.app = app
+
+    def open(self):
+        pass
+
+    def close(self):
+        pass
+
+    def commit(self):
+        pass
+
+    def commit_and_rotate_log_db(self):
+        pass
+
+    def manage_log_brok(self, b):
+        pass
+
+    def add_filter(self, operator, attribute, reference):
+        pass
+
+    def add_filter_and(self, andnum):
+        pass
+
+    def add_filter_or(self, ornum):
+        pass
+
+    def add_filter_not(self):
+        pass
+
+    def get_live_data_log(self):
+        return []
+
+
 def full_safe_close(socket):
     try:
         socket.shutdown(2)
@@ -157,16 +207,108 @@ class LiveStatus_broker(BaseModule, Daemon):
         self.listeners = []
         self._listening_thread = threading.Thread(target=self._listening_thread_run)
 
+    @staticmethod
+    def _is_logstore(inst):
+        """Tell whether a loaded sub-module instance is a log store."""
+        mod_type = inst.properties.get('type', '') or ''
+        return mod_type.replace('-', '_').startswith('logstore_')
+
+    def _load_logstore_modules(self, modconfs):
+        """Load and init the given log store module configurations.
+
+        A dedicated ModulesManager is used so that the other (already loaded)
+        sub-modules are left untouched. The resulting instances are appended
+        to our own modules manager, so that they receive the log broks.
+        """
+        manager = ModulesManager('livestatus', self.modules_manager.modules_path, [])
+        manager.set_modules(modconfs)
+        try:
+            manager.load_and_init()
+        except Exception as err:
+            logger.error("[Livestatus Broker] Cannot load log store module(s) %s: %s",
+                         ', '.join(m.get_name() for m in modconfs), err)
+            return []
+        stores = [inst for inst in manager.instances if self._is_logstore(inst)]
+        self.modules_manager.instances.extend(stores)
+        return stores
+
     def add_compatibility_sqlite_module(self):
-        if len([m for m in self.modules_manager.instances if m.properties['type'].startswith('logstore_')]) == 0:
-            #  this shinken-specific.cfg does not use the new submodules
-            for k in list(self.compat_sqlite.keys()):
-                if self.compat_sqlite[k] == None:
-                    del self.compat_sqlite[k]
-            dbmod = Module(self.compat_sqlite)
-            self.modules_manager.set_modules([dbmod])
-            self.modules_manager.load_and_init()
-            self.modules_manager.instances[0].load(self)
+        """Create a logstore-sqlite sub-module from old-style parameters.
+
+        Very old configurations put ``database_file``/``max_logs_age``
+        directly on the livestatus module instead of declaring a separate
+        logstore sub-module. Returns the list of loaded log store instances
+        (empty when nothing could be loaded).
+        """
+        params = dict((k, v) for k, v in self.compat_sqlite.items() if v is not None)
+        if 'database_file' not in params:
+            return []
+        return self._load_logstore_modules([Module(params)])
+
+    def setup_logstore(self):
+        """Select the log store used to answer ``GET log`` queries.
+
+        Order of preference:
+
+        1. the log store sub-module(s) declared with ``modules`` (the first
+           one that could be loaded is used);
+        2. a logstore-sqlite built from old-style parameters set on the
+           livestatus module itself (``database_file``...);
+        3. logstore-null, with a clear error message: Livestatus keeps
+           working (hosts, services, commands...) but the ``log`` table is
+           empty. This never loops nor crashes the module.
+        """
+        stores = [inst for inst in self.modules_manager.instances if self._is_logstore(inst)]
+        if not stores:
+            stores = self.add_compatibility_sqlite_module()
+        if not stores:
+            wanted = ', '.join(m.module_name for m in (self.modules or [])
+                               if getattr(m, 'module_name', ''))
+            if wanted:
+                logger.error("[Livestatus Broker] None of the configured log store sub-modules "
+                             "(%s) could be loaded (module not found in modules_dir, or failed "
+                             "to start). Falling back to logstore-null: Livestatus stays "
+                             "available but the 'log' table (history, Thruk events and "
+                             "availability reports) will be empty.", wanted)
+            else:
+                logger.warning("[Livestatus Broker] No log store sub-module configured, using "
+                               "logstore-null: the 'log' table will be empty.")
+            stores = self._load_logstore_modules([Module({'module_name': 'logstore-null',
+                                                          'module_type': 'logstore_null'})])
+        if not stores:
+            logger.error("[Livestatus Broker] logstore-null module not found either; using a "
+                         "built-in empty log store.")
+            stores = [BuiltinNullLogStore()]
+        if len(stores) > 1:
+            logger.warning("[Livestatus Broker] Several log stores configured (%s); only %s is "
+                           "used to answer queries.",
+                           ', '.join(s.get_name() for s in stores), stores[0].get_name())
+        self.db = stores[0]
+        load = getattr(self.db, 'load', None)
+        if callable(load):
+            load(self)
+        return self.db
+
+    def open_logstore(self):
+        """Open the selected log store, falling back to an empty one on error."""
+        try:
+            self.db.open()
+            if hasattr(self.db, 'prepare_log_db_table'):
+                self.db.prepare_log_db_table()
+                # Immediately archive data. This also splits old-style (storing logs
+                # from more than one day) up into many single-day databases
+                if getattr(self.db, 'max_logs_age', 0) > 0:
+                    self.db.log_db_do_archive()
+        except Exception as err:
+            logger.error("[Livestatus Broker] Cannot open the log store %s: %s. Falling back to "
+                         "an empty log store: the 'log' table will be empty.",
+                         self.db.get_name(), err)
+            logger.debug("[Livestatus Broker] %s", traceback.format_exc())
+            if self.db in self.modules_manager.instances:
+                self.modules_manager.instances.remove(self.db)
+            self.db = BuiltinNullLogStore()
+            self.db.open()
+        return self.db
 
     # Called by Broker so we can do init stuff
     # TODO: add conf param to get pass with init
@@ -221,16 +363,10 @@ class LiveStatus_broker(BaseModule, Daemon):
         self.modules_manager.set_modules(self.modules)
         # We can now output some previously silenced debug output
         self.do_load_modules()
-        for inst in self.modules_manager.instances:
-            if inst.properties["type"].startswith('logstore'):
-                f = getattr(inst, 'load', None)
-                if f and callable(f):
-                    f(self)
-                break
         for s in self.debug_output:
             logger.debug("[Livestatus Broker] %s" % s)
         del self.debug_output
-        self.add_compatibility_sqlite_module()
+        self.setup_logstore()
         self.datamgr = datamgr
         datamgr.load(self.rg)
         self.query_cache = LiveStatusQueryCache()
@@ -267,15 +403,9 @@ class LiveStatus_broker(BaseModule, Daemon):
         logger.info("[Livestatus Broker] Go run")
 
         # Open the logging database
-        self.db = self.modules_manager.instances[0]
-        assert isinstance(self.db, BaseModule)
-        self.db.open()
-        if hasattr(self.db, 'prepare_log_db_table'):
-            self.db.prepare_log_db_table()
-            # Immediately archive data. This also splits old-style (storing logs
-            # from more than one day) up into many single-day databases
-            if self.db.max_logs_age > 0:
-                self.db.log_db_do_archive()
+        if self.db is None:
+            self.setup_logstore()
+        self.open_logstore()
 
         self.load_plugins()
         self.main_thread_run()
