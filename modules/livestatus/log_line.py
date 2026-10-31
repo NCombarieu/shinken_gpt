@@ -64,11 +64,14 @@ class Logline(dict):
                 else:
                     setattr(self, col[0], sqlite_row[idx])
         elif line != None:
-            if isinstance(line, str):
-                line = line.encode('UTF-8').rstrip()
+            # Python 3: work on text. Log broks carry str, but accept bytes
+            # (e.g. lines read back from a Python 2 era log file) as well.
+            if isinstance(line, bytes):
+                line = line.decode('utf-8', 'replace')
+            line = line.rstrip()
 
             # [1278280765] SERVICE ALERT: test_host_0
-            if line[0] != '[' and line[11] != ']':
+            if not line.startswith('[') or ']' not in line[:13]:
                 logger.warning("[Livestatus Log Lines] Invalid line: %s" % line)
                 raise LoglineWrongFormat
             else:
@@ -92,7 +95,7 @@ class Logline(dict):
                 logclass = LOGCLASS_INVALID
                 attempt, state = [0] * 2
                 command_name, comment, contact_name, host_name, message, plugin_output, service_description, state_type = [''] * 8
-                time = line[1:11]
+                time = line[1:line.index(']')]
                 first_type_pos = line.find(' ') + 1
                 last_type_pos = line.find(':')
                 first_detail_pos = last_type_pos + 2
@@ -103,10 +106,12 @@ class Logline(dict):
                     logobject = LOGOBJECT_SERVICE
                     logclass = LOGCLASS_STATE
                     host_name, service_description, state, state_type, attempt, plugin_output = options.split(';', 5)
+                    state = service_states.get(state, state)
                 elif type == 'INITIAL SERVICE STATE':
                     logobject = LOGOBJECT_SERVICE
                     logclass = LOGCLASS_STATE
                     host_name, service_description, state, state_type, attempt, plugin_output = options.split(';', 5)
+                    state = service_states.get(state, state)
                 elif type == 'SERVICE ALERT':
                     # SERVICE ALERT: srv-40;Service-9;CRITICAL;HARD;1;[Errno 2] No such file or directory
                     logobject = LOGOBJECT_SERVICE
@@ -126,10 +131,12 @@ class Logline(dict):
                     logobject = LOGOBJECT_HOST
                     logclass = LOGCLASS_STATE
                     host_name, state, state_type, attempt, plugin_output = options.split(';', 4)
+                    state = host_states.get(state, state)
                 elif type == 'INITIAL HOST STATE':
                     logobject = LOGOBJECT_HOST
                     logclass = LOGCLASS_STATE
                     host_name, state, state_type, attempt, plugin_output = options.split(';', 4)
+                    state = host_states.get(state, state)
                 elif type == 'HOST ALERT':
                     logobject = LOGOBJECT_HOST
                     logclass = LOGCLASS_ALERT
@@ -149,7 +156,7 @@ class Logline(dict):
                     # SERVICE NOTIFICATION: test_contact;test_host_0;test_ok_0;DOWNTIMESTART (OK);notify-service;OK
                     logobject = LOGOBJECT_SERVICE
                     logclass = LOGCLASS_NOTIFICATION
-                    contact_name, host_name, service_description, state_type, command_name, check_plugin_output = options.split(';', 5)
+                    contact_name, host_name, service_description, state_type, command_name, plugin_output = options.split(';', 5)
                     if '(' in state_type:  # downtime/flapping/etc-notifications take the type UNKNOWN
                         state_type = 'UNKNOWN'
                     state = service_states[state_type]
@@ -157,7 +164,7 @@ class Logline(dict):
                     # tust_cuntuct;test_host_0;DOWN;notify-host;i am DOWN
                     logobject = LOGOBJECT_HOST
                     logclass = LOGCLASS_NOTIFICATION
-                    contact_name, host_name, state_type, command_name, check_plugin_output = options.split(';', 4)
+                    contact_name, host_name, state_type, command_name, plugin_output = options.split(';', 4)
                     if '(' in state_type:
                         state_type = 'UNKNOWN'
                     state = host_states[state_type]
@@ -165,11 +172,11 @@ class Logline(dict):
                 elif type == 'PASSIVE SERVICE CHECK':
                     logobject = LOGOBJECT_SERVICE
                     logclass = LOGCLASS_PASSIVECHECK
-                    host_name, service_description, state, check_plugin_output = options.split(';', 3)
+                    host_name, service_description, state, plugin_output = options.split(';', 3)
                 elif type == 'PASSIVE HOST CHECK':
                     logobject = LOGOBJECT_HOST
                     logclass = LOGCLASS_PASSIVECHECK
-                    host_name, state, check_plugin_output = options.split(';', 2)
+                    host_name, state, plugin_output = options.split(';', 2)
                 elif type == 'SERVICE EVENT HANDLER':
                     # SERVICE EVENT HANDLER: test_host_0;test_ok_0;CRITICAL;SOFT;1;eventhandler
                     logobject = LOGOBJECT_SERVICE
@@ -236,20 +243,22 @@ class Logline(dict):
         and/or log_service
 
         """
-        if hasattr(self, 'logobject') and self.logobject == LOGOBJECT_HOST:
-            try:
-                setattr(self, 'log_host', datamgr.get_host(self.host_name))
-            except Exception as e:
-                logger.error("[Livestatus Log Lines] Error on host: %s" % e)
-                pass
-        elif hasattr(self, 'logobject') and self.logobject == LOGOBJECT_SERVICE:
-            try:
-                setattr(self, 'log_host', datamgr.get_host(self.host_name))
-                setattr(self, 'log_service', datamgr.get_service(self.host_name, self.service_description))
-            except Exception as e:
-                logger.error("[Livestatus Log Lines] Error on service: %s" % e)
-                pass
-        else:
-            setattr(self, 'log_host', None)
-            setattr(self, 'log_service', None)
+        # Look the objects up in the regenerator directly: names are already
+        # text on Python 3 (no decoding needed, unlike DataManager.get_*).
+        self.log_host = None
+        self.log_service = None
+        logobject = getattr(self, 'logobject', LOGOBJECT_INFO)
+        if logobject not in (LOGOBJECT_HOST, LOGOBJECT_SERVICE):
+            return self
+        rg = getattr(datamgr, 'rg', None)
+        if rg is None:
+            return self
+        try:
+            self.log_host = rg.hosts.find_by_name(self.host_name)
+            if logobject == LOGOBJECT_SERVICE:
+                self.log_service = rg.services.find_srv_by_name_and_hostname(
+                    self.host_name, self.service_description)
+        except Exception as e:
+            logger.error("[Livestatus Log Lines] Error looking up %s/%s: %s",
+                         self.host_name, getattr(self, 'service_description', ''), e)
         return self
