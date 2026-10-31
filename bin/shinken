@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright (C) 2009-2014:
 #    Gabes Jean, naparuba@gmail.com
@@ -21,63 +21,82 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Shinken command line interface.
 
-from shinken.cli_compat import optparse
-import sys
+The commands themselves are provided by ``cli/<name>/cli.py`` plugins, which
+expose an ``exports`` dict (keyword -> function, arguments, description) and
+optionally a ``configurations`` dict merged into ``~/.shinken.ini``.
+
+Examples::
+
+    shinken --init            # create/refresh ~/.shinken.ini
+    shinken --list            # list available commands
+    shinken -h search         # help of one command
+    shinken search linux      # run one command
+    shinken                   # interactive prompt
+"""
+
+import argparse
+import configparser
+import importlib.util
 import os
-import re
-import tempfile
-import json
-import shutil
-import zipfile
-import tarfile
-import pycurl
-import urllib
-import ConfigParser
-import imp
 import shlex
-import readline
 import signal
-from StringIO import StringIO
-
-try:
-    import shinken
-    from shinken.bin import VERSION
-except ImportError:
-    # If importing shinken fails, try to load from current directory
-    # or parent directory to support running without installation.
-    # Submodules will then be loaded from there, too.
-    import imp
-    imp.load_module('shinken',
-                    *imp.find_module('shinken',
-                                     [os.path.realpath("."),
-                                      os.path.realpath(".."),
-                                      os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])),
-                                                   "..")]))
-    from shinken.bin import VERSION
-
-from shinken.log import logger, cprint, nagFormatter
-from shinken.objects.config import Config
+import sys
 
 
-logger.setLevel('WARNING')
-logger.handlers[0].setFormatter(nagFormatter)
+def _bootstrap_shinken():
+    """Import shinken, falling back to the source checkout next to this script."""
+    try:
+        import shinken  # noqa: F401
+    except ImportError:
+        here = os.path.dirname(os.path.abspath(__file__))
+        for root in (os.path.dirname(here), os.getcwd(), os.path.dirname(os.getcwd())):
+            if os.path.isfile(os.path.join(root, "shinken", "__init__.py")):
+                sys.path.insert(0, root)
+                break
+        import shinken  # noqa: F401
 
-# Handle some signals
-def sig_handler(signalnum, handle):
-    """ Handle some signals """
+
+_bootstrap_shinken()
+
+from shinken.bin import VERSION  # noqa: E402
+from shinken.log import logger, nagFormatter  # noqa: E402
+
+logger.setLevel("WARNING")
+for _handler in logger.handlers:
+    _handler.setFormatter(nagFormatter)
+
+
+def sig_handler(signalnum, frame):
+    """Exit quietly on SIGTERM/SIGINT."""
     sys.exit(0)
+
 
 signal.signal(signal.SIGTERM, sig_handler)
 signal.signal(signal.SIGINT, sig_handler)
 
-
 CONFIG = {}
+DEFAULT_CFG = os.path.expanduser("~/.shinken.ini")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Where the cli/ plugins may live when ~/.shinken.ini does not say otherwise:
+# source checkout first, then the container image layout.
+CLI_DIR_CANDIDATES = (
+    os.path.join(os.path.dirname(_SCRIPT_DIR), "cli"),
+    "/usr/local/lib/shinken/cli",
+    "/var/lib/shinken/cli",
+)
 
 
-class Dummy():
-    def __init__(self):
-        pass
+def cprint(text, color=None, end="\n"):
+    """Print text, in green when stdout is a terminal."""
+    if color == "green" and sys.stdout.isatty():
+        text = "\033[32m%s\033[0m" % text
+    print(text, end=end)
+
+
+class Dummy:
+    """Brok sink: the CLI has no broker to forward log broks to."""
 
     def add(self, obj):
         pass
@@ -86,471 +105,311 @@ class Dummy():
 logger.load_obj(Dummy())
 
 
-if os.name != 'nt':
-    DEFAULT_CFG = os.path.expanduser('~/.shinken.ini')
-else:
-    DEFAULT_CFG = 'c:\\shinken\\etc\\shinken.ini'
+class ConfigParserWithComments(configparser.RawConfigParser):
+    """RawConfigParser able to write one comment per section."""
 
+    def optionxform(self, optionstr):
+        return optionstr
 
-# This will allow to add comments to the generated configuration file, once
-# by section.
-class ConfigParserWithComments(ConfigParser.RawConfigParser):
     def add_comment(self, section, comment):
-        if not comment.startswith('#'):
-            comment = '#' + comment
-        self.set(section, ';%s' % (comment,), None)
+        if not comment.startswith("#"):
+            comment = "#" + comment
+        self.set(section, ";%s" % comment, None)
 
-    def write(self, fp):
-        """Write an .ini-format representation of the configuration state."""
-        if self._defaults:
-            fp.write("[%s]\n" % ConfigParser.DEFAULTSECT)
-            for (key, value) in self._defaults.items():
-                self._write_item(fp, key, value)
-            fp.write("\n")
+    def write(self, fp, space_around_delimiters=True):
         for section in self._sections:
             fp.write("[%s]\n" % section)
-            for (key, value) in self._sections[section].items():
-                self._write_item(fp, key, value)
+            for key, value in self._sections[section].items():
+                if key.startswith(";") and value is None:
+                    fp.write("%s\n" % key[1:])
+                else:
+                    fp.write("%s = %s\n" % (key, str(value).replace("\n", "\n\t")))
             fp.write("\n")
 
-    def _write_item(self, fp, key, value):
-        if key.startswith(';') and value is None:
-            fp.write("%s\n" % (key[1:],))
-        else:
-            fp.write("%s = %s\n" % (key, str(value).replace('\n', '\n\t')))
+
+def default_cli_dir():
+    for candidate in CLI_DIR_CANDIDATES:
+        if os.path.isdir(candidate):
+            return candidate
+    return CLI_DIR_CANDIDATES[-1]
 
 
-# Commander is the main class for managing the CLI session and behavior
-class CLICommander(object):
-
-    ini_defaults = {'paths': {'comment': ''' # Set the paths according to your setup. '''
-                                         '''Defaults follow # the Linux Standard Base''',
-                              'values': [('etc', '/etc/shinken'), ('lib', '/var/lib/shinken'),
-                                         ('share', '%(lib)s/share'), ('cli', '%(lib)s/cli'),
-                                         ('packs', '%(etc)s/packs'), ('modules', '%(lib)s/modules'),
-                                         ('doc', '%(lib)s/doc'), ('inventory', '%(lib)s/inventory'),
-                                         ('libexec', '%(lib)s/libexec'),
-                                         ]
-                              },
-                    'shinken.io': {'comment': '''# Options for connection to the shinken.io '''
-                                              '''website.  # proxy: curl style, should look as '''
-                                              '''http://user:password@server:3128 # proxy_socks5: '''
-                                              ''' curl style, should look as server:1080 # api_key: '''
-                                              '''useful for publishing packages or earn XP '''
-                                              '''after each install. Create an account at '''
-                                              '''http://shinken.io and go to '''
-                                              '''http://shinken.io/~''',
-                                   'values': [('proxy', ''), ('proxy_socks5', ''), ('api_key', '')]
-                                   }
-                    }
+class CLICommander:
+    """Load cli/ plugins and dispatch commands to them."""
 
     def __init__(self, config, cfg, opts):
+        self.ini_defaults = {
+            "paths": {
+                "comment": "# Set the paths according to your setup.",
+                "values": [
+                    ("etc", "/etc/shinken"), ("lib", "/var/lib/shinken"),
+                    ("share", "%(lib)s/share"), ("cli", default_cli_dir()),
+                    ("packs", "%(etc)s/packs"), ("modules", "/usr/local/lib/shinken/modules"),
+                    ("doc", "%(lib)s/doc"), ("inventory", "%(lib)s/inventory"),
+                    ("libexec", "/usr/local/lib/shinken/libexec"),
+                ],
+            },
+            "shinken.io": {
+                "comment": "# Options for the shinken.io package repository. "
+                           "proxy: curl style (http://user:password@server:3128); "
+                           "proxy_socks5: server:1080; api_key: needed to publish.",
+                "values": [("proxy", ""), ("proxy_socks5", ""), ("api_key", "")],
+            },
+        }
         self.keywords = {}
         self.cfg = cfg
         self.config = config
         self.init_done = False
-
-        # We will now try to load the keywords from the modules
+        self.completion_matches = []
         self.load_cli_mods(opts)
 
-        self.completion_matches = []
-
+    def cli_dir(self):
+        return self.config.get("paths", {}).get("cli") or default_cli_dir()
 
     def load_cli_mods(self, opts):
-        # Main list of keywords for the first parameter
-        self.keywords = {}
-        if 'paths' not in self.config or 'cli' not in self.config.get('paths', []):
-            # We are dign the init, so bail out
-            if opts.do_init:
-                return
-            logger.error('Cannot load cli commands, missing paths or cli entry in the config')
+        cli_mods_dir = os.path.abspath(self.cli_dir())
+        if not os.path.isdir(cli_mods_dir):
+            if not opts.do_init:
+                logger.error("Cannot load cli commands: directory %s not found "
+                             "(set [paths] cli in %s)", cli_mods_dir, opts.iniconfig)
             return
-
         self.init_done = True
-
-        cli_mods_dir = os.path.abspath(self.config['paths']['cli'])
-        logger.debug("WILL LOAD THE CLI DIR %s" % cli_mods_dir)
-        cli_mods_dirs = [os.path.join(cli_mods_dir, d) for d in os.listdir(cli_mods_dir)
-                         if os.path.isdir(os.path.join(cli_mods_dir, d))]
+        logger.debug("Loading cli commands from %s", cli_mods_dir)
 
         new_config_param = False
-        for d in cli_mods_dirs:
-            f = os.path.join(d, 'cli.py')
-            if os.path.exists(f):
-                dname = os.path.split(d)[1]
-                # Let's load it, but first att it to sys.path
-                sys.path.append(d)
-                # Load this PATH/cli.py file
-                m = imp.load_source(dname, f)
-                # Link the CONFIG objet into it
-                m.CONFIG = self.config
-                exports = getattr(m, 'exports', {})
-                for (f, v) in exports.iteritems():
-                    m_keywords = v.get('keywords', [])
-                    for k in m_keywords:
-                        e = {'f': f,
-                             'args': v.get('args', []),
-                             'description': v.get('description', ''),
-                             'came_from': dname}
-                        # Finally save it
-                        self.keywords[k] = e
-
-                # And now the configuration part
-                mconfig = getattr(m, 'configurations', {})
-                for (p, e) in mconfig.iteritems():
-                    # print p, e
-                    # print p in self.config
-                    if p not in self.config:
-                        self.ini_defaults[p] = e
+        for name in sorted(os.listdir(cli_mods_dir)):
+            mod_dir = os.path.join(cli_mods_dir, name)
+            mod_file = os.path.join(mod_dir, "cli.py")
+            if not os.path.isfile(mod_file):
+                continue
+            sys.path.append(mod_dir)
+            try:
+                spec = importlib.util.spec_from_file_location("shinken_cli_%s" % name, mod_file)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+            except Exception as exp:  # a broken plugin must not kill the CLI
+                logger.error("Cannot load cli module %s: %s", mod_file, exp)
+                continue
+            module.CONFIG = self.config
+            for func, desc in getattr(module, "exports", {}).items():
+                for keyword in desc.get("keywords", []):
+                    self.keywords[keyword] = {
+                        "f": func,
+                        "args": desc.get("args", []),
+                        "description": desc.get("description", ""),
+                        "came_from": name,
+                    }
+            for section, entry in getattr(module, "configurations", {}).items():
+                if section not in self.config:
+                    self.ini_defaults[section] = entry
+                    new_config_param = True
+                    continue
+                self.ini_defaults.setdefault(section, entry)
+                defaults = self.ini_defaults[section].setdefault("values", [])
+                for prop, value in entry.get("values", []):
+                    if prop not in self.config[section]:
+                        defaults.append((prop, value))
                         new_config_param = True
-                        continue
-                    # Maybe it's just in the self.ini_defaults if so it's not a new
-                    # config
-                    if p not in self.ini_defaults:
-                        self.ini_defaults[p] = e
-                    # print "CONFIG P",p, self.config[p]
-                    cvalues = self.config[p]
-                    ini_defaults_values = self.ini_defaults[p]['values']
-                    mvalues = e.get('values', [])
-                    for (prop, v) in mvalues:
-                        if prop not in cvalues:
-                            ini_defaults_values.append((prop, v))
-                            new_config_param = True
 
-        # update our ini with the new defaults
-        if new_config_param:
-            logger.info('New module parameter detected, updating the ini file')
+        if new_config_param and self.cfg is not None:
+            logger.info("New module parameter detected, updating the ini file")
             write_ini_file(self.cfg, self, opts)
-
-        logger.debug('We load the keywords %s' % self.keywords)
-
 
     def loop(self):
         if not self.init_done:
-            logger.error('CLI loading not done: missing configuration data. Please run --init')
+            logger.error("CLI loading not done: missing configuration data. Please run --init")
             return
+        import atexit
+        import readline
 
-        readline.parse_and_bind('tab: complete')
-        # Use the CLI as completer
+        readline.parse_and_bind("tab: complete")
         readline.set_completer(self.complete)
-
-        # EMACS rules :) / VI sucks
-        readline.parse_and_bind('set editing-mode emacs')
-        # Try to read and save the history when exiting
+        readline.parse_and_bind("set editing-mode emacs")
         histfile = os.path.join(os.path.expanduser("~"), ".shinken.history")
         try:
             readline.read_history_file(histfile)
-        except IOError:
+        except OSError:
             pass
-        import atexit
         atexit.register(readline.write_history_file, histfile)
 
         while True:
             try:
-                line = raw_input('> ')
+                line = input("> ")
             except EOFError:
-                print ''
+                print("")
                 break
             line = line.strip()
-            if line in ['quit', 'bye', 'sayonara']:
+            if line in ("quit", "exit", "bye", "sayonara"):
                 break
-
             if not line:
                 continue
-            if line.startswith('!'):
-                self.execute_shell(line[1:])
+            if line.startswith("!"):
+                os.system(line[1:])
                 continue
-            # More cleassic command
-            args = shlex.split(line.encode('utf8', 'ignore'))
-            logger.debug("WANT TO CALL WITH ARGS %s" % args)
-            self.one_loop(args)
+            self.one_loop(shlex.split(line))
 
-
-    def execute_shell(self, line):
-        output = os.popen(line).read()
-        print output
-
-
-    # Execute a function based on the command line
     def one_loop(self, command_args):
         if not self.init_done:
-            logger.error('CLI loading not done: missing configuration data. Please run --init')
-            return
-
-        logger.debug("ARGS: %s" % command_args)
+            logger.error("CLI loading not done: missing configuration data. Please run --init")
+            return 1
         keyword = command_args.pop(0)
-        mod = self.keywords.get(keyword, None)
+        mod = self.keywords.get(keyword)
         if mod is None:
-            logger.error("UNKNOWN command %s" % keyword)
-            return
+            logger.error("Unknown command %s (see shinken --list)", keyword)
+            return 1
 
-        # Now prepare a new parser, for the command call this time
-        command_parser = optparse.OptionParser(
-            '',
-            version="%prog " + VERSION)
-        command_parser.prog = keyword
-
-        f_args = []
-        for a in mod.get('args', []):
-            n = a.get('name', None)
-            if n is None:
+        command_parser = argparse.ArgumentParser(prog="shinken %s" % keyword,
+                                                 description=mod["description"])
+        command_parser.add_argument("args", nargs="*")
+        for arg in mod.get("args", []):
+            name = arg.get("name")
+            if not name or not name.startswith("-"):
                 continue
-            default = a.get('default', Dummy)
-            description = a.get('description', '')
-            _type = a.get('type', 'standard')
-            if n.startswith('-'):
-                # Get a clean version of the parameter, without - or --
-                dest = n[1:]
-                if dest.startswith('-'):
-                    dest = dest[1:]
-                # And if the parameter is like download-only, map it to
-                # download_only
-                dest = dest.replace('-', '_')
-                if _type == 'bool':
-                    command_parser.add_option(n, action='store_true', dest=dest, help=(description))
-                else:
-                    command_parser.add_option(n, dest=dest, help=(description))
-
-        cmd_opts, cmd_args = command_parser.parse_args(command_args)
-        f = mod.get('f', None)
-        logger.debug("CALLING" + str(f) + "WITH" + str(cmd_args) + "and" +
-                     str(cmd_opts) + str(type(cmd_opts)) + str(dir(cmd_opts)))
-        f(*cmd_args, **cmd_opts.__dict__)
-
-
-    # Complete is a bit strange in readline.
-    # It will call it as it do not answser None, by increasing the
-    # state int for each call. So don't loop forever!
-    def complete(self, text, state):
-        # print "STATE?", text, state
-
-        # New completion call
-        if state == 0:
-            self.completion_matches = []
-
-        # print "TRY TO COMPLETE", text
-        text = text.strip()
-
-        args = shlex.split(text.encode('utf8', 'ignore'))
-        # print "ARGS", args
-        if len(args) == 0:
-            args = ['']
-        keyword = args[0]
-        # Trying to expand the command name
-        if len(args) == 1 and state == 0:
-            for k in self.keywords:
-                if k.startswith(text):
-                    self.completion_matches.append(k)
-
-        response = None
+            dest = name.lstrip("-").replace("-", "_")
+            if arg.get("type") == "bool":
+                command_parser.add_argument(name, action="store_true", dest=dest,
+                                            help=arg.get("description", ""))
+            else:
+                command_parser.add_argument(name, dest=dest, default=arg.get("default"),
+                                            help=arg.get("description", ""))
+        cmd_opts = vars(command_parser.parse_args(command_args))
+        positional = cmd_opts.pop("args")
         try:
-            response = self.completion_matches[state]
+            result = mod["f"](*positional, **cmd_opts)
+        except OSError as exp:
+            logger.error("%s: %s", keyword, exp)
+            return 2
+        return 0 if result in (None, True) else result
+
+    def complete(self, text, state):
+        if state == 0:
+            self.completion_matches = [k for k in sorted(self.keywords)
+                                       if k.startswith(text.strip())]
+        try:
+            return self.completion_matches[state]
         except IndexError:
-            response = None
-
-        # print "CALL", text, "state", state, response
-        return response
+            return None
 
 
+def write_ini_file(cfg, cli, opts):
+    new_cfg = ConfigParserWithComments(interpolation=None)
+    modify = False
+    if cfg is None:
+        cfg = configparser.RawConfigParser()
+    for section in cfg.sections():
+        if not new_cfg.has_section(section):
+            new_cfg.add_section(section)
+        for key, value in cfg.items(section, raw=True):
+            new_cfg.set(section, key, value)
 
-
-
-def write_ini_file(cfg, CLI, opts):
-        new_cfg = ConfigParserWithComments()
-        modify = False
-        if not cfg:
-            cfg = ConfigParser.ConfigParser()
-
-        # Import data from the loaded configuration
-        for section in cfg.sections():
-            if not new_cfg.has_section(section):
-                new_cfg.add_section(section)
-            for (k, v) in cfg.items(section):
-                new_cfg.set(section, k, v)
-
-        for (s, d) in CLI.ini_defaults.iteritems():
-            comment = d.get('comment', '')
-            values = d.get('values', [])
-            if not cfg.has_section(s) and not new_cfg.has_section(s):
-                print "Creating ini section", s
-                new_cfg.add_section(s)
+    for section, desc in cli.ini_defaults.items():
+        if not new_cfg.has_section(section):
+            print("Creating ini section", section)
+            new_cfg.add_section(section)
+            modify = True
+        if desc.get("comment"):
+            new_cfg.add_comment(section, desc["comment"])
+        for key, value in desc.get("values", []):
+            if not cfg.has_option(section, key):
+                new_cfg.set(section, key, value)
                 modify = True
-            if comment:
-                new_cfg.add_comment(s, comment)
-            for (k, v) in values:
-                if not cfg.has_option(s, k):
-                    new_cfg.set(s, k, v)
-                    modify = True
-                # print new_cfg.items(s)
-        if modify:
-            print "Saving the new configuration file", opts.iniconfig
-            with open(opts.iniconfig, 'wb') as configfile:
-                new_cfg.write(configfile)
+    if modify:
+        print("Saving the new configuration file", opts.iniconfig)
+        with open(opts.iniconfig, "w", encoding="utf-8") as configfile:
+            new_cfg.write(configfile)
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="shinken", add_help=False,
+        description="Shinken command line interface (packages, documentation, inventory).",
+        epilog="Run 'shinken --list' to see the available commands and "
+               "'shinken -h <command>' for the help of one command.")
+    parser.add_argument("--version", action="version", version="%(prog)s " + VERSION)
+    parser.add_argument("--proxy", help="Proxy URI, like http://user:password@proxy-server:3128")
+    parser.add_argument("--proxy_socks5", "--proxy-socks5", dest="proxy_socks5",
+                        help="Socks5 proxy URI, like server:1080")
+    parser.add_argument("-A", "--api-key", dest="api_key",
+                        help="API key used to publish packages on shinken.io")
+    parser.add_argument("-l", "--list", action="store_true", dest="do_list",
+                        help="List available commands")
+    parser.add_argument("--init", action="store_true", dest="do_init",
+                        help="Initialize/refill your shinken.ini file (default %s)" % DEFAULT_CFG)
+    parser.add_argument("-D", action="store_true", dest="do_debug", help="Enable debug mode")
+    parser.add_argument("-c", "--config", dest="iniconfig", default=DEFAULT_CFG,
+                        help="Path to your shinken.ini file. Default: %s" % DEFAULT_CFG)
+    parser.add_argument("-v", action="store_true", dest="do_verbose", help="Be more verbose")
+    parser.add_argument("-h", "--help", action="store_true", dest="do_help", help="Print help")
+    return parser
 
 
 def main(custom_args=None):
-    parser = optparse.OptionParser(
-        '',
-        version="%prog " + VERSION,
-        add_help_option=False)
-    parser.add_option('--proxy', dest="proxy",
-                      help="""Proxy URI. Like http://user:password@proxy-server:3128""")
-    parser.add_option('--proxy_socks5', dest="proxy_socks5",
-                      help="""Socks5 proxy URI. Like server:1080""")
-    parser.add_option('-A', '--api-key',
-                      dest="api_key", help=("Your API key for uploading the package to the "
-                                            "Shinken.io website. If you don't have one, "
-                                            "please go to your account page"))
-    parser.add_option('-l', '--list', action='store_true',
-                      dest="do_list", help=("List available commands"))
-    parser.add_option('--init', action='store_true',
-                      dest="do_init", help=("Initialize/refill your shinken.ini file "
-                                            "(default to %s)" % DEFAULT_CFG))
-    parser.add_option('-D', action='store_true',
-                      dest="do_debug", help=("Enable the debug mode"))
-    parser.add_option('-c', '--config', dest="iniconfig", default=DEFAULT_CFG,
-                      help=("Path to your shinken.ini file. Default: %s" % DEFAULT_CFG))
-    parser.add_option('-v', action='store_true',
-                      dest="do_verbose", help=("Be more verbose"))
-    parser.add_option('-h', '--help', action='store_true',
-                      dest="do_help", help=("Print help"))
-
-    # First parsing, for purely internal parameters, but disable
-    # errors, because we only want to see the -D -v things
-    old_error = parser.error
-    parser.error = lambda x: 1
-    opts, args = parser.parse_args(custom_args)
-    # reenable the errors for later use
-    parser.error = old_error
-
-    do_help = opts.do_help
-    if do_help and len(args) == 0:
-        parser.print_help()
-        sys.exit(0)
+    argv = list(sys.argv[1:] if custom_args is None else custom_args)
+    parser = build_parser()
+    opts, _ = parser.parse_known_args(argv)
 
     if opts.do_verbose:
-        logger.setLevel('INFO')
-
+        logger.setLevel("INFO")
     if opts.do_debug:
-        logger.setLevel('DEBUG')
+        logger.setLevel("DEBUG")
 
     cfg = None
-    if not os.path.exists(opts.iniconfig):
-        logger.debug('Missing configuration file!')
-        CONFIG['shinken.io'] = {}
-    else:
-        cfg = ConfigParser.ConfigParser()
-        cfg.read(opts.iniconfig)
+    if os.path.exists(opts.iniconfig):
+        cfg = configparser.ConfigParser()
+        cfg.read(opts.iniconfig, encoding="utf-8")
         for section in cfg.sections():
-            if section not in CONFIG:
-                CONFIG[section] = {}
-            for (key, value) in cfg.items(section):
-                CONFIG[section][key] = value
-
-    # Now replace if given in command line
+            CONFIG.setdefault(section, {}).update(cfg.items(section))
+    shinken_io = CONFIG.setdefault("shinken.io", {})
     if opts.api_key:
-        CONFIG['shinken.io']['api_key'] = opts.api_key
-        logger.debug("Using given api-key in command line")
+        shinken_io["api_key"] = opts.api_key
+    shinken_io["proxy"] = opts.proxy or shinken_io.get("proxy") or None
+    shinken_io["proxy_socks5"] = opts.proxy_socks5 or shinken_io.get("proxy_socks5") or None
 
-    if opts.proxy:
-        CONFIG['shinken.io']['proxy'] = opts.proxy
-        logger.debug("Using given proxy in command line")
-    else:
-        CONFIG['shinken.io']['proxy'] = None
+    cli = CLICommander(CONFIG, cfg, opts)
 
-    if opts.proxy_socks5:
-        CONFIG['shinken.io']['proxy_socks5'] = opts.proxy_socks5
-        logger.debug("Using given socks5 proxy in command line")
-    else:
-        CONFIG['shinken.io']['proxy_socks5'] = None
-
-    CLI = CLICommander(CONFIG, cfg, opts)
-
-    # We should look on the sys.argv if we find a valid keywords to
-    # call in one loop or not.
-    def hack_sys_argv():
-        command_values = []
-        internal_values = []
-        # print "RARGS", parser.rargs
-        founded = False
-        for arg in sys.argv:
-            if arg in CLI.keywords:
-                founded = True
-            # Did we found it?
-            if founded:
-                command_values.append(arg)
-            else:  # ok still not, it's for the shinekn command so
-                internal_values.append(arg)
-
-        sys.argv = internal_values
-        return command_values
-
-    # We will remove specific commands from the sys.argv list and keep
-    # them for parsing them after
-    command_args = hack_sys_argv()
-
-    # Global command parsing, with the error enabled this time
-    opts, args = parser.parse_args(custom_args)
+    # Split argv: everything from the first known command keyword belongs to it.
+    internal, command_args = argv, []
+    for index, arg in enumerate(argv):
+        if arg in cli.keywords:
+            internal, command_args = argv[:index], argv[index:]
+            break
+    opts = parser.parse_args(internal)
 
     if opts.do_help:
-        if len(command_args) == 0:
-            logger.error("Cannot find any help for you")
-            sys.exit(1)
-        a = command_args.pop(0)
-        if a not in CLI.keywords:
-            logger.error("Cannot find any help for %s" % a)
-            sys.exit(1)
-        cprint('%s' % a, 'green')
-        for arg in CLI.keywords[a]['args']:
-            n = arg.get('name', '')
-            desc = arg.get('description', '')
-            cprint('\t%s' % n, 'green', end='')
-            cprint(': %s' % desc)
+        if not command_args:
+            parser.print_help()
+            return 0
+        keyword = command_args[0]
+        cprint(keyword, "green")
+        print("    %s" % cli.keywords[keyword]["description"])
+        for arg in cli.keywords[keyword]["args"]:
+            cprint("\t%s" % arg.get("name", ""), "green", end="")
+            print(": %s" % arg.get("description", ""))
+        return 0
 
-        sys.exit(0)
-
-    # If the user explicitely set the proxy, take it!
-    if opts.proxy:
-        CONFIG['shinken.io']['proxy'] = opts.proxy
-
-    if opts.proxy_socks5:
-        CONFIG['shinken.io']['proxy_socks5'] = opts.proxy_socks5
-
-    # Maybe he/she just want to list our commands?
     if opts.do_list:
-        if not CLI.init_done:
-            sys.exit(0)
-        print "Available commands:"
-        all_from = {}
-        for (k, m) in CLI.keywords.iteritems():
-            came_from = m['came_from']
-            if came_from not in all_from:
-                all_from[came_from] = [(k, m)]
-            else:
-                all_from[came_from].append((k, m))
-        _mods = all_from.keys()
-        _mods.sort()
-        for mod_name in _mods:
-            d = all_from[mod_name]
-            print '%s:' % mod_name
-            d.sort(key=lambda e: e[0])
-            for (k, m) in d:
-                cprint('\t%s ' % k, 'green', end='')
-                cprint(': %s' % m['description'])
-        sys.exit(0)
+        if not cli.init_done:
+            return 1
+        print("Available commands:")
+        by_module = {}
+        for keyword, mod in cli.keywords.items():
+            by_module.setdefault(mod["came_from"], []).append((keyword, mod))
+        for mod_name in sorted(by_module):
+            print("%s:" % mod_name)
+            for keyword, mod in sorted(by_module[mod_name], key=lambda e: e[0]):
+                cprint("\t%s " % keyword, "green", end="")
+                print(": %s" % mod["description"])
+        return 0
 
     if opts.do_init:
-        write_ini_file(cfg, CLI, opts)
-        sys.exit(0)
+        write_ini_file(cfg, cli, opts)
+        return 0
 
-    # if just call shinken, we must open a prompt, but will be for another version
-    if len(command_args) == 0:
-        CLI.loop()
-        sys.exit(0)
-
-    # If it's just a one call shot, do it!
-    CLI.one_loop(command_args)
+    if not command_args:
+        cli.loop()
+        return 0
+    return cli.one_loop(command_args)
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    sys.exit(main())
