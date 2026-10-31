@@ -19,8 +19,10 @@ try {
         Write-Output "CRITICAL - no backup file in $Path"
         exit 2
     }
-    $age = [math]::Round(((Get-Date) - $newest.LastWriteTime).TotalHours, 1)
-    $perf = "age=${age}h;$MaxAgeHours;$($MaxAgeHours * 2);0"
+    $seconds = [int]((Get-Date) - $newest.LastWriteTime).TotalSeconds
+    $age = [math]::Round($seconds / 3600, 1)
+    # perfdata unit must be a Nagios one: seconds
+    $perf = "age=${seconds}s;$($MaxAgeHours * 3600);$($MaxAgeHours * 7200);0"
     if ($age -gt $MaxAgeHours * 2) {
         Write-Output "CRITICAL - last backup $($newest.Name) is $age h old | $perf"; exit 2
     }

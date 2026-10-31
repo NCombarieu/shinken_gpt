@@ -8,6 +8,10 @@ config_root="${SHINKEN_CONFIG:-/etc/shinken}"
 # runtime copy made by prepare_container_config (which excludes them).
 secrets_root="$config_root"
 
+log() {
+  echo "shinken-entrypoint: $*" >&2
+}
+
 prepare_container_config() {
   [ "${SHINKEN_CONTAINER_DNS:-0}" = "1" ] || return 0
 
@@ -18,8 +22,16 @@ prepare_container_config() {
   # /etc/shinken/... paths and may legitimately be unreadable by some
   # daemons: never copy them, so one private key in 0600 cannot make every
   # container crash-loop on a failed copy.
-  (cd "$config_root" && tar -cf - --exclude=./ssh_keys --exclude=./certs --exclude=./passive .) \
+  (cd "$config_root" && tar -cf - --exclude=./ssh_keys --exclude=./certs \
+      --exclude=./passive --exclude=./secrets .) \
     | (cd "$runtime_root" && tar -xf -)
+  # A git-ignored *.local.cfg (SNMPv3 passwords...) that the container cannot
+  # read would silently vanish from the copy: say so.
+  for local_cfg in "$config_root"/resource.d/*.local.cfg; do
+    [ -e "$local_cfg" ] || continue
+    [ -r "$local_cfg" ] || log "WARNING: $local_cfg is not readable by uid $(id -u):" \
+      "its macros are not loaded (podman unshare chown $(id -u):$(id -g) <file>)"
+  done
 
   # Container service names are resolvable through the Podman/Docker network,
   # unlike the historical monolithic 'localhost' addresses.
@@ -53,10 +65,6 @@ EOF
   config_root="$runtime_root"
 }
 
-log() {
-  echo "shinken-entrypoint: $*" >&2
-}
-
 # SSH client setup for check_by_ssh (poller only). Private keys dropped in
 # /etc/shinken/ssh_keys are copied to a private runtime directory in 0600,
 # owned by the container user, because ssh refuses keys that are group/world
@@ -85,14 +93,18 @@ prepare_ssh_client() {
       dest="$ssh_runtime/$(basename "$key")"
       cp "$key" "$dest"
       chmod 600 "$dest"
-      identities="${identities}    IdentityFile ${dest}
+      identities="${identities}    IdentityFile \"${dest}\"
 "
     done
   fi
 
-  if [ -r "$keys_dir/known_hosts" ]; then
+  if [ -e "$keys_dir/known_hosts" ]; then
+    # Pinned host keys. If the file is unreadable, keep strict checking (every
+    # SSH check fails visibly) rather than silently trusting on first use.
     known_hosts="$keys_dir/known_hosts"
     strict="${SHINKEN_SSH_STRICT:-yes}"
+    [ -r "$known_hosts" ] || log "WARNING: $known_hosts is not readable by uid $(id -u):" \
+      "SSH checks will fail (podman unshare chown $(id -u):$(id -g) <file>)"
   else
     # No pinned known_hosts: trust on first use, remembered in the data volume.
     known_hosts="${SHINKEN_SSH_TOFU_FILE:-/var/lib/shinken/ssh_known_hosts}"
@@ -106,7 +118,7 @@ prepare_ssh_client() {
     echo "    ConnectTimeout 10"
     echo "    IdentitiesOnly yes"
     printf '%s' "$identities"
-    echo "    UserKnownHostsFile $known_hosts"
+    echo "    UserKnownHostsFile \"$known_hosts\""
     echo "    GlobalKnownHostsFile /dev/null"
     echo "    StrictHostKeyChecking $strict"
   } >"$ssh_runtime/config"
@@ -116,7 +128,12 @@ prepare_ssh_client() {
 # Passive results pushed over SSH (doc/checks/ssh-passif.md): an
 # unprivileged sshd that only ever runs shinken-passive-receive. Each key in
 # authorized_keys is bound to one Shinken host through
-# environment="SHINKEN_PASSIVE_HOST=<host>".
+# environment="SHINKEN_PASSIVE_HOST=<host>" on its line. That option is NOT
+# passed through the environment (PermitUserEnvironment stays off, so a
+# ~/.ssh/environment cannot override it): with ExposeAuthInfo, the receiver
+# looks up the host of the key that actually authenticated. State lives in
+# the container's own volume (compose: passive-ssh-data), not in the volume
+# shared with the other daemons.
 run_passive_sshd() {
   state_dir="${SHINKEN_PASSIVE_STATE:-/var/lib/shinken/passive-ssh}"
   runtime="${SHINKEN_PASSIVE_RUNTIME:-/tmp/shinken-sshd}"
@@ -148,8 +165,10 @@ PubkeyAuthentication yes
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 UsePAM no
-PermitUserEnvironment SHINKEN_PASSIVE_HOST
-ForceCommand /usr/local/bin/shinken-passive-receive --livestatus $livestatus
+PermitUserEnvironment no
+PermitUserRC no
+ExposeAuthInfo yes
+ForceCommand /usr/local/bin/shinken-passive-receive --livestatus $livestatus --authorized-keys $state_dir/authorized_keys
 DisableForwarding yes
 PermitTTY no
 PrintMotd no

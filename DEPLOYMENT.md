@@ -412,8 +412,8 @@ ne change rien, logique mais facile à oublier.
     est dans [doc/checks/ssh-actif.md](doc/checks/ssh-actif.md). Depuis : le
     poller copie lui-même les clés en `0600` et génère la configuration ssh
     (plus de `-i` ni de `podman unshare chmod`), `known_hosts` est géré, et le
-    « à refaire après chaque recréation » venait des montages `:Z` (label
-    SELinux privé), remplacés par `:z`.
+    « à refaire après chaque recréation » venait probablement des montages
+    `:Z` (label SELinux privé), remplacés par `:z` (hypothèse, non reproduite).
 
 Objectif : un check `check_by_ssh` qui se connecte depuis le poller
 container vers **ce serveur lui-même** (pas un autre container), avec

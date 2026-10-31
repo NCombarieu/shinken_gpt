@@ -77,6 +77,12 @@ services:
     command: ["passive-ssh"]
     environment:
       SHINKEN_LIVESTATUS: broker:50000
+    # Own data volume: the sshd account's HOME and host key must not be
+    # writable/readable by the other daemons (shinken-data is shared).
+    volumes:
+      - ./etc:/etc/shinken:ro,z
+      - passive-ssh-data:/var/lib/shinken:z
+      - shinken-logs:/var/log/shinken:z
     ports:
       - "2222:2222"
     depends_on:
@@ -134,6 +140,7 @@ services:
 
 volumes:
   shinken-data:
+  passive-ssh-data:
   shinken-logs:
   influxdb-data:
   grafana-data:

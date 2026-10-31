@@ -6,7 +6,7 @@ set -eu
 d=/var/lib/shinken/sshtarget
 mkdir -p "$d"
 chmod 700 "$d"
-ssh-keygen -q -t ed25519 -N "" -f "$d/host_key"
+[ -f "$d/host_key" ] || ssh-keygen -q -t ed25519 -N "" -f "$d/host_key"
 cp /opt/sshtarget/authorized_keys "$d/authorized_keys"
 chmod 600 "$d/authorized_keys"
 cat >"$d/sshd_config" <<CFG

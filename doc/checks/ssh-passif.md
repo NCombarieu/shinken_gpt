@@ -44,14 +44,22 @@ c'est la seule entrée disponible.
 ## Sécurité
 
 - **Une clé par machine**, liée à **un seul** hôte Shinken
-  (`environment="SHINKEN_PASSIVE_HOST=srv-web01"` dans `authorized_keys`).
-  Une clé ne peut pas envoyer de résultats pour un autre hôte.
+  (`environment="SHINKEN_PASSIVE_HOST=srv-web01"` sur sa ligne de
+  `authorized_keys`). Une clé ne peut pas envoyer de résultats pour un autre
+  hôte. La liaison est lue dans `authorized_keys` pour la clé qui s'est
+  réellement authentifiée (`ExposeAuthInfo`), pas dans l'environnement de
+  la session : un `~/.ssh/environment` ne peut pas la contourner.
 - **Aucun shell** : sshd impose `shinken-passive-receive` (`ForceCommand`),
   sans PTY, sans redirection de port. Une clé sans liaison d'hôte est refusée.
 - **Rien n'est relayé tel quel.** Seuls `PROCESS_SERVICE_CHECK_RESULT` et
   `PROCESS_HOST_CHECK_RESULT` sont acceptés. Chaque champ est vérifié (nom,
-  code retour 0 à 3, caractères de contrôle, longueur), puis la commande est
-  reconstruite. Un client ne peut donc pas envoyer `DISABLE_NOTIFICATIONS`.
+  code retour 0 à 3, longueur) et tout caractère de contrôle ou séparateur
+  de ligne est retiré, y compris les séparateurs Unicode (U+2028, U+0085...)
+  que Livestatus prendrait pour une nouvelle ligne. La commande est ensuite
+  reconstruite : un client ne peut pas envoyer `DISABLE_NOTIFICATIONS`.
+- **Isolé des autres daemons** : le conteneur `passive-ssh` a son propre
+  volume (`passive-ssh-data`) ; `~/.ssh/rc` et `~/.ssh/environment` ne sont
+  pas utilisés.
 - **L'horodatage est celui du serveur.** Shinken ignore sans aucun message un
   résultat plus ancien que le dernier check : une horloge cliente en retard
   ferait disparaître les résultats.
@@ -97,10 +105,11 @@ time »). Un client arrêté se voit donc, au lieu de rester « OK » pour
 toujours. Mettez au moins deux fois l'intervalle d'envoi.
 
 !!! information "Après un redémarrage de Shinken"
-    Aucun module de rétention n'est livré : après un redémarrage, les
-    services passifs repassent en UNKNOWN en moins d'une minute, jusqu'au
-    prochain envoi de leur client. D'où UNKNOWN plutôt que CRITICAL, pour ne
-    pas déclencher une vague d'alertes.
+    Sans module de rétention, les services passifs repassent en UNKNOWN en
+    moins d'une minute après un redémarrage, jusqu'au prochain envoi de leur
+    client. Le modèle met `first_notification_delay 20` (minutes) : si le
+    client renvoie un résultat avant, la notification en attente est
+    annulée et personne n'est alerté.
 
 !!! information "Hôte actif, résultat d'hôte passif"
     Si l'hôte a un check actif (`check_command`), un résultat d'hôte envoyé

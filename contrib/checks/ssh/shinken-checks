@@ -2,8 +2,11 @@
 # Forced command for the Shinken monitoring key on a monitored Linux host.
 #
 # Install as root:   install -m 755 shinken-checks /usr/local/bin/shinken-checks
-# authorized_keys of the monitoring account (one line):
-#   command="/usr/local/bin/shinken-checks",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... shinken
+# authorized_keys of the monitoring account (one line; "from" = address of
+# the Podman host as seen by this machine):
+#   restrict,from="192.0.2.10",command="/usr/local/bin/shinken-checks" ssh-ed25519 AAAA... shinken
+# (OpenSSH < 7.2 has no "restrict": use no-port-forwarding,no-X11-forwarding,
+#  no-agent-forwarding,no-pty instead)
 #
 # Shinken sends a check *name* (check_by_ssh -C "<name>"). The name is only
 # compared against this fixed list: it is never passed to a shell, so the
@@ -11,6 +14,10 @@
 # Add your own entries to the case below (one name -> one fixed command).
 #
 # See doc/checks/ssh-actif.md.
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+LC_ALL=C
+export PATH LC_ALL
 
 P=/usr/lib/nagios/plugins           # Debian/Ubuntu (monitoring-plugins-basic)
 [ -d "$P" ] || P=/usr/lib64/nagios/plugins   # RHEL/Rocky (nagios-plugins-*)
@@ -23,8 +30,9 @@ case "$SSH_ORIGINAL_COMMAND" in
   procs)    exec "$P/check_procs" -w 400 -c 600 ;;
   zombies)  exec "$P/check_procs" -s Z -w 5 -c 20 ;;
   users)    exec "$P/check_users" -w 5 -c 10 ;;
-  uptime)   exec uptime ;;
-  ntp)      exec "$P/check_ntp_time" -H pool.ntp.org -w 0.5 -c 1 ;;
+  uptime)   echo "OK - $(uptime)"; exit 0 ;;
+  # Clock offset against your NTP server (use an internal one).
+  ntp)      exec "$P/check_ntp_time" -H ntp.example.lan -w 0.5 -c 1 -q ;;
   service-sshd) exec "$P/check_procs" -c 1: -C sshd ;;
   # Example of a local script (keep it root-owned and not writable by the
   # monitoring account):

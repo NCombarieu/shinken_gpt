@@ -60,7 +60,7 @@ Points de repère :
 | Modèle (`use`) | Fichier | Rôle |
 |---|---|---|
 | `linux-ssh` | `etc/templates/linux-ssh.cfg` | hôte supervisé par SSH (`_SSH_USER`, `_SSH_PORT`) |
-| `nrpe-host` | `etc/templates/nrpe-host.cfg` | hôte avec agent NRPE / NSClient++ |
+| `nrpe-host` / `nrpe-ssl-host` | `etc/templates/nrpe-host.cfg` | hôte avec agent NRPE / NSClient++ (sans / avec certificat client) |
 | `snmp-host` | `etc/templates/snmp-host.cfg` | équipement SNMP (`_SNMP_COMMUNITY`, `_SNMP_PORT`, `_SNMP_V3_USER`) |
 | `passive-service` | `etc/templates/passive-service.cfg` | service alimenté par des résultats passifs, avec contrôle de fraîcheur |
 
@@ -73,17 +73,23 @@ Points de repère :
     (résultats passifs, Thruk).
 
 !!! attention "Arguments des commandes"
-    Dans `check_command commande!arg1!arg2`, un `!` littéral s'écrit `\!` et
-    un `$` s'écrit `$$`. Shinken passe la ligne à `/bin/sh` dès qu'elle
+    Dans `check_command commande!arg1!arg2`, un `!` littéral s'écrit `\!`.
+    Un `$` isolé passe tel quel (`check_snmp_storage!^/$!85!95` fonctionne,
+    testé) ; écrivez `$$` seulement si le texte pourrait former une macro
+    (`$NOM$`). Shinken passe la ligne à `/bin/sh` dès qu'elle
     contient un caractère spécial : un `>` non protégé devient une
     redirection. Pour NSClient++, utilisez `gt`/`lt` plutôt que `>`/`<`.
 
 !!! information "Sorties de plugin et notifications"
-    `etc/shinken.cfg` définit `illegal_macro_output_chars`. Ces caractères
-    sont retirés des macros de sortie (`$SERVICEOUTPUT$`...) avant qu'elles
-    n'arrivent dans une commande de notification. Une sortie de plugin, ou un
-    résultat passif envoyé par un client, ne peut donc pas injecter de
-    commande shell.
+    `etc/shinken.cfg` définit `illegal_macro_output_chars`
+    (`` ` `` `~ $ & | ' " \ < >`). Ces caractères sont retirés des macros de
+    sortie (`$SERVICEOUTPUT$`, `$HOSTOUTPUT$`, perfdata, commentaires
+    d'acquittement) avant qu'elles n'arrivent dans une commande de
+    notification : une sortie de plugin, ou un résultat passif envoyé par un
+    client, ne peut pas y injecter de commande shell. Effet visible : ces
+    caractères disparaissent aussi des mails (`l'espace` devient
+    `lespace`). `$LONGSERVICEOUTPUT$` et `$LONGHOSTOUTPUT$` ne sont **pas**
+    filtrés : ne les mettez jamais dans une ligne de commande.
 
 ## Validation
 
@@ -104,8 +110,9 @@ printf 'GET services\nColumns: host_name description state plugin_output\nFilter
 
 ## Ce qui a été vérifié
 
-Chaque type a été testé avec de vrais démons (sshd, snmpd, nrpe, serveur
-HTTP) et les six daemons Shinken. La CI rejoue à chaque push, dans des
+Les commandes ont été testées avec les six daemons Shinken contre de vrais
+démons Linux (sshd, snmpd v2c/v3, nrpe 4.1, serveur HTTP), à la main : le
+détail et les limites sont en fin de chaque fiche. La CI rejoue à chaque push, dans des
 conteneurs Podman séparés, le SSH actif (cible avec commande forcée), le
 SSH passif (envoi par un client jusqu'à l'état du service) et le check API
 JSON. Elle vérifie aussi que chaque plugin référencé dans `etc/commands`

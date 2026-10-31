@@ -1,4 +1,7 @@
 # Copy to snmpv3.local.cfg (same directory, ignored by git), then set the real
 # SNMPv3 passwords used by the *_v3 commands (authPriv, SHA + AES).
+# In this file write "$$" for a literal "$"; avoid "'" (the commands put the
+# value between single quotes). The passwords are visible in "ps" on the
+# poller, like any plugin argument.
 $SNMPV3AUTHPASS$=change-me-auth
 $SNMPV3PRIVPASS$=change-me-priv

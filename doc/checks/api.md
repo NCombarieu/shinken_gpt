@@ -40,12 +40,16 @@ volume de données : il est mis à jour avec l'image.
 
 | Commande | Arguments | Vérifie |
 |---|---|---|
-| `check_https_status` | chemin, regex | HTTPS : code 2xx/3xx et contenu |
+| `check_https_status` | chemin, regex | HTTPS : code 2xx/3xx, contenu, certificat valide (chaîne et nom) |
 | `check_http_status` | chemin, regex | même chose en HTTP |
 | `check_https_cert` | jours warn, jours crit | expiration du certificat |
 | `check_json_api` | URL, chemin JSON, warn, crit | valeur numérique dans les seuils |
 | `check_json_api_expect` | URL, chemin JSON, valeur attendue | égalité exacte |
 | `check_json_api_token` | URL, chemin, valeur, fichier jeton | idem avec un jeton « Bearer » |
+
+`check_https_status` et `check_https_cert` utilisent l'`address` de l'hôte
+comme nom de site (SNI, en-tête Host, nom du certificat) : mettez le **nom
+DNS** du site, pas une adresse IP.
 
 ## Exemples
 
@@ -128,7 +132,8 @@ chmod 600 etc/secrets/portail.token
 check_command   check_json_api_token!https://portail.example.org/api/status!status!ok!portail.token
 ```
 
-`etc/secrets/` est ignoré par git. Pour un autre en-tête (`X-API-Key`...),
+`etc/secrets/` est ignoré par git. Le jeton n'est jamais renvoyé lors
+d'une redirection (vers un autre site ou de https vers http). Pour un autre en-tête (`X-API-Key`...),
 créez une commande avec `-H "X-API-Key: ..."`, en sachant que la valeur
 devient alors visible dans la configuration.
 

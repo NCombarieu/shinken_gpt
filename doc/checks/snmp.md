@@ -68,7 +68,8 @@ define host{
         use                     snmp-host
         host_name               sw-core01
         address                 10.0.0.2
-        check_command           check_snmp_alive        ; répond-il en SNMP ?
+        ; check_command check_snmp_alive (défaut du modèle, v2c)
+        ;               check_snmp_alive_v3 pour un équipement uniquement v3
         _SNMP_COMMUNITY         maCommunauteSecrete     ; v2c
         ; _SNMP_V3_USER         shinken                 ; v3 (défaut du modèle)
         ; _SNMP_PORT            161
@@ -84,11 +85,20 @@ vi etc/resource.d/snmpv3.local.cfg       # $SNMPV3AUTHPASS$ / $SNMPV3PRIVPASS$
 
 `*.local.cfg` est ignoré par git. Les commandes `*_v3` utilisent
 `authPriv`, SHA et AES avec ces deux macros, et l'utilisateur `_SNMP_V3_USER`
-de l'hôte.
+de l'hôte. Dans ce fichier, écrivez `$$` pour un `$` et évitez `'` (la
+valeur est placée entre apostrophes). Comme tout argument de plugin, les
+mots de passe sont visibles dans `ps` sur le poller.
 
 ### 4. Les services
 
 ```ini
+define host{
+        use                     snmp-host
+        host_name               srv-lin01
+        address                 srv-lin01.example.lan
+        _SNMP_COMMUNITY         maCommunauteSecrete
+        }
+
 define service{
         use                     generic-service
         host_name               srv-lin01
@@ -113,7 +123,7 @@ define service{
 
 | Commande | Arguments | Exemple |
 |---|---|---|
-| `check_snmp_alive` | (aucun) | test d'hôte sur sysUpTime |
+| `check_snmp_alive` / `_v3` | (aucun) | test d'hôte sur sysUpTime |
 | `check_snmp_get` | OID | `check_snmp_get!.1.3.6.1.2.1.1.5.0` (nom de l'équipement) |
 | `check_snmp_oid` / `_v3` | OID, warn, crit | `check_snmp_oid!.1.3.6.1.4.1.2021.10.1.5.1!300!500` |
 | `check_snmp_storage` / `_v3` | regex du volume, warn %, crit % | `check_snmp_storage!^/$!85!95`, `check_snmp_storage!^C:!85!95` |
@@ -121,7 +131,10 @@ define service{
 | `check_snmp_cpu` | warn %, crit % | `check_snmp_cpu!80!95` (Windows, équipements) |
 | `check_snmp_mem` | warn ram,swap %, crit | `check_snmp_mem!90,30!95,50` (net-snmp) |
 | `check_snmp_int` | regex de l'interface | `check_snmp_int!^eth0$` (état UP/DOWN) |
-| `check_ntp_time` | warn s, crit s | `check_ntp_time!0.5!1` (dérive d'horloge, par NTP) |
+
+La dérive d'horloge ne passe pas par SNMP : `check_ntp_time!0.5!1`
+interroge le service NTP de la cible (UDP 123), qui doit donc servir l'heure
+(chrony ne le fait pas par défaut).
 
 Pour le débit d'une interface, ajoutez une commande dédiée avec `-k` (voir
 `check_snmp_int.pl -h`), par exemple

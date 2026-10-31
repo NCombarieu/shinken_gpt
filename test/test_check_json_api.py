@@ -27,6 +27,13 @@ DOCUMENT = {"status": "UP", "queue": {"pending": 42}, "checks": [{"state": "ok"}
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/redirect":
+            self.send_response(302)
+            self.send_header("Location", "/echo-auth")
+            self.end_headers()
+            return
+        if self.path == "/echo-auth":
+            return self.reply(200, {"auth": self.headers.get("Authorization", "none")})
         if self.path == "/health":
             if self.headers.get("Authorization", "Bearer s3cr3t") != "Bearer s3cr3t":
                 return self.reply(401, {"error": "denied"})
@@ -137,3 +144,11 @@ def test_bearer_token_file(base_url, capsys, tmp_path):
 def test_bad_arguments_are_unknown(capsys):
     assert run(capsys)[0] == 3
     assert run(capsys, "-u", "http://x/", "-w", "abc")[0] == 3
+
+
+def test_token_is_not_sent_to_redirect_target(base_url, capsys, tmp_path):
+    token = tmp_path / "token"
+    token.write_text("s3cr3t")
+    code, out = run(capsys, "-u", base_url + "/redirect", "-p", "auth", "-e", "none",
+                    "--token-file", str(token))
+    assert code == 0, out

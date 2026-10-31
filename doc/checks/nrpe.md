@@ -49,8 +49,10 @@ plus :
 - l'agent n'accepte que Shinken (certificat client exigé).
 
 Commande Shinken : `check_nrpe_ssl` (fichiers dans `etc/certs/`).
-Commande sans certificats : `check_nrpe` (chiffrée, mais sans
-authentification de l'agent).
+Commande sans certificats : `check_nrpe`. Elle n'authentifie pas
+l'agent ; avec un agent récent la connexion reste chiffrée, mais un ancien
+agent en mode « insecure » (chiffrement anonyme ADH) est refusé par
+OpenSSL 3 : passez-le en certificats.
 
 !!! attention "Certificats d'exemple du dépôt"
     `etc/certs/` contient historiquement des certificats et clés
@@ -139,14 +141,20 @@ sauvegarde). Le contrat est celui de tout plugin Nagios : **une ligne**
    ```
 3. Shinken l'appelle par son nom : `check_nrpe_ssl!check_backup`.
 
-NSClient++ fournit un « wrapping » `ps1` par défaut
-(`powershell.exe -command`) : ne le redéfinissez pas.
+Le fichier fourni définit le « wrapping » `ps1` avec
+`-ExecutionPolicy Bypass` : le script s'exécute quelle que soit la politique
+d'exécution PowerShell de la machine.
+
+!!! attention "Commentaires dans nsclient.ini"
+    NSClient++ ne gère pas les commentaires en fin de ligne
+    (`CheckSystem = enabled ; ...` désactive le module). Mettez chaque
+    commentaire sur sa propre ligne.
 
 ### 5. Côté Shinken
 
 ```ini
 define host{
-        use                     nrpe-host
+        use                     nrpe-ssl-host
         host_name               srv-win01
         address                 srv-win01.example.lan
         }
@@ -170,9 +178,9 @@ define service{
         }
 ```
 
-`nrpe-host` vérifie l'hôte avec `check_nrpe_alive` (l'agent répond par sa
-version). Si l'agent exige un certificat client, ce test échoue : utilisez
-plutôt `check_command check_nrpe_ssl!alias_uptime` sur l'hôte.
+`nrpe-ssl-host` vérifie l'hôte avec `check_nrpe_ssl_alive` (l'agent répond
+par sa version, en présentant le certificat client). Pour un agent sans
+vérification de certificat, utilisez `nrpe-host` et `check_nrpe`.
 
 !!! information "Non testé avec NSClient++"
     Les commandes Shinken et la configuration TLS mutuelle ont été testées
@@ -192,11 +200,12 @@ systemctl restart nagios-nrpe-server
 ```
 
 `contrib/checks/nrpe/shinken.cfg` définit `allowed_hosts`, TLS avec
-certificat client obligatoire (`ssl_client_certs=2`), pas d'arguments
+certificat client obligatoire (`ssl_client_certs=2`) et sans chiffrement
+anonyme (`ssl_use_adh=0`), pas d'arguments
 (`dont_blame_nrpe=0`) et les commandes `check_load`, `check_disk`,
 `check_root`, `check_swap`, `check_procs`, `check_zombies`, `check_sshd`.
 
-Côté Shinken : `check_nrpe_ssl!check_load`.
+Côté Shinken : hôte `use nrpe-ssl-host`, services `check_nrpe_ssl!check_load`.
 
 ## Validation
 
@@ -216,9 +225,9 @@ podman exec shinken_poller_1 /usr/lib/nagios/plugins/check_nrpe -H srv-win01.exa
 |---|---|
 | `check_nrpe!<nom>` | TLS sans certificat |
 | `check_nrpe_ssl!<nom>` | TLS mutuel (`etc/certs/`) |
-| `check_nrpe_alive` | test d'hôte : l'agent répond |
+| `check_nrpe_alive` / `check_nrpe_ssl_alive` | test d'hôte : l'agent répond (sans / avec certificat client) |
 | `check_nrpe_1arg` / `_2args` / `_3args` | arguments envoyés (exige `allow arguments` sur l'agent), chacun entre guillemets |
-| `check_nrpe_args` | ancienne définition à 4 arguments, conservée pour l'existant |
+| `check_nrpe_args` | ancienne définition à 4 arguments, inchangée (arguments sans guillemets) |
 
 ## Dépannage {#depannage}
 

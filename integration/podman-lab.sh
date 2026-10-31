@@ -254,8 +254,9 @@ run_daemon poller
 run_daemon reactionner
 run_daemon broker -p 127.0.0.1:18080:8080
 run_daemon receiver
-# Passive receiver: its own anonymous volume for /var/lib/shinken (the lab's
-# 0777 state dirs would make sshd's StrictModes reject authorized_keys).
+# Passive receiver: no -v for /var/lib/shinken, so the image's VOLUME gives
+# it a fresh anonymous volume (the lab's 0777 state dirs would make sshd's
+# StrictModes reject authorized_keys).
 podman run -d --name lab-passive-ssh --network-alias passive-ssh \
     "${common_args[@]}" -e SHINKEN_LIVESTATUS=broker:50000 "$IMAGE" passive-ssh >/dev/null
 
@@ -275,15 +276,15 @@ while (( SECONDS < deadline )); do
         fi
     done
 
-    # Push a passive result over SSH, as a client would; retried until the
-    # receiver can see the service in Livestatus (configuration dispatched).
-    if [[ ${passive_pushed:-0} != 1 ]]; then
+    # Push a passive result over SSH, as a client would. Re-pushed on every
+    # round until the status shows it: "forwarded" only means accepted by
+    # Livestatus, and a startup freshness check may overwrite an early result.
+    if ! grep -q 'lab passive result' <<<"${status_json:-}"; then
         push_output=$(podman run --rm --network "$NETWORK" -v "$SSH_DIR/client:/opt/client:ro,z" "$IMAGE" \
             shell -c 'cp /opt/client/id_client /tmp/k && chmod 600 /tmp/k &&
                 printf "integration-passive\tBackup\t1\tWARNING - lab passive result\n" |
                 ssh -T -p 2222 -i /tmp/k -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
                     -o UserKnownHostsFile=/tmp/kh shinken@passive-ssh' 2>&1 || true)
-        grep -q 'forwarded=1 rejected=0' <<<"$push_output" && passive_pushed=1
     fi
 
     markers=$(cat "$STATE_DIR/poller/data/integration-checks.log" 2>/dev/null || true)

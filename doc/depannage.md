@@ -172,10 +172,12 @@ podman logs shinken_poller_1 2>&1 | grep "SSH key"
 ```
 
 !!! information "Ancien symptôme : « à refaire après chaque recréation »"
-    Les montages étaient en `:Z` (label SELinux **privé** à un seul
-    container) alors qu'ils sont partagés par tous les containers : le
-    dernier démarré « prenait » les fichiers aux autres. `compose.yaml`
-    utilise désormais `:z` (label partagé).
+    Explication probable, non reproduite : les montages étaient en `:Z`
+    (label SELinux **privé** à un seul container) alors qu'ils sont partagés
+    par tous les containers ; sur un hôte où SELinux est actif, le dernier
+    démarré « prend » les fichiers aux autres. `compose.yaml` utilise
+    désormais `:z` (label partagé). Si le symptôme revient, notez-le avec
+    `ls -Z` et `podman unshare ls -ln` sur le fichier.
 
 Dépannage détaillé par type de check : [SSH actif](checks/ssh-actif.md#depannage),
 [SSH passif](checks/ssh-passif.md#depannage), [NRPE](checks/nrpe.md#depannage),

@@ -65,10 +65,15 @@ useradd -m -s /bin/sh monitoring
 install -m 755 shinken-checks /usr/local/bin/shinken-checks   # contrib/checks/ssh/shinken-checks
 install -d -m 700 -o monitoring -g monitoring ~monitoring/.ssh
 cat >~monitoring/.ssh/authorized_keys <<'EOF'
-command="/usr/local/bin/shinken-checks",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA...contenu de shinken_monitoring.pub... shinken-monitoring
+restrict,from="192.0.2.10",command="/usr/local/bin/shinken-checks" ssh-ed25519 AAAA...contenu de shinken_monitoring.pub... shinken-monitoring
 EOF
 chown monitoring: ~monitoring/.ssh/authorized_keys && chmod 600 ~monitoring/.ssh/authorized_keys
 ```
+
+`restrict` coupe shell, PTY et redirections (OpenSSH 7.2 et plus ; sinon
+`no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty`), et
+`from=` n'accepte la clé que depuis l'adresse du serveur Podman telle que la
+cible la voit.
 
 Adaptez la liste des checks et leurs seuils dans `/usr/local/bin/shinken-checks`
 (fourni : `load`, `disk`, `disk-root`, `swap`, `procs`, `zombies`, `users`,
@@ -85,13 +90,24 @@ Adaptez la liste des checks et leurs seuils dans `/usr/local/bin/shinken-checks`
 
 ```sh
 ssh-keyscan -t ed25519 srv-web01.example.lan >> etc/ssh_keys/known_hosts
+ssh-keyscan -t ed25519 -p 2200 srv-db01.example.lan >> etc/ssh_keys/known_hosts   # port non standard
+podman unshare chown 10001:10001 etc/ssh_keys/known_hosts
 ```
+
+Le nom doit être exactement l'`address` de l'hôte dans Shinken (un nom et
+son IP sont deux entrées différentes).
 
 Vérifiez l'empreinte affichée (`ssh-keygen -lf etc/ssh_keys/known_hosts`)
 avec celle de la cible (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`).
 
 Avec un fichier `known_hosts`, une cible absente du fichier ou dont la clé a
-changé est **refusée**. Sans ce fichier, le poller accepte la clé d'une cible
+changé est **refusée** : y compris celles qui marchaient déjà. Ajoutez
+toutes les cibles existantes, par exemple pour `this-vps` (le serveur
+Podman lui-même) :
+
+```sh
+ssh-keyscan -t ed25519 localhost | sed 's/^localhost/host.containers.internal/' >> etc/ssh_keys/known_hosts
+``` Sans ce fichier, le poller accepte la clé d'une cible
 à la première connexion puis la mémorise (`/var/lib/shinken/ssh_known_hosts`) :
 pratique, mais une usurpation lors de cette première connexion passerait
 inaperçue.
@@ -104,7 +120,7 @@ define host{
         use                     linux-ssh
         host_name               srv-web01
         address                 srv-web01.example.lan
-        ; _SSH_USER  monitoring   (défaut du modèle)
+        ; _SSH_USER  monitoring   (défaut, défini dans generic-host)
         ; _SSH_PORT  22
         }
 ```
@@ -148,6 +164,11 @@ podman exec shinken_poller_1 /usr/lib/nagios/plugins/check_by_ssh \
     -H srv-web01.example.lan -l monitoring -C "cat /etc/shadow"
 # UNKNOWN - check 'cat /etc/shadow' is not allowed on srv-web01   <- attendu
 ```
+
+!!! information "Plusieurs clés"
+    Toutes les clés de `etc/ssh_keys/` sont proposées à chaque connexion.
+    Au-delà de 5 ou 6 clés, une cible peut refuser la connexion
+    (`MaxAuthTries`) : gardez une seule clé de supervision pour le parc.
 
 ## Ce que fait le poller au démarrage
 

@@ -3,8 +3,13 @@
 
 Run as the sshd ForceCommand of the ``passive-ssh`` container (see
 doc/checks/ssh-passif.md). Each client key is bound to exactly one Shinken
-host by ``environment="SHINKEN_PASSIVE_HOST=<host>"`` in authorized_keys;
-results for any other host are refused.
+host by ``environment="SHINKEN_PASSIVE_HOST=<host>"`` on its line of
+authorized_keys; results for any other host are refused.
+
+The binding is NOT taken from the session environment (a user-writable
+~/.ssh/environment could override it): sshd runs with ExposeAuthInfo, and
+the host is looked up from the key that actually authenticated
+($SSH_USER_AUTH) in the private copy of authorized_keys.
 
 Accepted input, one result per line on stdin:
 
@@ -41,8 +46,10 @@ import time
 MAX_LINES = 1000
 MAX_OUTPUT = 8192
 # Shinken's default illegal_object_name_chars plus ';' (field separator of
-# external commands) and control characters.
-NAME_RE = re.compile(r"^[^`~!$%^&*\"|'<>?,()=;\x00-\x1f\x7f]{1,255}$")
+# external commands), '\\' (escapes the separator in split_semicolon) and
+# control characters. Names must also pass is_single_line().
+NAME_RE = re.compile(r"^[^`~!$%^&*\"|'<>?,()=;\\\x00-\x1f\x7f-\x9f]{1,255}$")
+HOST_OPTION_RE = re.compile(r'(?:^|,)environment="SHINKEN_PASSIVE_HOST=([^"]*)"')
 EXTCMD_RE = re.compile(
     r"^\[\d+\] (PROCESS_SERVICE_CHECK_RESULT|PROCESS_HOST_CHECK_RESULT);(.*)$"
 )
@@ -50,6 +57,46 @@ EXTCMD_RE = re.compile(
 
 class Rejected(Exception):
     pass
+
+
+def is_single_line(text: str) -> bool:
+    """No character Livestatus (str.splitlines) would treat as a line break.
+
+    Besides \\n and \\r this covers \\v, \\f, \\x1c-\\x1e, \\x85, U+2028 and
+    U+2029: one of them in an output would start a second, arbitrary
+    Livestatus command."""
+    return len(text.splitlines()) <= 1 and "\n" not in text and "\r" not in text
+
+
+def clean_output(text: str) -> str:
+    """Keep tabs and printable characters only (drops every line separator)."""
+    return "".join(ch for ch in text if ch == "\t" or ch.isprintable()).strip()
+
+
+def valid_name(name: str) -> bool:
+    return bool(NAME_RE.match(name)) and name.isprintable() and is_single_line(name)
+
+
+def bound_host_for_key(auth_info_file: str, authorized_keys: str) -> str | None:
+    """Host bound to the key sshd authenticated, from authorized_keys."""
+    try:
+        with open(auth_info_file, encoding="utf-8") as handle:
+            # "publickey ssh-ed25519 AAAA..." (one line per auth method)
+            fields = [line.split() for line in handle if line.startswith("publickey ")]
+        with open(authorized_keys, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return None
+    if len(fields) != 1 or len(fields[0]) < 3:
+        return None
+    key_type, key_blob = fields[0][1], fields[0][2]
+    for line in lines:
+        parts = line.split()
+        for index in range(len(parts) - 1):
+            if parts[index] == key_type and parts[index + 1] == key_blob:
+                match = HOST_OPTION_RE.search(" ".join(parts[:index]))
+                return match.group(1) if match else None
+    return None
 
 
 def parse_line(line: str) -> tuple[str, str | None, int, str]:
@@ -81,13 +128,13 @@ def parse_line(line: str) -> tuple[str, str | None, int, str]:
         else:
             raise Rejected("expected host<TAB>service<TAB>rc<TAB>output or host<TAB>rc<TAB>output")
 
-    if not NAME_RE.match(host):
+    if not valid_name(host):
         raise Rejected("invalid host name")
-    if service is not None and not NAME_RE.match(service):
+    if service is not None and not valid_name(service):
         raise Rejected("invalid service name")
     if rc.strip() not in ("0", "1", "2", "3"):
         raise Rejected("return code must be 0, 1, 2 or 3")
-    output = "".join(ch for ch in output if ch == "\t" or ch >= " ").strip()
+    output = clean_output(output)
     if not output:
         raise Rejected("empty output")
     return host, service, int(rc), output[:MAX_OUTPUT]
@@ -130,14 +177,32 @@ class Livestatus:
         return host_passive, {row[0]: bool(row[1]) for row in services}
 
     def send_commands(self, commands: list[str]) -> None:
+        # Last line of defence: never send anything that splits into lines.
+        if not all(is_single_line(cmd) for cmd in commands):
+            raise ValueError("refusing a multi-line command")
         payload = "".join(f"COMMAND {cmd}\n" for cmd in commands) + "\n"
         self._exchange(payload, expect_reply=False)
 
 
+def parse_args(argv: list[str]) -> dict[str, str]:
+    options = {}
+    for index in range(0, len(argv) - 1, 2):
+        if argv[index] in ("--livestatus", "--authorized-keys"):
+            options[argv[index][2:]] = argv[index + 1]
+    return options
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    bound_host = os.environ.get("SHINKEN_PASSIVE_HOST", "")
-    if not NAME_RE.match(bound_host):
+    # sshd sessions do not inherit the daemon environment: settings come
+    # from the ForceCommand line written by the entrypoint.
+    options = parse_args(argv)
+    if "authorized-keys" in options:
+        bound_host = bound_host_for_key(os.environ.get("SSH_USER_AUTH", ""),
+                                        options["authorized-keys"]) or ""
+    else:
+        bound_host = os.environ.get("SHINKEN_PASSIVE_HOST", "")  # tests / manual use
+    if not valid_name(bound_host):
         print("ERROR: this key is not bound to a host "
               "(environment=\"SHINKEN_PASSIVE_HOST=...\" missing in authorized_keys)")
         return 2
@@ -146,11 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         print("ERROR: send results on stdin, do not pass a remote command")
         return 2
 
-    # sshd sessions do not inherit the daemon environment: the address comes
-    # from the ForceCommand line written by the entrypoint.
-    address = os.environ.get("SHINKEN_LIVESTATUS", "broker:50000")
-    if len(argv) == 2 and argv[0] == "--livestatus":
-        address = argv[1]
+    address = options.get("livestatus", os.environ.get("SHINKEN_LIVESTATUS", "broker:50000"))
     livestatus = Livestatus(address)
     try:
         host_passive, services = livestatus.known_objects(bound_host)
@@ -162,7 +223,11 @@ def main(argv: list[str] | None = None) -> int:
     report: list[str] = []
     rejected = 0
     now = int(time.time())
-    for number, raw in enumerate(sys.stdin, start=1):
+    # Undecodable bytes become U+FFFD instead of raising later.
+    stdin = sys.stdin
+    if hasattr(stdin, "reconfigure"):
+        stdin.reconfigure(encoding="utf-8", errors="replace")
+    for number, raw in enumerate(stdin, start=1):
         if number > MAX_LINES:
             report.append(f"REJECTED line {number}+: more than {MAX_LINES} lines")
             rejected += 1
@@ -197,8 +262,8 @@ def main(argv: list[str] | None = None) -> int:
     if accepted:
         try:
             livestatus.send_commands(accepted)
-        except OSError as exc:
-            print(f"ERROR: Livestatus unreachable, nothing forwarded: {exc}")
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: nothing forwarded: {exc}")
             return 2
     print("\n".join(report))
     print(f"forwarded={len(accepted)} rejected={rejected}")

@@ -161,3 +161,74 @@ def test_livestatus_down(monkeypatch, capsys):
     code, out = run(monkeypatch, capsys, "srv-web01\tBackup\t0\tOK\n")
     assert code == 2
     assert "Livestatus unreachable" in out
+
+
+# --- key -> host binding from the authenticated key (sshd ExposeAuthInfo) ---
+
+KEY_WEB = "AAAAC3NzaC1lZDI1NTE5AAAAIWebKeyBlob"
+KEY_NOBIND = "AAAAC3NzaC1lZDI1NTE5AAAAINoBindBlob"
+
+
+@pytest.fixture
+def ssh_files(tmp_path):
+    authorized = tmp_path / "authorized_keys"
+    authorized.write_text(
+        f'environment="SHINKEN_PASSIVE_HOST=srv-web01" ssh-ed25519 {KEY_WEB} srv-web01\n'
+        f"ssh-ed25519 {KEY_NOBIND} nobind\n"
+    )
+    return tmp_path, authorized
+
+
+def auth_info(directory, blob):
+    path = directory / "auth_info"
+    path.write_text(f"publickey ssh-ed25519 {blob}\n")
+    return str(path)
+
+
+def test_host_comes_from_authenticated_key(ssh_files):
+    directory, authorized = ssh_files
+    assert receiver.bound_host_for_key(auth_info(directory, KEY_WEB), str(authorized)) == "srv-web01"
+    assert receiver.bound_host_for_key(auth_info(directory, KEY_NOBIND), str(authorized)) is None
+    assert receiver.bound_host_for_key(auth_info(directory, "AAAAunknown"), str(authorized)) is None
+    assert receiver.bound_host_for_key(str(directory / "missing"), str(authorized)) is None
+
+
+def test_environment_cannot_override_binding(livestatus, monkeypatch, capsys, ssh_files):
+    """A ~/.ssh/environment setting SHINKEN_PASSIVE_HOST must be ignored."""
+    directory, authorized = ssh_files
+    monkeypatch.setenv("SHINKEN_PASSIVE_HOST", "srv-db01")
+    monkeypatch.setenv("SSH_USER_AUTH", auth_info(directory, KEY_WEB))
+    monkeypatch.setattr("sys.stdin", io.StringIO("srv-db01\tBackup\t0\tOK\n"))
+    code = receiver.main(["--livestatus", os.environ["SHINKEN_LIVESTATUS"],
+                          "--authorized-keys", str(authorized)])
+    out = capsys.readouterr().out
+    assert code == 1 and "may only send results for srv-web01" in out
+
+
+def test_unbound_authenticated_key_is_refused(livestatus, monkeypatch, capsys, ssh_files):
+    directory, authorized = ssh_files
+    monkeypatch.setenv("SSH_USER_AUTH", auth_info(directory, KEY_NOBIND))
+    monkeypatch.setattr("sys.stdin", io.StringIO("srv-web01\tBackup\t0\tOK\n"))
+    code = receiver.main(["--authorized-keys", str(authorized)])
+    assert code == 2 and "not bound to a host" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("separator", [" ", " ", "\x85", "\x0b", "\x0c", "\x1c", "\x1e"])
+def test_line_separators_cannot_inject_commands(livestatus, monkeypatch, capsys, separator):
+    data = f"srv-web01\tBackup\t0\tok{separator}COMMAND [1] DISABLE_NOTIFICATIONS\n"
+    code, out = run(monkeypatch, capsys, data)
+    assert code == 0, out
+    (cmd,) = sent(livestatus, 1)
+    assert len(cmd.splitlines()) == 1
+    assert cmd.endswith(";0;okCOMMAND [1] DISABLE_NOTIFICATIONS")
+
+
+@pytest.mark.parametrize("name", ["Back up", "Backup\\", "Back\x85up"])
+def test_names_with_separators_are_rejected(livestatus, monkeypatch, capsys, name):
+    code, out = run(monkeypatch, capsys, f"srv-web01\t{name}\t0\tOK\n")
+    assert code == 1 and "invalid service name" in out
+
+
+def test_send_commands_refuses_multiline():
+    with pytest.raises(ValueError):
+        receiver.Livestatus("127.0.0.1:1").send_commands(["[1] X;a b"])

@@ -106,10 +106,11 @@ def main(argv: list[str] | None = None) -> None:
         if not sep:
             finish(UNKNOWN, f"invalid header {header!r}, expected 'Name: value'")
         headers[name.strip()] = value.strip()
+    token = None
     if args.token_file:
         try:
             with open(args.token_file, encoding="utf-8") as handle:
-                headers["Authorization"] = "Bearer " + handle.read().strip()
+                token = handle.read().strip()
         except OSError as exc:
             finish(UNKNOWN, f"cannot read token file: {exc}")
     body = None
@@ -123,6 +124,10 @@ def main(argv: list[str] | None = None) -> None:
         context.verify_mode = ssl.CERT_NONE
 
     request = urllib.request.Request(args.url, data=body, headers=headers, method=args.method)
+    if token is not None:
+        # Unredirected: the token is never replayed to the target of a
+        # redirect (another host, or https -> http).
+        request.add_unredirected_header("Authorization", "Bearer " + token)
     started = time.monotonic()
     try:
         with urllib.request.urlopen(request, timeout=args.timeout, context=context) as response:
