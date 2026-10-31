@@ -1,18 +1,25 @@
+# Source de données de la pile de métriques expérimentale
+# (profil compose « experimental-metrics »), voir doc/admin/27-metriques.md.
+#
+# InfluxDB 2 : langage Flux, organisation et bucket créés par l'initialisation
+# du conteneur influxdb (DOCKER_INFLUXDB_INIT_ORG / _BUCKET de compose.yaml).
+# Le jeton d'API est lu dans la variable d'environnement INFLUXDB_ADMIN_TOKEN
+# du conteneur grafana ; il doit être identique à
+# DOCKER_INFLUXDB_INIT_ADMIN_TOKEN côté influxdb. Ne l'écrivez pas ici.
 apiVersion: 1
 
 datasources:
   - name: Shinken InfluxDB
+    uid: shinken-influxdb
     type: influxdb
-    url: http://influxdb:8086
     access: proxy
-    database: shinken
-    user: admin
-    secureJsonData:
-      password: shinkenpass
+    url: http://influxdb:8086
     isDefault: true
-    editable: true
+    editable: false
     jsonData:
       version: Flux
-      organization: default
+      organization: shinken
       defaultBucket: shinken
       tlsSkipVerify: false
+    secureJsonData:
+      token: $INFLUXDB_ADMIN_TOKEN
