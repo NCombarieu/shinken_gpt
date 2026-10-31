@@ -45,7 +45,7 @@ parser = optparse.OptionParser(
 )
 parser.add_option('-H', '--hostname', help='Hostname to scan')
 parser.add_option('-u', '--user', default='guest',
-                  help="Username to scan with. Default to '%default'")
+                  help="Username to scan with. Default to '%(default)s'")
 parser.add_option('-p', '--password', default='',
                   help="Password of your user. Default to ''")
 parser.add_option('-d', '--debug', action='store_true', help='Debug mode')

@@ -1,18 +1,43 @@
 #!/usr/bin/env python3
-"""shinken-healthcheck: connect to a Shinken Livestatus socket and print
-the current state of every configured host and service.
+"""shinken-healthcheck: check that Shinken really works.
+
+Two modes:
+
+* Daemon probe (``--daemon ROLE``, used by the container HEALTHCHECK):
+  calls ``GET /ping`` on the HTTP port of the daemon and expects ``pong``;
+  with ``--livestatus`` it also sends ``GET status`` to Livestatus. Exit 0 when
+  everything answers, 1 otherwise, with one line explaining what failed.
+  ``--daemon auto`` finds the role from the container command line
+  (``shinken-entrypoint <role>``).
+
+* Status report (default): connect to Livestatus and print the current state
+  of every configured host and service.
 
 No dependency beyond the Python 3 standard library on purpose: this
 script is meant to run both from inside a Shinken container and from the
-host (or any machine with network access to the Livestatus port), without
+host (or any machine with network access to the ports), without
 needing the shinken package installed.
 """
 
 import argparse
 import json
+import os
 import socket
+import ssl
 import sys
 import time
+import urllib.error
+import urllib.request
+
+# Default HTTP ports of the daemons (etc/daemons/*.ini, etc/*/*-master.cfg).
+DAEMON_PORTS = {
+    "scheduler": 7768,
+    "reactionner": 7769,
+    "arbiter": 7770,
+    "poller": 7771,
+    "broker": 7772,
+    "receiver": 7773,
+}
 
 
 HOST_STATE_NAMES = {0: "UP", 1: "DOWN", 2: "UNREACHABLE"}
@@ -45,6 +70,80 @@ def livestatus_query(host, port, query, timeout):
             chunks.append(chunk)
     raw = b"".join(chunks).decode("utf-8", "replace").strip()
     return json.loads(raw) if raw else []
+
+
+def detect_role(cmdline_path="/proc/1/cmdline"):
+    """Return the daemon role from the container command line, or None."""
+    role = os.environ.get("SHINKEN_ROLE")
+    if role in DAEMON_PORTS:
+        return role
+    try:
+        with open(cmdline_path, "rb") as handle:
+            args = handle.read().decode("utf-8", "replace").split("\0")
+    except OSError:
+        return None
+    for arg in args:
+        name = os.path.basename(arg)
+        if name in DAEMON_PORTS:
+            return name
+        if name.startswith("shinken-") and name[len("shinken-"):] in DAEMON_PORTS:
+            return name[len("shinken-"):]
+    return None
+
+
+def ping_daemon(host, port, timeout, use_ssl=False):
+    """Call /ping on a daemon; return None when healthy, else an error string."""
+    scheme = "https" if use_ssl else "http"
+    url = "%s://%s:%d/ping" % (scheme, host, port)
+    context = None
+    if use_ssl:
+        # Daemons usually run with a private CA: only liveness matters here.
+        context = ssl._create_unverified_context()  # noqa: S323
+    try:
+        with urllib.request.urlopen(url, timeout=timeout, context=context) as resp:
+            body = resp.read(256).decode("utf-8", "replace")
+    except (OSError, urllib.error.URLError) as exp:
+        return "%s unreachable: %s" % (url, getattr(exp, "reason", exp))
+    if "pong" not in body:
+        return "%s answered %r instead of pong" % (url, body[:80])
+    return None
+
+
+def check_livestatus(host, port, timeout):
+    """Send GET status to Livestatus; return None when healthy, else an error."""
+    try:
+        rows = livestatus_query(host, port,
+                                "GET status\nColumns: program_version\n"
+                                "OutputFormat: json\n\n", timeout)
+    except (OSError, ValueError) as exp:
+        return "livestatus %s:%d unreachable: %s" % (host, port, exp)
+    if not rows:
+        return "livestatus %s:%d returned an empty status" % (host, port)
+    return None
+
+
+def probe(args):
+    role = args.daemon
+    if role == "auto":
+        role = detect_role()
+        if role is None:
+            print("UNKNOWN - cannot detect the daemon role, use --daemon ROLE")
+            return 1
+    port = args.daemon_port or DAEMON_PORTS[role]
+    errors = []
+    error = ping_daemon(args.daemon_host, port, args.timeout, args.ssl)
+    if error:
+        errors.append(error)
+    if args.livestatus:
+        error = check_livestatus(args.host, args.port, args.timeout)
+        if error:
+            errors.append(error)
+    if errors:
+        print("CRITICAL - %s: %s" % (role, "; ".join(errors)))
+        return 1
+    extra = " and livestatus %s:%d" % (args.host, args.port) if args.livestatus else ""
+    print("OK - %s answers on port %d%s" % (role, port, extra))
+    return 0
 
 
 def colorize(label, use_color):
@@ -85,7 +184,21 @@ def main():
                          help="Only print problems, not every OK line")
     parser.add_argument("--exit-nonzero-on-problem", action="store_true",
                          help="Exit 1 if anything isn't OK/UP, PENDING, or stale")
+    probe_group = parser.add_argument_group("daemon probe (container healthcheck)")
+    probe_group.add_argument("--daemon", choices=sorted(DAEMON_PORTS) + ["auto"],
+                             help="Probe this daemon's /ping instead of printing the status")
+    probe_group.add_argument("--daemon-host", default="127.0.0.1",
+                             help="Daemon address (default: 127.0.0.1)")
+    probe_group.add_argument("--daemon-port", type=int, default=0,
+                             help="Daemon HTTP port (default: standard port of the role)")
+    probe_group.add_argument("--ssl", action="store_true",
+                             help="Daemons use use_ssl=1 (https, certificate not verified)")
+    probe_group.add_argument("--livestatus", action="store_true",
+                             help="With --daemon: also require Livestatus (--host/--port)")
     args = parser.parse_args()
+
+    if args.daemon:
+        sys.exit(probe(args))
 
     use_color = (not args.no_color) and sys.stdout.isatty()
     now = time.time()

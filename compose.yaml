@@ -1,12 +1,26 @@
+# Pile Shinken complète : un conteneur par daemon, même image.
+#
+#   cp .env.example .env          # puis adaptez TZ, SHINKEN_VERSION, ports...
+#   podman-compose build          # construit localhost/shinken:${SHINKEN_VERSION}
+#   podman-compose up -d
+#
+# Pour un démarrage automatique au boot, préférez les quadlets de deploy/quadlet/
+# (podman-compose ne relance rien après un redémarrage de l'hôte).
 name: shinken
 
 x-shinken: &shinken
   build:
     context: .
     dockerfile: Containerfile
-  image: localhost/shinken:dev
+    args:
+      SHINKEN_VERSION: ${SHINKEN_VERSION:-2.4.3}
+      VCS_REF: ${SHINKEN_VCS_REF:-unknown}
+  # Image versionnée : gardez l'ancienne version pour pouvoir revenir en arrière
+  # (SHINKEN_VERSION=<ancienne> podman-compose up -d).
+  image: localhost/shinken:${SHINKEN_VERSION:-2.4.3}
   restart: unless-stopped
   environment:
+    TZ: ${TZ:-Europe/Paris}
     SHINKEN_CONTAINER_DNS: "1"
     SHINKEN_STATUS_WEBUI: "1"
     SHINKEN_MODULES_DIR: /usr/local/lib/shinken/modules
@@ -14,21 +28,41 @@ x-shinken: &shinken
     - no-new-privileges:true
   cap_drop:
     - ALL
+  # « z » minuscule : label SELinux partagé, les six conteneurs montent les
+  # mêmes volumes (un « Z » privé empêcherait le partage).
   volumes:
-    - ./etc:/etc/shinken:ro,Z
-    - shinken-data:/var/lib/shinken:Z
-    - shinken-logs:/var/log/shinken:Z
+    - ./etc:/etc/shinken:ro,z
+    - shinken-data:/var/lib/shinken:z
+    - shinken-logs:/var/log/shinken:z
+  # Le healthcheck de l'image (shinken-healthcheck --daemon auto) vérifie que
+  # le daemon répond sur son port ; il est repris ici pour les versions de
+  # compose qui ignorent le HEALTHCHECK de l'image.
+  healthcheck:
+    test: ["CMD", "shinken-healthcheck", "--daemon", "auto", "--timeout", "5"]
+    interval: 15s
+    timeout: 10s
+    retries: 3
+    start_period: 60s
+
+# Volumes supplémentaires des conteneurs qui exécutent des commandes
+# (checks et notifications) : scripts de check maison en lecture seule.
+x-plugins-local: &plugins-local ./plugins-local:/usr/local/lib/shinken/plugins-local:ro,z
 
 services:
   arbiter:
     <<: *shinken
     command: ["arbiter"]
     depends_on:
-      - scheduler
-      - poller
-      - reactionner
-      - broker
-      - receiver
+      scheduler:
+        condition: service_healthy
+      poller:
+        condition: service_healthy
+      reactionner:
+        condition: service_healthy
+      broker:
+        condition: service_started
+      receiver:
+        condition: service_healthy
 
   scheduler:
     <<: *shinken
@@ -37,29 +71,40 @@ services:
   poller:
     <<: *shinken
     command: ["poller"]
+    volumes:
+      - ./etc:/etc/shinken:ro,z
+      - shinken-data:/var/lib/shinken:z
+      - shinken-logs:/var/log/shinken:z
+      - *plugins-local
+    # check_icmp ouvre une socket brute (NET_RAW) ; ping/check_ping utilisent
+    # les sockets ICMP non privilégiées autorisées par ping_group_range.
     cap_add:
       - NET_RAW
+    sysctls:
+      net.ipv4.ping_group_range: "0 2147483647"
 
   reactionner:
     <<: *shinken
     command: ["reactionner"]
+    volumes:
+      - ./etc:/etc/shinken:ro,z
+      - shinken-data:/var/lib/shinken:z
+      - shinken-logs:/var/log/shinken:z
+      - *plugins-local
 
   broker:
     <<: *shinken
     command: ["broker"]
     ports:
-      - "127.0.0.1:8081:8080"
-      - "127.0.0.1:50000:50000"
+      - "${SHINKEN_BIND:-127.0.0.1}:${SHINKEN_WEBUI_PORT:-8081}:8080"
+      - "${SHINKEN_BIND:-127.0.0.1}:${SHINKEN_LIVESTATUS_PORT:-50000}:50000"
+    # Le broker n'est sain que si Livestatus répond aussi (Thruk en dépend).
     healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).read()"
-      interval: 10s
-      timeout: 3s
-      retries: 12
-      start_period: 20s
+      test: ["CMD", "shinken-healthcheck", "--daemon", "broker", "--livestatus", "--timeout", "5"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
 
   receiver:
     <<: *shinken
@@ -67,23 +112,21 @@ services:
 
   influxdb:
     profiles: ["experimental-metrics"]
-    image: influxdb:2.7-alpine
+    image: docker.io/library/influxdb:2.7-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:8086:8086"
     environment:
-      INFLUXDB_DB: shinken
-      INFLUXDB_ADMIN_USER: admin
-      INFLUXDB_ADMIN_PASSWORD: shinkenpass
-      INFLUXDB_HTTP_AUTH_ENABLED: "true"
+      TZ: ${TZ:-Europe/Paris}
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_ADMIN_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD:-change-me-please}
+      DOCKER_INFLUXDB_INIT_ORG: shinken
+      DOCKER_INFLUXDB_INIT_BUCKET: shinken
     volumes:
       - influxdb-data:/var/lib/influxdb2:Z
     healthcheck:
-      test:
-        - CMD
-        - curl
-        - "-f"
-        - "http://127.0.0.1:8086/api/v1/ping"
+      test: ["CMD", "influx", "ping"]
       interval: 10s
       timeout: 3s
       retries: 12
@@ -91,25 +134,22 @@ services:
 
   grafana:
     profiles: ["experimental-metrics"]
-    image: grafana/grafana:latest
+    image: docker.io/grafana/grafana:${GRAFANA_VERSION:-11.6.0}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_INSTALL_PLUGINS: grafana-piechart-panel
+      TZ: ${TZ:-Europe/Paris}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-please}
     volumes:
       - grafana-data:/var/lib/grafana:Z
-      - ./etc/grafana/provisioning:/etc/grafana/provisioning:ro,Z
+      - ./etc/grafana/provisioning:/etc/grafana/provisioning:ro,z
     depends_on:
-      - influxdb
+      influxdb:
+        condition: service_healthy
     healthcheck:
-      test:
-        - CMD
-        - curl
-        - "-f"
-        - "http://127.0.0.1:3000/api/health"
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 12

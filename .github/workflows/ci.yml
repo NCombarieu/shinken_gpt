@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, modernize/podman-python3]
   pull_request:
 
 concurrency:
@@ -29,8 +29,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
-      - name: Compile all Python sources and test helpers
-        run: python -m compileall -q shinken bin cli modules libexec integration test
+      - name: Compile all Python sources (SyntaxWarning is an error)
+        run: python -W error::SyntaxWarning -m compileall -q -f shinken bin cli modules libexec integration test
+      - name: Compile Python scripts without .py suffix (bin/, libexec/)
+        run: |
+          status=0
+          for script in bin/* libexec/* libexec/*/*; do
+            [ -f "$script" ] || continue
+            case "$script" in *.py) continue ;; esac
+            head -n 1 "$script" | grep -q python || continue
+            echo "py_compile $script"
+            python -W error::SyntaxWarning -m py_compile "$script" || status=1
+          done
+          exit $status
 
   packaging:
     runs-on: ubuntu-latest
@@ -46,11 +57,27 @@ jobs:
           python -m build
       - name: Validate distributions
         run: python -m twine check dist/*
+      - name: Check distribution content
+        run: |
+          python - <<'PY'
+          import glob, tarfile, zipfile
+          wheel = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          tops = {name.split("/")[0] for name in wheel}
+          assert "modules" not in tops, tops
+          sdist = tarfile.open(glob.glob("dist/*.tar.gz")[0]).getnames()
+          for needed in ("libexec/notify_by_email.py", "Containerfile", "deploy/quadlet",
+                         "integration/e2e_smoke.py"):
+              assert any(needed in name for name in sdist), needed
+          assert not any(name.endswith((".key", ".pem")) for name in sdist)
+          print("distribution content OK")
+          PY
       - name: Install wheel and smoke test
         run: |
           python -m pip install dist/*.whl
           python -c "import shinken; print(shinken.__file__)"
           shinken-arbiter --version
+          shinken --version
+          shinken-healthcheck --help > /dev/null
 
   lint:
     runs-on: ubuntu-latest
@@ -63,8 +90,14 @@ jobs:
         run: python -m pip install ruff
       - name: Lint fatal errors
         run: ruff check shinken bin cli modules libexec integration test --select E9,F7,F82
-      - name: Inventory modernization debt
+      - name: Inventory modernization debt (fails on files that do not parse)
         run: python integration/modernization_audit.py
+      - name: Lint Containerfile
+        run: docker run --rm -i docker.io/hadolint/hadolint:v2.12.0 < Containerfile
+      - name: Lint shell scripts
+        run: >-
+          shellcheck -S warning containers/entrypoint.sh integration/podman-lab.sh
+          plugins-local/check_example.sh integration/e2e/plugins/check_state.sh
 
   compatibility-tests:
     runs-on: ubuntu-latest
@@ -119,9 +152,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Build rootless container
-        run: podman build --tag shinken:test --file Containerfile .
-      - name: Smoke test daemon executable
-        run: podman run --rm shinken:test shinken-arbiter --version
+        run: |
+          podman build --tag shinken:test --file Containerfile \
+            --build-arg VCS_REF="${GITHUB_SHA::12}" .
+      - name: Smoke test image content
+        run: |
+          podman run --rm shinken:test shinken-arbiter --version
+          podman run --rm shinken:test shinken --list
+          podman run --rm shinken:test /usr/local/lib/shinken/libexec/notify_by_email.py --help > /dev/null
+          podman run --rm shinken:test sh -c 'for p in check_ping check_icmp check_http check_tcp check_dig check_snmp check_nrpe check_by_ssh check_snmp_storage.pl; do test -x "/usr/lib/nagios/plugins/$p" || { echo "missing $p"; exit 1; }; done; command -v pkill'
+          podman run --rm shinken:test sh -c 'test "$(id -u)" != 0'
+          podman image inspect shinken:test --format '{{ index .Labels "org.opencontainers.image.version" }} {{ .Config.Healthcheck.Test }}'
+      - name: Configuration check through the entrypoint
+        run: podman run --rm -v "$PWD/etc:/etc/shinken:ro" -e SHINKEN_CONTAINER_DNS=1 shinken:test check
 
   distributed-integration:
     runs-on: ubuntu-latest
@@ -130,3 +173,32 @@ jobs:
       - uses: actions/checkout@v5
       - name: Deploy Shinken and execute real checks
         run: bash integration/podman-lab.sh
+
+  e2e:
+    # Six daemons started natively: checks, Livestatus, e-mail notification,
+    # nagios.cmd and retention across a scheduler restart.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install Shinken
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+      - name: Run the end-to-end smoke test
+        run: python integration/e2e_smoke.py --installed --workdir "$RUNNER_TEMP/e2e"
+      - name: Upload e2e logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            ${{ runner.temp }}/e2e/log
+            ${{ runner.temp }}/e2e/out
+            ${{ runner.temp }}/e2e/etc
+          if-no-files-found: warn
+          retention-days: 7

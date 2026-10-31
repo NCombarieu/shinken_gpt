@@ -1,0 +1,36 @@
+# Quadlet Podman du daemon arbiter : voir deploy/README.md
+[Unit]
+Description=Shinken arbiter (lecture et distribution de la configuration)
+Wants=network-online.target
+After=network-online.target
+# L'arbiter démarre une fois les satellites sains (Notify=healthy)
+Wants=shinken-scheduler.service shinken-poller.service shinken-reactionner.service shinken-broker.service shinken-receiver.service
+After=shinken-scheduler.service shinken-poller.service shinken-reactionner.service shinken-broker.service shinken-receiver.service
+
+[Container]
+ContainerName=shinken-arbiter
+Image=localhost/shinken:2.4.3
+Pull=never
+Exec=arbiter
+Network=shinken.network
+# Nom DNS attendu par la configuration réécrite par l'entrypoint
+NetworkAlias=arbiter
+Environment=TZ=Europe/Paris
+Environment=SHINKEN_CONTAINER_DNS=1
+Environment=SHINKEN_STATUS_WEBUI=1
+Environment=SHINKEN_MODULES_DIR=/usr/local/lib/shinken/modules
+Volume=%h/shinken/etc:/etc/shinken:ro,z
+Volume=shinken-data.volume:/var/lib/shinken:z
+Volume=shinken-logs.volume:/var/log/shinken:z
+NoNewPrivileges=true
+DropCapability=ALL
+# HEALTHCHECK de l'image (le daemon répond sur son port) ; l'unité n'est
+# considérée démarrée qu'une fois le conteneur sain.
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

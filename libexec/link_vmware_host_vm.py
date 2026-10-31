@@ -110,7 +110,7 @@ if __name__ == "__main__":
                       help="Path of the generated mapping file.")
     parser.add_option("-x", "--esx3-path", dest='check_esx_path',
                       default='/usr/local/nagios/libexec/check_esx3.pl',
-                      help="Full path of the check_esx3.pl script (default: %default)")
+                      help="Full path of the check_esx3.pl script (default: %(default)s)")
     parser.add_option("-V", "--vcenter", '--Vcenter',
                       help="The IP/DNS address of your Vcenter host.")
     parser.add_option("-u", "--user",
