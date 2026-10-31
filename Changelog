@@ -3,6 +3,55 @@ Shinken ChangeLog
 ########################
 
 
+2.4.3-py3 - Python 3 / Podman (en cours, non publiée)
+-----------------------------------------------------
+        Version dérivée de Shinken 2.4, portée en Python 3 et déployée par conteneurs.
+        Les entrées « 3.0.03 » et antérieures ci-dessous sont l'historique du projet
+        d'origine. Guide de migration : doc/migration-depuis-shinken-master.md.
+
+        PORTAGE PYTHON 3
+        Enh: cœur, six daemons et échanges réseau portés en Python 3.11 à 3.13 (sans six).
+        Enh: transport HTTP Cheroot (serveur) et pycurl (client) ; arguments POST
+             base64(zlib(pickle)), incompatible avec les daemons Python 2 (bascule
+             de tous les daemons en une fois).
+        Fix: désérialisation réseau systématiquement filtrée par SafeUnpickler.
+        Fix: commandes externes de Livestatus perdues (broker sans
+             get_external_commands, bytes/str), alias RESTART_PROCESS pour Thruk.
+        Fix: blocage des modules externes au fork, Host.display_name vide.
+        Enh: options de journalisation --verbose, --debug, --json-logs, --logfile.
+
+        MODULES
+        Add: Livestatus porté en Python 3 (modules/livestatus).
+        Add: page d'état minimale du broker (status_webui : /, /api/status, /healthz).
+        Add: logstore-sqlite (historique Livestatus), retention-pickle (rétention du
+             scheduler, relit les fichiers Shinken 2.4), named-pipe (nagios.cmd).
+
+        DÉPLOIEMENT
+        Add: image conteneur unique (Containerfile), compose.yaml, quadlets Podman
+             (deploy/), point d'entrée avec rôle « check », shinken-healthcheck.
+        Add: dossier plugins-local/ pour les scripts de check de l'administrateur
+             ($LOCALPLUGINSDIR$), relais SMTP paramétrable pour notify_by_email.py.
+
+        CONFIGURATION D'EXEMPLE ET DOCUMENTATION
+        Fix: etc/ remplacé par une configuration d'exemple neutre (un hôte localhost,
+             contact admin@example.com, exemples commentés en 192.0.2.0/24), commentaires
+             en français corrigés, PKI de démonstration et données personnelles retirées.
+        Add: commandes HTTP/TLS, DNS, SNMP, bases de données, SSH, check_dummy ;
+             jours fériés français ; rechargement par signal au conteneur arbiter.
+        Add: documentation française complète dans doc/ (administrateur simple,
+             avancé et expert, recettes, référence générée depuis le code,
+             exploitation, migration, développeur).
+        Del: DEPLOYMENT.md et pages de documentation inexactes (ARCHITECTURE,
+             DATABASE, LOGGING, METRICS anglais).
+
+        LIMITES CONNUES
+        - Modules tiers de Shinken 2.4 non portés : webui, graphite, mongodb,
+          ws-arbiter, nsca, simple-log…
+        - Directives 2.4.4 conflict_policy et enable_problem_impacts_states_reprocessing,
+          option --dump_conf de l'arbiter : non prises en charge.
+        - Échanges entre daemons sans authentification : réseau privé obligatoire.
+
+
 3.0.03 - X/X/2017
 -----------------
         CORE ENHANCEMENT

@@ -1,6 +1,6 @@
 # Revue 05 : audit de la documentation
 
-Dépôt : `/home/user/shinken_gpt`, branche `modernize/podman-python3`. Audit en lecture seule, daté du 2026-10-31.
+Dépôt : dépôt local, branche `modernize/podman-python3`. Audit en lecture seule, daté du 2026-10-31.
 Périmètre lu : `README`, `README.rst`, les 12 fichiers de `doc/*.md`, `DEPLOYMENT.md`, `DEVELOPMENT.md`, `CONTRIBUTING.rst`, `Changelog`, `manpages/`, les commentaires de `etc/`, `libexec/`, et un échantillon de docstrings dans `shinken/` et `modules/`.
 
 ---
@@ -31,12 +31,12 @@ Périmètre lu : `README`, `README.rst`, les 12 fichiers de `doc/*.md`, `DEPLOYM
    - L'envoi passe par un SMTP `-S localhost`, alors que le conteneur n'a pas de MTA.
 4. **Le public « administrateur de la supervision » n'est pas servi.** Il n'existe aucun guide pour écrire et déposer un plugin (`$USER1$`, codes retour, perfdata, emplacement dans le conteneur), alors que c'est le besoin n° 1 exprimé.
 5. **Des données personnelles se trouvent dans la configuration d'exemple « générique »** :
-   - hôte `KIKI` avec l'IP publique `158.69.204.23` (`etc/hosts/localhost.cfg:12-20`) ;
-   - `this-vps` avec le compte `noel` (`etc/services/this-vps.cfg`) ;
+   - un hôte de test personnel avec une IP publique réelle (`etc/hosts/localhost.cfg:12-20`) ;
+   - le serveur personnel avec un compte utilisateur réel (`etc/services/<serveur personnel>.cfg`) ;
    - un e-mail personnel réel (`etc/contacts/webteam.cfg`) ;
-   - le domaine `ncombarieu.fr` et des chemins `/opt/lab-reseau` et `<home-mainteneur>` (`DEPLOYMENT.md`), un fichier cité comme « référence » dans `README.rst:43`.
+   - le domaine personnel et des chemins d'infrastructure privée (`DEPLOYMENT.md`), un fichier cité comme « référence » dans `README.rst:43`.
 
-   Toute personne qui clone et lance la stack va pinguer `158.69.204.23` et tenter un SSH vers `host.containers.internal` avec l'utilisateur `noel`.
+   Toute personne qui clone et lance la stack va pinguer une IP publique réelle et tenter un SSH vers `host.containers.internal` avec un compte utilisateur réel.
 
 ---
 
@@ -90,7 +90,7 @@ Périmètre lu : `README`, `README.rst`, les 12 fichiers de `doc/*.md`, `DEPLOYM
 
 #### Liens et rendu
 
-- **Lien faux** : `doc/configuration.md:152` contient « [Configurer l'accès SSH](livestatus-thruk.md) ». Cette page ne parle pas de SSH ; la cible logique est `depannage.md` ou une future page SSH.
+- **Lien faux** : `doc/configuration.md:152` contient « `[Configurer l'accès SSH](livestatus-thruk.md)` ». Cette page ne parle pas de SSH ; la cible logique est `depannage.md` ou une future page SSH.
 - **Ancres `{#id}` non rendues** (`configuration.md:88`, `depannage.md:44`, `exploitation.md:31, 55`). Sans `mkdocs.yml` ni l'extension `attr_list`, GitHub affiche `{#…}` dans le titre. Les liens qui les ciblent sont donc cassés sur GitHub : `presentation.md:92`, `installation.md:133, 139`, `depannage.md:32`.
 - **Admonitions `!!! information` et similaires** : elles s'affichent en texte brut sur GitHub.
 - **Libellés trompeurs dans `README.rst:23-36`** : ils citent `doc/architecture.md`, `doc/database.md`, etc. en minuscules, alors que les fichiers sont en majuscules. Les cibles sont correctes, mais une copie du libellé échoue sur un système de fichiers sensible à la casse.
@@ -130,12 +130,12 @@ Aucun module de rétention n'est configuré : la ligne `modules` de `etc/schedul
 
 | Emplacement | Contenu |
 |---|---|
-| `etc/hosts/localhost.cfg:12-20` | hôte `KIKI`, IP publique `158.69.204.23` |
-| `etc/hosts/this-vps.cfg`, `etc/services/this-vps.cfg` | `check_by_ssh_cpu!noel` |
-| `etc/contacts/webteam.cfg` | `noel` avec son e-mail personnel réel, `guillaume` |
-| `DEPLOYMENT.md` (en entier) | `shinken.ncombarieu.fr`, `/opt/lab-reseau/...`, `<home-mainteneur>/bin/...`, comptes Caddy et Thruk |
+| `etc/hosts/localhost.cfg:12-20` | hôte de test personnel, IP publique réelle |
+| `etc/hosts/<serveur personnel>.cfg`, `etc/services/<serveur personnel>.cfg` | `check_by_ssh_cpu!<compte réel>` |
+| `etc/contacts/webteam.cfg` | deux contacts réels, dont un avec son e-mail personnel |
+| `DEPLOYMENT.md` (en entier) | le sous-domaine personnel, chemins d'infrastructure privée, comptes du reverse proxy et de Thruk |
 | `README.rst:43` | cite `DEPLOYMENT.md` dans la section « Reference » |
-| `livestatus-thruk.md:207-217` | anecdotes propres au serveur (Caddy, « mot de passe redevient invalide ») présentées comme du dépannage générique |
+| `livestatus-thruk.md:207-217` | anecdotes propres au serveur personnel (reverse proxy, « mot de passe redevient invalide ») présentées comme du dépannage générique |
 
 **Recommandation** : déplacer tout cela dans un répertoire `site/` ou `local/`, ou dans un dépôt d'inventaire privé, et ignorer ce répertoire via `.gitignore`. Ne garder dans `etc/` qu'un exemple neutre (`example.org`, RFC 5737 `192.0.2.x`). Renommer `DEPLOYMENT.md` en `doc/journal/2026-09-deploiement-vps.md`, ou le sortir du dépôt.
 
@@ -258,7 +258,7 @@ Légende : **●** couvert correctement · **◐** partiel ou dispersé · **✘
    - soit porter réellement `logstore_sqlite`.
 
    Puis aligner `livestatus-thruk.md:70` et `configuration.md:36`, et documenter que `GET log` (historique et rapports de disponibilité Thruk) dépend de ce choix.
-3. **Sortir les données personnelles de `etc/` et de la doc générique** (KIKI, this-vps, webteam, `DEPLOYMENT.md`), et retirer `DEPLOYMENT.md` de la section « Reference » du README.
+3. **Sortir les données personnelles de `etc/` et de la doc générique** (hôte de test personnel, serveur personnel, contacts réels, `DEPLOYMENT.md`), et retirer `DEPLOYMENT.md` de la section « Reference » du README.
 4. **Signaler l'état des notifications** : `notify_by_email.py` est absent de l'image et il n'y a pas de MTA. Donner une page « Notifications » avec une solution qui fonctionne (relais SMTP externe, `libexec` monté ou copié dans l'image).
 
 ### P1 : le cœur du besoin de l'administrateur de supervision
@@ -388,7 +388,7 @@ doc/
 | `04-commandes-et-plugins.md` | `define command`, `$ARGn$`, `!`, `$NAGIOSPLUGINSDIR$` / `$USER1$` / `$PLUGINSDIR$` (`etc/resource.d/paths.cfg`), liste des plugins réellement présents dans l'image, comment tester un plugin à la main dans le poller | CRÉER |
 | `05-contacts-et-notifications.md` | Contacts, groupes, notificationways, options `d,u,r,f,s` / `w,u,c,r`, `notification_interval`. **État réel du mail dans le conteneur** et solutions (relais SMTP, script webhook, SMS). Mot de passe `admin` à changer. | CRÉER |
 | `06-downtimes-acquittements.md` | Via Thruk et via Livestatus (snippets actuels), downtimes fixes ou flexibles, propagation, `sticky`/`persistent`. **Avertissement sur la perte en cas de reload sans rétention.** | RÉÉCRIRE (`exploitation.md` §Downtime/Ack) |
-| `07-thruk-livestatus.md` | Brancher Thruk, contacts et `AuthUser`, boutons Reload/Restart | GARDER (`livestatus-thruk.md`, corriger le logstore et retirer les anecdotes Caddy) |
+| `07-thruk-livestatus.md` | Brancher Thruk, contacts et `AuthUser`, boutons Reload/Restart | GARDER (`livestatus-thruk.md`, corriger le logstore et retirer les anecdotes du serveur personnel) |
 | `recettes/linux-ssh.md` | Clé dédiée, `command=` figé, `podman unshare`, script distant exemple fourni | RÉÉCRIRE (`configuration.md` §SSH, `etc/ssh_keys/README.md`) |
 | `recettes/linux-windows-nrpe.md` | NRPE v4 / TLS, NSClient++, certificats, commande `check_nrpe` avec le **bon** chemin | RÉÉCRIRE (`etc/certs/README.md`) |
 | `recettes/snmp.md` | Plugins SNMP à ajouter à l'image, communauté (`$SNMPCOMMUNITYREAD$`, `etc/resource.d/snmp.cfg`), exemples | CRÉER |

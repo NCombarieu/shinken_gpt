@@ -1,7 +1,7 @@
 # Revue 02 : compatibilité de `modernize/podman-python3` avec Shinken master (upstream)
 
-- **Branche relue** : `/home/user/shinken_gpt`, branche `modernize/podman-python3`, HEAD `6c25f5a` (« refactor: modernize to Python 3, enable SQLite logging »).
-- **Référence upstream** : https://github.com/naparuba/shinken, branche `master`, commit **`62039bef9bc44fbe1805d66b6d2a9ea8aa9b38b7`** (26/04/2024, Python 2, version 2.4.4). Clone `--depth 1` dans `scratchpad/review/upstream`. Ce n'est **pas** le master du fork NCombarieu.
+- **Branche relue** : dépôt local, branche `modernize/podman-python3`, HEAD `6c25f5a` (« refactor: modernize to Python 3, enable SQLite logging »).
+- **Référence upstream** : https://github.com/naparuba/shinken, branche `master`, commit **`62039bef9bc44fbe1805d66b6d2a9ea8aa9b38b7`** (26/04/2024, Python 2, version 2.4.4). Clone `--depth 1` dans `scratchpad/review/upstream`. Ce n'est **pas** la branche master du fork.
 - **Périmètre** : uniquement la compatibilité avec une infra Shinken master existante. Le code Py3 interne, le bout-en-bout, le déploiement et la doc sont couverts par les autres relecteurs.
 - **Artefacts de test** : `<scratch>/compat/`. On y trouve le venv, les configurations `local-etc`, `up-etc`, `rich-etc`, `m244-etc` et `pipe-etc`, les journaux `verify-*.log`, ainsi que les scripts `py2pickle.py`, `retention_test*.py` et `macro_test.py`. Les modules externes clonés sont dans `scratchpad/review/ext/`.
 - **Aucun fichier du dépôt n'a été modifié.**
@@ -227,8 +227,8 @@ Comptage statique (VÉRIFIÉ par grep et ast) sur les dépôts `shinken-monitori
 #### M-8. Le `etc/` livré n'est pas la configuration Shinken de référence
 
 - `etc/commands/reload-shinken.cfg` et `restart-shinken.cfg` sont remplacés par `pkill -TERM -f shinken-arbiter` (logique de conteneur), au lieu de `/etc/init.d/shinken reload`.
-- `etc/hosts/localhost.cfg` a pour check `check_local_http!broker!8080` et contient un hôte **`KIKI 158.69.204.23`**.
-- `hosts/this-vps.cfg`, `internet-fun.cfg`, `contacts/webteam.cfg`, `etc/ssh_keys/` et `etc/grafana` sont spécifiques à l'infra de l'auteur.
+- `etc/hosts/localhost.cfg` a pour check `check_local_http!broker!8080` et contient un hôte de test personnel avec une **IP publique réelle**.
+- `hosts/<serveur personnel>.cfg`, `internet-fun.cfg`, `contacts/webteam.cfg`, `etc/ssh_keys/` et `etc/grafana` sont spécifiques à l'infra de l'auteur.
 - **Risque** : si l'admin copie ce `etc/` sur son infra, il obtient des checks erronés et un comportement de reload différent.
 - **Correctif** : séparer `etc/` (référence upstream) et `containers/etc-overlay/`.
 

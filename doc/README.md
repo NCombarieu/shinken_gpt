@@ -1,70 +1,51 @@
----
-title: "Shinken — présentation du domaine"
-domain: "Shinken"
-type: "guide"
-level: "debutant"
-duration: "5 min"
-version: "1.0"
-updated: "2026-09-13"
-owner: "Administration Supervision"
-status: "valid"
-order: 1
-keywords: [shinken, supervision, monitoring, podman, livestatus, thruk, glossaire]
-summary: "Point d'entrée de la documentation Shinken : parcours guidés, architecture du dépôt et glossaire."
----
+# Documentation de Shinken
 
-# Documentation Shinken
+Shinken est un moteur de supervision compatible Nagios (configuration et
+plugins), ici porté en Python 3 et déployé par conteneurs Podman. Choisissez
+votre parcours.
 
-Ce dépôt (`shinken_gpt`, branche `modernize/podman-python3`) est un fork de
-[Shinken](https://github.com/naparuba/shinken), un moteur de supervision
-compatible Nagios, porté en Python 3 et conteneurisé avec Podman.
+## Je configure la supervision (administrateur)
 
-Chaque fiche de ce domaine est **autonome** : elle contient son contexte, ses
-prérequis, ses étapes et sa validation.
+Hôtes, services, contacts, plugins de check. Aucune connaissance du code
+nécessaire. → [Guide de l'administrateur](admin/README.md)
 
-## Parcours guidés
-
-| Je veux… | Fiche |
+| Niveau | Pages |
 |---|---|
-| Savoir si cette branche peut remplacer un Shinken master en production (revue du 31/10/2026) | [Revue de migration — synthèse](revue/SYNTHESE.md) |
-| Comprendre ce qu'est Shinken et comment ce fork est organisé | [Shinken, qu'est-ce que c'est ?](presentation.md) |
-| Installer et lancer la stack sur un serveur | [Installer et lancer Shinken](installation.md) |
-| Ajouter des hôtes, services, contacts à superviser | [Configurer Shinken](configuration.md) |
-| Brancher une interface web (Thruk) dessus | [Brancher Thruk via Livestatus](livestatus-thruk.md) |
-| Recharger la config, forcer un check, faire un ack/downtime | [Exploiter Shinken au quotidien](exploitation.md) |
-| Comprendre un comportement bizarre avant de rouvrir une enquête | [Dépanner Shinken](depannage.md) |
+| **Simple** | [Présentation](admin/00-presentation.md) · [Démarrage rapide](admin/01-demarrage-rapide.md) · [Concepts](admin/02-concepts.md) · [Interface web](admin/03-interface-web.md) · [Acquitter, downtime](admin/04-acquitter-et-planifier-un-downtime.md) |
+| **Avancé** | [Modèles](admin/10-templates-heritage.md) · [Macros](admin/11-macros.md) · [Groupes](admin/12-groupes.md) · [Dépendances, escalades](admin/13-dependances-escalades.md) · [Flapping, event handlers](admin/14-flapping-et-event-handlers.md) · [Checks passifs](admin/15-checks-passifs-commandes-externes.md) · [**Écrire un plugin**](admin/16-ecrire-un-plugin.md) · [Notifications](admin/17-notifications.md) · [Périodes](admin/18-periodes-de-temps.md) · [Recettes](admin/recettes/README.md) |
+| **Expert** | [Architecture distribuée](admin/20-architecture-distribuee.md) · [Business rules](admin/21-business-rules.md) · [duplicate_foreach](admin/22-duplicate-foreach.md) · [Découverte](admin/23-decouverte.md) · [Performances](admin/24-performances.md) · [Rétention](admin/25-retention.md) · [Livestatus](admin/26-livestatus.md) · [Métriques](admin/27-metriques.md) |
+| **Référence** | [Directives, macros, commandes externes](admin/reference/README.md) |
 
-## Architecture du dépôt
+## J'installe et j'exploite le serveur (exploitant système)
 
-```
-shinken_gpt/
-├── shinken/            ← le cœur Shinken (daemons, objets de config, RPC)
-├── modules/            ← modules broker embarqués (livestatus, logstore_null, status_webui, dummy_*)
-├── etc/                ← configuration Shinken (montée en lecture seule dans les containers)
-│   ├── hosts/ services/ contacts/ commands/ modules/ …
-│   ├── certs/ ssh_keys/  ← secrets pour check_nrpe_ssl / check_by_ssh (gitignorés)
-│   └── templates/      ← generic-host, generic-service, etc.
-├── compose.yaml        ← 6 containers Podman (un par daemon Shinken)
-├── Containerfile        ← image des containers (Python 3, plugins Nagios, NRPE, SSH)
-└── doc/                ← vous êtes ici
-```
+→ [Guide de l'exploitant](exploitation/README.md) :
+[installation](exploitation/01-installation.md),
+[configuration du déploiement](exploitation/02-configuration.md),
+[opérations courantes](exploitation/03-operations-courantes.md),
+[démarrage au boot](exploitation/04-demarrage-au-boot.md),
+[sauvegarde](exploitation/05-sauvegarde-restauration.md),
+[mise à jour](exploitation/06-mise-a-jour-retour-arriere.md),
+[surveiller Shinken](exploitation/07-surveiller-shinken.md),
+[journaux](exploitation/08-logs.md),
+[sécurité](exploitation/09-securite.md),
+[reverse proxy TLS](exploitation/10-reverse-proxy-tls.md),
+[dépannage](exploitation/11-depannage.md).
 
-!!! information "Pourquoi un fork de plus"
-    Le projet upstream Shinken n'a plus de développement actif compatible
-    Python 3 récent. Ce fork porte le cœur, les daemons et un vrai module
-    Livestatus (absent du dépôt upstream, distribué historiquement à part)
-    vers Python 3.11+, dans une architecture conteneurisée reproductible.
+## Je migre depuis Shinken 2.4 (master)
 
-## Glossaire
+→ [Guide de migration](migration-depuis-shinken-master.md) : différences,
+modules, bascule, retour arrière.
 
-| Terme | Définition |
-|---|---|
-| **Arbiter** | Daemon qui lit la config et la distribue à tous les autres. |
-| **Scheduler** | Daemon qui décide quand chaque check doit s'exécuter. |
-| **Poller** | Daemon qui exécute réellement les plugins de check (SSH, HTTP, NRPE…). |
-| **Reactionner** | Daemon qui exécute les notifications et event handlers. |
-| **Broker** | Daemon qui centralise l'état (broks) et porte les modules (Livestatus, webui). |
-| **Receiver** | Daemon qui encaisse les résultats passifs et commandes externes entrantes. |
-| **Brok** | Message interne (`BROK`) transportant un changement d'état entre daemons. |
-| **Livestatus** | Protocole texte (requêtes `GET`/`COMMAND`) pour interroger et piloter Shinken depuis l'extérieur — c'est ce que parle Thruk. |
-| **Thruk** | Interface web générique compatible Livestatus, pas incluse dans ce dépôt (voir [Brancher Thruk](livestatus-thruk.md)). |
+## Je développe
+
+→ [Guide du développeur](dev/README.md) : [DEVELOPMENT.md](../DEVELOPMENT.md),
+[architecture](dev/architecture.md),
+[protocole entre daemons](dev/protocole-inter-daemons.md),
+[écrire un module](dev/ecrire-un-module.md).
+
+## Pour tous
+
+- [Glossaire](glossaire.md)
+- [FAQ](faq.md)
+- [Changelog](../Changelog)
+- [Revue de migration du 31/10/2026](revue/SYNTHESE.md) (historique)
