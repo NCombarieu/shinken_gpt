@@ -73,7 +73,7 @@ filterwarnings = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-exclude = ["doc", "inventory", "share", "*/daemons/*/"]
+exclude = ["doc", "inventory", "share"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "UP", "B", "SIM", "I"]
