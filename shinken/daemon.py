@@ -58,7 +58,8 @@ from shinken.misc.common import setproctitle
 from shinken.profilermgr import profiler
 from shinken.safepickle import SafeUnpickler
 from shinken.util import get_memory
-from shinken.imports import ConfigParser, cpickle as cPickle, StringIO as cStringIO
+import pickle
+from shinken.imports import ConfigParser, StringIO as cStringIO
 from shinken.imports import Empty
 
 try:
@@ -365,7 +366,7 @@ class Daemon(object):
             return False
         logger.info("Reloading daemon [pid=%s]", p.pid)
         try:
-            raw_conf = cPickle.dumps(self.new_conf)
+            raw_conf = pickle.dumps(self.new_conf)
             p.stdin.write(raw_conf)
             p.stdin.close()
         except Exception as e:

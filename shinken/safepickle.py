@@ -22,13 +22,10 @@
 import io
 import sys
 
-try:
-    import cPickle as cpickle
-except ImportError:
-    import pickle as cpickle
+import pickle
 
 # Python 2 module names that can still show up inside a pickle stream
-# (either from an old payload or from cPickle.dumps() itself choosing the
+# (either from an old payload or from pickle.dumps() itself choosing the
 # historical name for a builtin) but no longer exist under that name.
 _PY2_MODULE_ALIASES = {
     'copy_reg': 'copyreg',
@@ -38,7 +35,7 @@ _PY2_MODULE_ALIASES = {
 
 # Unpickle while rejecting arbitrary globals so crafted payloads cannot execute
 # external code. Based on the historical Graphite/carbon implementation.
-class _RestrictedUnpickler(cpickle.Unpickler):
+class _RestrictedUnpickler(pickle.Unpickler):
     PICKLE_SAFE = {
         'copy_reg': {'_reconstructor'},
         'copyreg': {'_reconstructor'},
@@ -58,7 +55,7 @@ class _RestrictedUnpickler(cpickle.Unpickler):
             raise ValueError('Attempting to unpickle unsafe class %s/%s' %
                              (module, name))
 
-        # Pickle streams (including ones produced by our own cPickle.dumps
+        # Pickle streams (including ones produced by our own pickle.dumps
         # calls elsewhere) can reference the Python 2 module names for
         # these -- they no longer exist under those names in Python 3.
         real_module = _PY2_MODULE_ALIASES.get(module, module)

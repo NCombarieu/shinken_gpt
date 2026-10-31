@@ -21,10 +21,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
-try:
-    import cPickle as cpickle
-except ImportError:
-    import pickle as cpickle
+import pickle
 from shinken.safepickle import SafeUnpickler
 
 class Brok:
@@ -39,7 +36,7 @@ class Brok:
         self.type = type
         self.id = self.__class__.id
         self.__class__.id += 1
-        self.data = cpickle.dumps(data, cpickle.HIGHEST_PROTOCOL)
+        self.data = pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
         self.prepared = False
 
 

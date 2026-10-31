@@ -28,7 +28,7 @@ import time
 import socket
 import traceback
 from shinken.imports import StringIO as cStringIO
-from shinken.imports import cpickle as cPickle
+import pickle
 from shinken.safepickle import SafeUnpickler
 import json
 

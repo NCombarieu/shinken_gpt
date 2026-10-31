@@ -50,7 +50,7 @@ else:
 
 import os
 import time
-from shinken.imports import cpickle as cPickle
+import pickle
 from shinken.safepickle import SafeUnpickler
 import traceback
 import zlib
@@ -131,7 +131,7 @@ class IForArbiter(Interface):
     def get_external_commands(self):
         with self.app.external_commands_lock:
             cmds = self.app.get_external_commands()
-            raw = cPickle.dumps(cmds)
+            raw = pickle.dumps(cmds)
         return raw
     get_external_commands.need_lock = False
     get_external_commands.doc = doc
@@ -172,7 +172,7 @@ class ISchedulers(Interface):
         # print "A scheduler ask me the returns", sched_id
         ret = self.app.get_return_for_passive(int(sched_id))
         # print "Send mack", len(ret), "returns"
-        return cPickle.dumps(ret)
+        return pickle.dumps(ret)
     get_returns.encode = 'raw'
     get_returns.doc = doc
 
@@ -188,7 +188,7 @@ class IBroks(Interface):
     # poller or reactionner ask us actions
     def get_broks(self, bname, broks_batch=0):
         res = self.app.get_broks(broks_batch)
-        return base64.b64encode(zlib.compress(cPickle.dumps(res), 2))
+        return base64.b64encode(zlib.compress(pickle.dumps(res), 2))
     get_broks.encode = 'raw'
     get_broks.doc = doc
 
@@ -343,7 +343,7 @@ class Satellite(BaseSatellite):
         try:
             new_run_id = sch_con.get('get_running_id')
             new_run_id = float(new_run_id)
-        except (HTTPExceptions, cPickle.PicklingError, KeyError) as exp:
+        except (HTTPExceptions, pickle.PicklingError, KeyError) as exp:
             logger.warning("[%s] Scheduler %s is not initialized or has network problem: %s",
                            self.name, sname, str(exp))
             sched['con'] = None

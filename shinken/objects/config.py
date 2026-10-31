@@ -40,7 +40,8 @@ import tempfile
 from multiprocessing import Process, Manager
 import json
 
-from shinken.imports import cpickle as cPickle, StringIO
+import pickle
+from shinken.imports import StringIO
 from .item import Item
 from .timeperiod import Timeperiod, Timeperiods
 from .service import Service, Services
@@ -1322,13 +1323,13 @@ class Config(Item):
                     conf.hostgroups.prepare_for_sending()
                     logger.debug('[%s] Serializing the configuration %d', r.get_name(), i)
                     t0 = time.time()
-                    r.serialized_confs[i] = cPickle.dumps(conf, 0)  # cPickle.HIGHEST_PROTOCOL)
+                    r.serialized_confs[i] = pickle.dumps(conf, 0)  # pickle.HIGHEST_PROTOCOL)
                     logger.debug("[config] time to serialize the conf %s:%s is %s (size:%s)",
                                  r.get_name(), i, time.time() - t0, len(r.serialized_confs[i]))
                     logger.debug("PICKLE LEN : %d", len(r.serialized_confs[i]))
             # Now pickle the whole conf, for easy and quick spare send
             t0 = time.time()
-            whole_conf_pack = cPickle.dumps(self, cPickle.HIGHEST_PROTOCOL)
+            whole_conf_pack = pickle.dumps(self, pickle.HIGHEST_PROTOCOL)
             logger.debug("[config] time to serialize the global conf : %s (size:%s)",
                          time.time() - t0, len(whole_conf_pack))
             self.whole_conf_pack = whole_conf_pack
@@ -1352,7 +1353,7 @@ class Config(Item):
                         conf.hostgroups.prepare_for_sending()
                         logger.debug('[%s] Serializing the configuration %d', rname, i)
                         t0 = time.time()
-                        res = cPickle.dumps(conf, cPickle.HIGHEST_PROTOCOL)
+                        res = pickle.dumps(conf, pickle.HIGHEST_PROTOCOL)
                         logger.debug("[config] time to serialize the conf %s:%s is %s (size:%s)",
                                      rname, i, time.time() - t0, len(res))
                         q.append((i, res))
@@ -1395,7 +1396,7 @@ class Config(Item):
             # The function that just compute the whole conf pickle string, but n a children
             def create_whole_conf_pack(whole_queue, self):
                 logger.debug("[config] sub processing the whole configuration pack creation")
-                whole_queue.append(cPickle.dumps(self, cPickle.HIGHEST_PROTOCOL))
+                whole_queue.append(pickle.dumps(self, pickle.HIGHEST_PROTOCOL))
                 logger.debug("[config] sub processing the whole configuration pack creation "
                              "finished")
             # Go for it

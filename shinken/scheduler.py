@@ -27,7 +27,6 @@ import os
 from shinken.imports import StringIO as cStringIO
 import tempfile
 import traceback
-from shinken.imports import cpickle as cPickle
 from shinken.safepickle import SafeUnpickler
 
 import threading
