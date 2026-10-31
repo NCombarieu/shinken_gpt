@@ -1081,138 +1081,90 @@ class Scheduler(object):
         return all_data
 
 
-    # Get back our broks from a retention module :)
     def restore_retention_data(self, data):
-        # Now load interesting properties in hosts/services
-        # Tagging retention=False prop that not be directly load
-        # Items will be with theirs status, but not in checking, so
-        # a new check will be launched like with a normal beginning (random distributed
-        # scheduling)
+        """Restore hosts and services state from retention data.
 
-        ret_hosts = data['hosts']
+        Only the properties flagged ``retention=True`` are restored. Objects
+        are not put back "in checking": a new check is scheduled like at a
+        normal start (random distributed scheduling).
+
+        Once every object has been restored, ``reprocess_state()`` is called
+        on each of them so that derived attributes (scheduled downtime depth,
+        acknowledgement flag, problem/impact state) reflect the restored
+        downtimes and acknowledgements.
+
+        :param dict data: retention data as built by :meth:`get_retention_data`
+        """
+        objects = []
+        ret_hosts = data.get('hosts', {})
         for ret_h_name in ret_hosts:
-            # We take the dict of our value to load
-            d = data['hosts'][ret_h_name]
             h = self.hosts.find_by_name(ret_h_name)
             if h is not None:
-                # First manage all running properties
-                running_properties = h.__class__.running_properties
-                for prop, entry in running_properties.items():
-                    if entry.retention:
-                        # Maybe the saved one was not with this value, so
-                        # we just bypass this
-                        if prop in d:
-                            setattr(h, prop, d[prop])
-                # Ok, some are in properties too (like active check enabled
-                # or not. Will OVERRIDE THE CONFIGURATION VALUE!
-                properties = h.__class__.properties
-                for prop, entry in properties.items():
-                    if entry.retention:
-                        # Maybe the saved one was not with this value, so
-                        # we just bypass this
-                        if prop in d:
-                            setattr(h, prop, d[prop])
-                # Now manage all linked objects load from previous run
-                for a in h.notifications_in_progress.values():
-                    a.ref = h
-                    self.add(a)
-                    # Also raises the action id, so do not overlap ids
-                    a.assume_at_least_id(a.id)
-                h.update_in_checking()
-                # And also add downtimes and comments
-                for dt in h.downtimes:
-                    dt.ref = h
-                    if hasattr(dt, 'extra_comment'):
-                        dt.extra_comment.ref = h
-                    else:
-                        dt.extra_comment = None
-                    # raises the downtime id to do not overlap
-                    Downtime.id = max(Downtime.id, dt.id + 1)
-                    self.add(dt)
-                for c in h.comments:
-                    c.ref = h
-                    self.add(c)
-                    # raises comment id to do not overlap ids
-                    Comment.id = max(Comment.id, c.id + 1)
-                if h.acknowledgement is not None:
-                    h.acknowledgement.ref = h
-                    # Raises the id of future ack so we don't overwrite
-                    # these one
-                    Acknowledge.id = max(Acknowledge.id, h.acknowledgement.id + 1)
-                # Relink the notified_contacts as a set() of true contacts objects
-                # it it was load from the retention, it's now a list of contacts
-                # names
-                if 'notified_contacts' in d:
-                    new_notified_contacts = set()
-                    for cname in h.notified_contacts:
-                        c = self.contacts.find_by_name(cname)
-                        # Maybe the contact is gone. Skip it
-                        if c:
-                            new_notified_contacts.add(c)
-                    h.notified_contacts = new_notified_contacts
+                self.restore_object_retention_data(h, ret_hosts[ret_h_name])
+                objects.append(h)
 
-        # SAme for services
-        ret_services = data['services']
+        ret_services = data.get('services', {})
         for (ret_s_h_name, ret_s_desc) in ret_services:
-            # We take our dict to load
-            d = data['services'][(ret_s_h_name, ret_s_desc)]
             s = self.services.find_srv_by_name_and_hostname(ret_s_h_name, ret_s_desc)
-
             if s is not None:
-                # Load the major values from running properties
-                running_properties = s.__class__.running_properties
-                for prop, entry in running_properties.items():
-                    if entry.retention:
-                        # Maybe the saved one was not with this value, so
-                        # we just bypass this
-                        if prop in d:
-                            setattr(s, prop, d[prop])
-                # And some others from properties dict too
-                properties = s.__class__.properties
-                for prop, entry in properties.items():
-                    if entry.retention:
-                        # Maybe the saved one was not with this value, so
-                        # we just bypass this
-                        if prop in d:
-                            setattr(s, prop, d[prop])
-                # Ok now manage all linked objects
-                for a in s.notifications_in_progress.values():
-                    a.ref = s
-                    self.add(a)
-                    # Also raises the action id, so do not overlap id
-                    a.assume_at_least_id(a.id)
-                s.update_in_checking()
-                # And also add downtimes and comments
-                for dt in s.downtimes:
-                    dt.ref = s
-                    if hasattr(dt, 'extra_comment'):
-                        dt.extra_comment.ref = s
-                    else:
-                        dt.extra_comment = None
-                    # raises the downtime id to do not overlap
-                    Downtime.id = max(Downtime.id, dt.id + 1)
-                    self.add(dt)
-                for c in s.comments:
-                    c.ref = s
-                    self.add(c)
-                    # raises comment id to do not overlap ids
-                    Comment.id = max(Comment.id, c.id + 1)
-                if s.acknowledgement is not None:
-                    s.acknowledgement.ref = s
-                    # Raises the id of future ack so we don't overwrite
-                    # these one
-                    Acknowledge.id = max(Acknowledge.id, s.acknowledgement.id + 1)
-                # Relink the notified_contacts as a set() of true contacts objects
-                # it it was load from the retention, it's now a list of contacts
-                # names
-                if 'notified_contacts' in d:
-                    new_notified_contacts = set()
-                    for cname in s.notified_contacts:
-                        c = self.contacts.find_by_name(cname)
-                        # Maybe the contact is gone. Skip it
-                        if c:
-                            new_notified_contacts.add(c)
-                    s.notified_contacts = new_notified_contacts
+                self.restore_object_retention_data(
+                    s, ret_services[(ret_s_h_name, ret_s_desc)])
+                objects.append(s)
+
+        # Recompute status attributes once all states have been restored
+        for o in objects:
+            o.reprocess_state()
+
+    def restore_object_retention_data(self, o, data):
+        """Restore the retention data of a single host or service.
+
+        Running properties and configuration properties flagged for
+        retention are set back on the object (the latter override the
+        configuration value), then linked objects (notifications in
+        progress, downtimes, comments, acknowledgement) are re-attached to
+        the object and registered in the scheduler. Object id counters are
+        raised so that new objects never reuse a restored id.
+
+        :param o: the host or service to restore
+        :param dict data: the retention data of this object
+        """
+        for props in (o.__class__.running_properties, o.__class__.properties):
+            for prop, entry in props.items():
+                # The saved data may not contain this property: skip it
+                if entry.retention and prop in data:
+                    setattr(o, prop, data[prop])
+
+        # Re-link the objects loaded from the previous run
+        for a in o.notifications_in_progress.values():
+            a.ref = o
+            self.add(a)
+            # Also raise the action id, so ids do not overlap
+            a.assume_at_least_id(a.id)
+        for dt in o.downtimes:
+            dt.ref = o
+            if getattr(dt, 'extra_comment', None) is not None:
+                dt.extra_comment.ref = o
+            else:
+                dt.extra_comment = None
+            Downtime.id = max(Downtime.id, dt.id + 1)
+            self.add(dt)
+        for c in o.comments:
+            c.ref = o
+            self.add(c)
+            Comment.id = max(Comment.id, c.id + 1)
+        if o.acknowledgement is not None:
+            o.acknowledgement.ref = o
+            Acknowledge.id = max(Acknowledge.id, o.acknowledgement.id + 1)
+        # notified_contacts was saved as a list of contact names: turn it
+        # back into a set of contact objects (contacts that are gone are
+        # skipped)
+        if 'notified_contacts' in data:
+            new_notified_contacts = set()
+            for cname in o.notified_contacts:
+                c = self.contacts.find_by_name(cname)
+                if c:
+                    new_notified_contacts.add(c)
+            o.notified_contacts = new_notified_contacts
 
 
     # Fill the self.broks with broks of self (process id, and co)
