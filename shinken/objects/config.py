@@ -865,7 +865,18 @@ class Config(Item):
         return r
 
     def read_config(self, files):
-        # just a first pass to get the cfg_file and all files in a buf
+        """Read the main configuration files and the files they include.
+
+        ``cfg_file``, ``resource_file`` and ``cfg_dir`` (``*.cfg`` files) are
+        followed. Files are decoded as UTF-8, with a latin-1 fallback (see
+        :func:`shinken.util.read_text_file`). A file that cannot be read is
+        logged with its name and makes the configuration incorrect.
+
+        :param list files: paths of the main configuration files
+        :return: the concatenated content, each file preceded by an
+            ``# IMPORTEDFROM=<path>`` marker
+        :rtype: str
+        """
         res = StringIO()
 
         for file in files:
