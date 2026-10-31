@@ -132,3 +132,24 @@ def test_healthcheck_probe_reflects_daemon_state():
     proc = _run(script, "--daemon", "scheduler", "--daemon-port", str(port), "--timeout", "2")
     assert proc.returncode == 1
     assert proc.stdout.startswith("CRITICAL - scheduler")
+
+
+def test_modernization_audit_fails_on_syntax_error(tmp_path, capsys):
+    import importlib.util
+    import json
+
+    spec = importlib.util.spec_from_file_location(
+        "modernization_audit", ROOT / "integration" / "modernization_audit.py")
+    audit = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(audit)
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "tool").write_text("#!/usr/bin/env python3\nprint 'py2'\n")
+    (tmp_path / "libexec").mkdir()
+    (tmp_path / "libexec" / "ok.py").write_text("import re\nre.compile('\\d')\n")
+    audit.ROOT = tmp_path
+    assert audit.main() == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["syntax_errors"][0]["path"] == "bin/tool"
+    assert report["counts"]["syntax_warnings"] == 1
+    (tmp_path / "bin" / "tool").write_text("#!/usr/bin/env python3\nprint('py3')\n")
+    assert audit.main() == 0

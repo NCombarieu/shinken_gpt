@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """Audit compatibility/deprecation debt in shipped Python code.
 
-Known removed compatibility layers are hard failures so they cannot silently
-return. Remaining deprecated imports are reported for staged cleanup.
+Known removed compatibility layers and files that do not even parse
+(SyntaxError, e.g. Python 2 code left behind) are hard failures so they cannot
+silently return. Remaining deprecated imports and SyntaxWarnings (invalid
+escape sequences, errors in a future Python) are reported for staged cleanup.
 """
 
 from __future__ import annotations
 
 import ast
 import json
+import warnings
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOTS = ("shinken", "bin", "cli", "modules", "libexec")
+SOURCE_ROOTS = ("shinken", "bin", "cli", "modules", "libexec", "integration")
 WATCHED_IMPORTS = {"cgi", "imp", "optparse", "distutils", "six"}
 # Python-2 compatibility layers must not return to the Python-3-only runtime.
 FORBIDDEN_IMPORTS = {"cgi", "imp", "six"}
@@ -43,13 +46,28 @@ def iter_python_files():
                     yield path
 
 
-def imports_for(path: Path):
+def parse(path: Path):
+    """Return (tree, syntax_error, syntax_warnings) for one file."""
     try:
         source = path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(path))
-    except (OSError, SyntaxError, UnicodeDecodeError):
-        return []
+    except (OSError, UnicodeDecodeError) as exp:
+        return None, "%s: %s" % (type(exp).__name__, exp), []
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", SyntaxWarning)
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError as exp:
+            return None, "line %s: %s" % (exp.lineno, exp.msg), []
+    syntax_warnings = sorted({
+        "line %s: %s" % (w.lineno, w.message) for w in caught
+        if issubclass(w.category, SyntaxWarning)
+    })
+    return tree, None, syntax_warnings
 
+
+def imports_for(tree):
+    if tree is None:
+        return []
     findings = []
     for node in ast.walk(tree):
         names = []
@@ -66,6 +84,8 @@ def imports_for(path: Path):
 def main() -> int:
     deprecated_imports = []
     python2_shebangs = []
+    syntax_errors = []
+    syntax_warnings = []
     seen = set()
     for path in iter_python_files():
         path = path.resolve()
@@ -79,7 +99,12 @@ def main() -> int:
             first_line = ""
         if "python2" in first_line:
             python2_shebangs.append(relative)
-        for finding in imports_for(path):
+        tree, error, file_warnings = parse(path)
+        if error:
+            syntax_errors.append({"path": relative, "error": error})
+        for message in file_warnings:
+            syntax_warnings.append({"path": relative, "warning": message})
+        for finding in imports_for(tree):
             deprecated_imports.append({"path": relative, **finding})
 
     forbidden_paths = [
@@ -95,15 +120,19 @@ def main() -> int:
         "python2_shebangs": python2_shebangs,
         "forbidden_legacy_paths": forbidden_paths,
         "forbidden_imports": forbidden_imports,
+        "syntax_errors": syntax_errors,
+        "syntax_warnings": syntax_warnings,
         "counts": {
             "deprecated_imports": len(deprecated_imports),
             "python2_shebangs": len(python2_shebangs),
             "forbidden_legacy_paths": len(forbidden_paths),
             "forbidden_imports": len(forbidden_imports),
+            "syntax_errors": len(syntax_errors),
+            "syntax_warnings": len(syntax_warnings),
         },
     }
     print(json.dumps(report, indent=2, sort_keys=True))
-    if python2_shebangs or forbidden_paths or forbidden_imports:
+    if python2_shebangs or forbidden_paths or forbidden_imports or syntax_errors:
         return 1
     return 0
 
