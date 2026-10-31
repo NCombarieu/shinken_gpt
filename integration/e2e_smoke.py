@@ -16,7 +16,7 @@ Checks (each reported PASS/FAIL, exit code 1 if any fails):
 Usage (from a source checkout or with Shinken installed)::
 
     python3 integration/e2e_smoke.py                 # standard ports
-    python3 integration/e2e_smoke.py --port-offset 20000 --keep
+    python3 integration/e2e_smoke.py --port-offset 10000 --keep
 
 The test configuration lives in integration/e2e/ and follows the module
 interfaces of the project (retention-pickle, logstore-sqlite, named-pipe).
@@ -54,6 +54,10 @@ class Smoke:
     def __init__(self, args):
         self.args = args
         self.ports = {name: port + args.port_offset for name, port in PORTS.items()}
+        too_high = {n: p for n, p in self.ports.items() if not 0 < p < 65536}
+        if too_high:
+            raise SystemExit("--port-offset %d gives invalid TCP ports: %s"
+                             % (args.port_offset, too_high))
         self.work = Path(args.workdir or tempfile.mkdtemp(prefix="shinken-e2e-")).resolve()
         self.etc = self.work / "etc"
         self.procs: dict[str, subprocess.Popen] = {}

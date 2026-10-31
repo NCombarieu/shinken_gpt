@@ -6,6 +6,26 @@
 > apportées depuis sont listées dans le Changelog et la documentation à jour
 > se trouve dans [doc/README.md](../README.md).
 
+## État après corrections (vérifié le 31/10/2026)
+
+| Bloquant de la revue | État | Preuve |
+|---|---|---|
+| B1 Livestatus / `logstore-sqlite` | corrigé | module `modules/logstore_sqlite/`, recette `livestatus PASS` |
+| B2 Rétention | corrigé | module `retention-pickle`, recette `retention PASS` (ack et downtime conservés après redémarrage du scheduler) |
+| B3 Notifications mail | corrigé | `notify_by_email.py` Python 3 + relais SMTP, recette `notify PASS` |
+| B4 Périodes avec date fixe passée | corrigé | monkeypatch des tests supprimé, `test_timeperiods.py` vert |
+| B5 `.cfg` en latin-1 | corrigé | lecture UTF-8 puis latin-1 avec avertissement nommant le fichier |
+| B6 Pollers passifs | corrigé | résultats dépicklés en bytes |
+| B7 `nagios.cmd` | corrigé | module `named-pipe`, recette `nagios.cmd PASS` |
+| B8 Configuration personnelle dans `etc/` | corrigé | `etc/` neutre, `DEPLOYMENT.md` supprimé |
+| B9 Migration progressive master ↔ branche | **non corrigé (par conception)** | bascule de tous les daemons d'un coup : voir [guide de migration](../migration-depuis-shinken-master.md) |
+
+Recette : `python3 integration/e2e_smoke.py` → 7/7 PASS (config, 6 daemons,
+checks, Livestatus, notification, nagios.cmd, rétention). Tests unitaires :
+815 passés, 0 échec. Non vérifié dans l'environnement de revue : construction
+de l'image Podman et quadlets (Podman indisponible), Livestatus face à un vrai
+Thruk.
+
 *Revue du 31/10/2026, menée par 5 relecteurs en parallèle (code Python 3,
 compatibilité master, test réel bout-en-bout, exploitation, documentation).*
 
