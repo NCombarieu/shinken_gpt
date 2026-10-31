@@ -1,0 +1,63 @@
+#!/bin/sh
+# Run local checks and push their results to Shinken over SSH (passive checks).
+# See doc/checks/ssh-passif.md.
+#
+# Usage: shinken-passive-send [-c /etc/shinken-passive/checks.conf]
+#
+# Configuration (shell syntax, /etc/shinken-passive/client.conf):
+#   SHINKEN_SERVER=shinken.example.lan   # Podman host running the passive-ssh container
+#   SHINKEN_PORT=2222
+#   SHINKEN_HOST=srv-web01               # host_name of THIS machine in Shinken
+#   SHINKEN_KEY=/etc/shinken-passive/id_ed25519
+#   SHINKEN_KNOWN_HOSTS=/etc/shinken-passive/known_hosts
+#
+# checks.conf, one check per line:  <service_description><TAB><command>
+#   Disk	/usr/lib/nagios/plugins/check_disk -w 20% -c 10% -p /
+#   Backup	/usr/local/lib/check_backup.sh
+# A line "HOST<TAB><command>" sends a host check result.
+#
+# cron (every 5 minutes, freshness_threshold of the services >= 900):
+#   */5 * * * * root /usr/local/bin/shinken-passive-send >/var/log/shinken-passive.log 2>&1
+
+set -u
+CLIENT_CONF=/etc/shinken-passive/client.conf
+CHECKS_CONF=/etc/shinken-passive/checks.conf
+while getopts c:f: opt; do
+  case "$opt" in
+    c) CHECKS_CONF=$OPTARG ;;
+    f) CLIENT_CONF=$OPTARG ;;
+    *) echo "usage: $0 [-f client.conf] [-c checks.conf]" >&2; exit 3 ;;
+  esac
+done
+
+SHINKEN_PORT=2222
+SHINKEN_KNOWN_HOSTS=/etc/shinken-passive/known_hosts
+# shellcheck disable=SC1090
+. "$CLIENT_CONF"
+: "${SHINKEN_SERVER:?set in $CLIENT_CONF}" "${SHINKEN_HOST:?set in $CLIENT_CONF}" "${SHINKEN_KEY:?set in $CLIENT_CONF}"
+
+tab=$(printf '\t')
+results=$(mktemp)
+trap 'rm -f "$results"' EXIT
+
+while IFS="$tab" read -r service command; do
+  case "$service" in ''|'#'*) continue ;; esac
+  [ -n "$command" ] || continue
+  # Keep the exit status (appended as a last line), then only the first line
+  # of the plugin output (status + perfdata).
+  output=$(timeout 60 sh -c "$command" 2>&1 </dev/null; echo "rc=$?")
+  rc=${output##*rc=}
+  output=$(printf '%s\n' "${output%rc=*}" | head -n 1 | tr '\t' ' ')
+  case "$rc" in 0|1|2|3) ;; *) output="UNKNOWN - '$command' exited with $rc: $output"; rc=3 ;; esac
+  [ -n "$output" ] || output="(no output)"
+  if [ "$service" = HOST ]; then
+    printf '%s\t%s\t%s\n' "$SHINKEN_HOST" "$rc" "$output" >>"$results"
+  else
+    printf '%s\t%s\t%s\t%s\n' "$SHINKEN_HOST" "$service" "$rc" "$output" >>"$results"
+  fi
+done <"$CHECKS_CONF"
+
+ssh -T -p "$SHINKEN_PORT" -i "$SHINKEN_KEY" \
+    -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+    -o UserKnownHostsFile="$SHINKEN_KNOWN_HOSTS" -o StrictHostKeyChecking=yes \
+    "shinken@$SHINKEN_SERVER" <"$results"

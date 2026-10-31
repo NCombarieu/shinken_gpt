@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""check_json_api - Nagios/Shinken plugin: query an HTTP JSON API and test a value.
+
+Examples (doc/checks/api.md):
+
+  # numeric value with thresholds (Nagios ranges), value becomes perfdata
+  check_json_api -u https://api.example.org/metrics -p queue.pending -w 100 -c 500
+
+  # string value must equal an expected one
+  check_json_api -u https://app.example.org/health -p status -e UP
+
+  # list element / nested keys, bearer token read from a file (not visible in ps)
+  check_json_api -u https://api/x -p 'checks[0].state' -e ok --token-file /etc/shinken/secrets/api.token
+
+Exit codes: 0 OK, 1 WARNING, 2 CRITICAL, 3 UNKNOWN (bad arguments, HTTP or
+JSON error, path not found).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+
+OK, WARNING, CRITICAL, UNKNOWN = 0, 1, 2, 3
+STATE = {OK: "OK", WARNING: "WARNING", CRITICAL: "CRITICAL", UNKNOWN: "UNKNOWN"}
+
+
+def finish(code: int, message: str, perfdata: str = "") -> None:
+    print(f"JSON API {STATE[code]} - {message}" + (f" | {perfdata}" if perfdata else ""))
+    sys.exit(code)
+
+
+class Range:
+    """Nagios threshold range: 10, 10:, ~:10, 10:20, @10:20."""
+
+    def __init__(self, spec: str):
+        self.spec = spec
+        self.inside = spec.startswith("@")
+        body = spec[1:] if self.inside else spec
+        if ":" not in body:
+            low, high = "0", body
+        else:
+            low, high = body.split(":", 1)
+        self.low = float("-inf") if low in ("~", "") and ":" in body else float(low or 0)
+        self.high = float("inf") if high == "" else float(high)
+
+    def alert(self, value: float) -> bool:
+        inside = self.low <= value <= self.high
+        return inside if self.inside else not inside
+
+
+def extract(document, path: str):
+    """Follow a.b[0].c through dicts and lists."""
+    if not path:
+        return document
+    current = document
+    for token in re.findall(r"[^.\[\]]+|\[\d+\]", path):
+        if token.startswith("["):
+            index = int(token[1:-1])
+            if not isinstance(current, list) or index >= len(current):
+                raise KeyError(path)
+            current = current[index]
+        else:
+            if not isinstance(current, dict) or token not in current:
+                raise KeyError(path)
+            current = current[token]
+    return current
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
+    parser.add_argument("-u", "--url", required=True)
+    parser.add_argument("-p", "--path", default="", help="value to test, e.g. data.items[0].count")
+    parser.add_argument("-w", "--warning", help="Nagios range for a numeric value")
+    parser.add_argument("-c", "--critical", help="Nagios range for a numeric value")
+    parser.add_argument("-e", "--expect", help="the value must equal this string")
+    parser.add_argument("-l", "--label", help="name used in the output and perfdata")
+    parser.add_argument("-H", "--header", action="append", default=[], help="'Name: value', repeatable")
+    parser.add_argument("--token-file", help="file holding a bearer token")
+    parser.add_argument("-m", "--method", default="GET")
+    parser.add_argument("-d", "--data", help="request body (JSON) for POST/PUT")
+    parser.add_argument("-s", "--status", type=int, default=None,
+                        help="expected HTTP status (default: any 2xx)")
+    parser.add_argument("-k", "--insecure", action="store_true", help="do not verify TLS certificates")
+    parser.add_argument("-t", "--timeout", type=float, default=10)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit:
+        sys.exit(UNKNOWN)
+
+    try:
+        warning = Range(args.warning) if args.warning else None
+        critical = Range(args.critical) if args.critical else None
+    except ValueError as exc:
+        finish(UNKNOWN, f"invalid threshold: {exc}")
+
+    headers = {"Accept": "application/json", "User-Agent": "shinken-check_json_api"}
+    for header in args.header:
+        name, sep, value = header.partition(":")
+        if not sep:
+            finish(UNKNOWN, f"invalid header {header!r}, expected 'Name: value'")
+        headers[name.strip()] = value.strip()
+    if args.token_file:
+        try:
+            with open(args.token_file, encoding="utf-8") as handle:
+                headers["Authorization"] = "Bearer " + handle.read().strip()
+        except OSError as exc:
+            finish(UNKNOWN, f"cannot read token file: {exc}")
+    body = None
+    if args.data is not None:
+        body = args.data.encode("utf-8")
+        headers.setdefault("Content-Type", "application/json")
+
+    context = ssl.create_default_context()
+    if args.insecure:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+
+    request = urllib.request.Request(args.url, data=body, headers=headers, method=args.method)
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=args.timeout, context=context) as response:
+            status, raw = response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        status, raw = exc.code, exc.read()
+    except (urllib.error.URLError, OSError) as exc:
+        finish(CRITICAL, f"{args.url}: {getattr(exc, 'reason', exc)}")
+    elapsed = time.monotonic() - started
+    time_perf = f"time={elapsed:.3f}s;;;0;{args.timeout:g}"
+
+    expected_status = args.status
+    if (expected_status is None and not 200 <= status < 300) or (
+            expected_status is not None and status != expected_status):
+        finish(CRITICAL, f"HTTP {status} from {args.url}", time_perf)
+
+    try:
+        document = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        finish(UNKNOWN, f"response is not JSON: {exc}", time_perf)
+    try:
+        value = extract(document, args.path)
+    except KeyError:
+        finish(UNKNOWN, f"path {args.path!r} not found in the response", time_perf)
+
+    label = args.label or args.path or "value"
+    if args.expect is not None:
+        shown = json.dumps(value) if not isinstance(value, str) else value
+        if shown == args.expect:
+            finish(OK, f"{label} = {shown}", time_perf)
+        finish(CRITICAL, f"{label} = {shown} (expected {args.expect})", time_perf)
+
+    if warning or critical:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                finish(UNKNOWN, f"{label} = {value!r} is not a number", time_perf)
+        perf_label = re.sub(r"[^A-Za-z0-9_.-]", "_", label)
+        perf = (f"{perf_label}={value:g};{args.warning or ''};{args.critical or ''} {time_perf}")
+        if critical and critical.alert(value):
+            finish(CRITICAL, f"{label} = {value:g} (critical {args.critical})", perf)
+        if warning and warning.alert(value):
+            finish(WARNING, f"{label} = {value:g} (warning {args.warning})", perf)
+        finish(OK, f"{label} = {value:g}", perf)
+
+    shown = json.dumps(value) if not isinstance(value, str) else value
+    finish(OK, f"{label} = {shown[:200]} (HTTP {status})", time_perf)
+
+
+if __name__ == "__main__":
+    main()

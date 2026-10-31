@@ -153,18 +153,33 @@ plutôt que container par container.
 
 Sous Podman rootless, les UID à l'intérieur d'un container sont **remappés**
 par rapport à l'hôte (`podman unshare cat /proc/self/uid_map` pour voir le
-mapping exact). Un `chown`/`chmod` classique sur le fichier monté cible le
-mauvais UID réel côté hôte.
+mapping exact). Un fichier `chmod 600` de l'utilisateur de l'hôte apparaît
+dans le container comme appartenant à `root` : le poller (uid 10001) ne peut
+pas le lire.
 
 ```bash
 podman unshare chown 10001:10001 etc/ssh_keys/ma_clef
-podman unshare chmod 600 etc/ssh_keys/ma_clef
-podman restart <container concerné>   # souvent necessaire pour que le montage reprenne le nouvel etat
+podman restart shinken_poller_1
 ```
 
-Symptôme typique si ignoré : `stat`/`cat` renvoie `Permission denied` sur le
-fichier depuis le container, alors que les permissions semblent correctes
-vues de l'hôte.
+Le `chown` est écrit sur disque : il n'est pas à refaire après une
+recréation des containers. Pour les clés SSH, le poller en fait lui-même une
+copie privée en `0600` au démarrage, et il signale dans ses logs une clé qu'il
+ne peut pas lire :
+
+```bash
+podman logs shinken_poller_1 2>&1 | grep "SSH key"
+```
+
+!!! information "Ancien symptôme : « à refaire après chaque recréation »"
+    Les montages étaient en `:Z` (label SELinux **privé** à un seul
+    container) alors qu'ils sont partagés par tous les containers : le
+    dernier démarré « prenait » les fichiers aux autres. `compose.yaml`
+    utilise désormais `:z` (label partagé).
+
+Dépannage détaillé par type de check : [SSH actif](checks/ssh-actif.md#depannage),
+[SSH passif](checks/ssh-passif.md#depannage), [NRPE](checks/nrpe.md#depannage),
+[SNMP](checks/snmp.md#depannage), [API](checks/api.md#depannage).
 
 ## Pour aller plus loin
 

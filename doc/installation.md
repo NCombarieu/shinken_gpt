@@ -68,10 +68,13 @@ Livestatus](livestatus-thruk.md).
     podman-compose build
     ```
 
-    Le `Containerfile` installe Python 3, les plugins Nagios de base
-    (`nagios-plugins-basic`), NRPE (`nagios-nrpe-plugin`, pour
-    `check_nrpe_ssl`) et le client SSH système (`openssh-client`, requis par
-    `check_by_ssh`).
+    Le `Containerfile` installe Python 3 et tout ce qu'utilisent les
+    commandes de `etc/commands` : plugins Nagios
+    (`monitoring-plugins-basic` et `-standard`, avec leurs bibliothèques),
+    NRPE (`nagios-nrpe-plugin`), SNMP (`snmp`, plugins Manubulon
+    `nagios-snmp-plugins` et modules Perl SNMPv3), SSH (`openssh-client`
+    pour `check_by_ssh`, `openssh-server` pour le récepteur passif) et le
+    plugin `check_json_api`. Voir [Choisir un type de check](checks/README.md).
 
 3. **Lancer la stack** :
 

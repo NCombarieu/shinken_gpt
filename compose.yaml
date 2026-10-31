@@ -15,9 +15,12 @@ x-shinken: &shinken
   cap_drop:
     - ALL
   volumes:
-    - ./etc:/etc/shinken:ro,Z
-    - shinken-data:/var/lib/shinken:Z
-    - shinken-logs:/var/log/shinken:Z
+    # :z (shared SELinux label), not :Z: these mounts are shared by every
+    # Shinken container; a private :Z label only lets the last started
+    # container read them.
+    - ./etc:/etc/shinken:ro,z
+    - shinken-data:/var/lib/shinken:z
+    - shinken-logs:/var/log/shinken:z
 
 services:
   arbiter:
@@ -64,6 +67,20 @@ services:
   receiver:
     <<: *shinken
     command: ["receiver"]
+
+  # Passive results pushed by clients over SSH (doc/checks/ssh-passif.md).
+  # Opt-in: podman-compose --profile passive up -d
+  # Needs etc/passive/authorized_keys (one key per client host).
+  passive-ssh:
+    <<: *shinken
+    profiles: ["passive"]
+    command: ["passive-ssh"]
+    environment:
+      SHINKEN_LIVESTATUS: broker:50000
+    ports:
+      - "2222:2222"
+    depends_on:
+      - broker
 
   influxdb:
     profiles: ["experimental-metrics"]

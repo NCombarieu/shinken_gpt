@@ -30,6 +30,9 @@ prérequis, ses étapes et sa validation.
 | Comprendre ce qu'est Shinken et comment ce fork est organisé | [Shinken, qu'est-ce que c'est ?](presentation.md) |
 | Installer et lancer la stack sur un serveur | [Installer et lancer Shinken](installation.md) |
 | Ajouter des hôtes, services, contacts à superviser | [Configurer Shinken](configuration.md) |
+| Choisir comment superviser une machine : SSH, passif, NRPE, SNMP, API | [Choisir un type de check](checks/README.md) |
+| Superviser un Linux par SSH, recevoir des résultats passifs | [SSH actif](checks/ssh-actif.md) · [SSH passif](checks/ssh-passif.md) |
+| Superviser un Windows (NSClient++), un switch, une API | [NRPE](checks/nrpe.md) · [SNMP](checks/snmp.md) · [API et HTTP](checks/api.md) |
 | Brancher une interface web (Thruk) dessus | [Brancher Thruk via Livestatus](livestatus-thruk.md) |
 | Recharger la config, forcer un check, faire un ack/downtime | [Exploiter Shinken au quotidien](exploitation.md) |
 | Comprendre un comportement bizarre avant de rouvrir une enquête | [Dépanner Shinken](depannage.md) |
@@ -42,10 +45,12 @@ shinken_gpt/
 ├── modules/            ← modules broker embarqués (livestatus, logstore_null, status_webui, dummy_*)
 ├── etc/                ← configuration Shinken (montée en lecture seule dans les containers)
 │   ├── hosts/ services/ contacts/ commands/ modules/ …
-│   ├── certs/ ssh_keys/  ← secrets pour check_nrpe_ssl / check_by_ssh (gitignorés)
+│   ├── certs/ ssh_keys/ passive/ secrets/  ← secrets des checks (gitignorés)
 │   └── templates/      ← generic-host, generic-service, etc.
-├── compose.yaml        ← 6 containers Podman (un par daemon Shinken)
-├── Containerfile        ← image des containers (Python 3, plugins Nagios, NRPE, SSH)
+├── compose.yaml        ← 6 containers Podman (un par daemon) + passive-ssh (profil "passive")
+├── containers/         ← entrypoint, récepteur passif SSH, plugins fournis (check_json_api)
+├── contrib/checks/     ← à poser sur les machines supervisées (SSH, NSClient++, NRPE, clients passifs)
+├── Containerfile        ← image des containers (Python 3, plugins Nagios standard, NRPE, SNMP, SSH)
 └── doc/                ← vous êtes ici
 ```
 

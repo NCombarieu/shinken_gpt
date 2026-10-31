@@ -1,0 +1,36 @@
+#!/bin/sh
+# Forced command for the Shinken monitoring key on a monitored Linux host.
+#
+# Install as root:   install -m 755 shinken-checks /usr/local/bin/shinken-checks
+# authorized_keys of the monitoring account (one line):
+#   command="/usr/local/bin/shinken-checks",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... shinken
+#
+# Shinken sends a check *name* (check_by_ssh -C "<name>"). The name is only
+# compared against this fixed list: it is never passed to a shell, so the
+# client cannot run anything else. Thresholds live here, on the target.
+# Add your own entries to the case below (one name -> one fixed command).
+#
+# See doc/checks/ssh-actif.md.
+
+P=/usr/lib/nagios/plugins           # Debian/Ubuntu (monitoring-plugins-basic)
+[ -d "$P" ] || P=/usr/lib64/nagios/plugins   # RHEL/Rocky (nagios-plugins-*)
+
+case "$SSH_ORIGINAL_COMMAND" in
+  load)     exec "$P/check_load" -r -w 2,1.5,1.2 -c 4,3,2 ;;
+  disk)     exec "$P/check_disk" -w 20% -c 10% -X tmpfs -X devtmpfs -X overlay -X squashfs ;;
+  disk-root) exec "$P/check_disk" -w 20% -c 10% -p / ;;
+  swap)     exec "$P/check_swap" -w 50% -c 20% ;;
+  procs)    exec "$P/check_procs" -w 400 -c 600 ;;
+  zombies)  exec "$P/check_procs" -s Z -w 5 -c 20 ;;
+  users)    exec "$P/check_users" -w 5 -c 10 ;;
+  uptime)   exec uptime ;;
+  ntp)      exec "$P/check_ntp_time" -H pool.ntp.org -w 0.5 -c 1 ;;
+  service-sshd) exec "$P/check_procs" -c 1: -C sshd ;;
+  # Example of a local script (keep it root-owned and not writable by the
+  # monitoring account):
+  # backup)  exec /usr/local/lib/shinken-checks/check_backup.sh ;;
+  *)
+    echo "UNKNOWN - check '$SSH_ORIGINAL_COMMAND' is not allowed on $(hostname)"
+    exit 3
+    ;;
+esac

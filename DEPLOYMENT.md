@@ -407,6 +407,14 @@ ne change rien, logique mais facile à oublier.
 
 ## Mise à jour (2026-09-13, suite 6) : superviser l'hôte (ce serveur) en SSH
 
+!!! information "Mise à jour du 31/10/2026"
+    Cette section est l'historique de la mise en place. La procédure à jour
+    est dans [doc/checks/ssh-actif.md](doc/checks/ssh-actif.md). Depuis : le
+    poller copie lui-même les clés en `0600` et génère la configuration ssh
+    (plus de `-i` ni de `podman unshare chmod`), `known_hosts` est géré, et le
+    « à refaire après chaque recréation » venait des montages `:Z` (label
+    SELinux privé), remplacés par `:z`.
+
 Objectif : un check `check_by_ssh` qui se connecte depuis le poller
 container vers **ce serveur lui-même** (pas un autre container), avec
 une clef SSH dédiée restreinte à une seule commande.

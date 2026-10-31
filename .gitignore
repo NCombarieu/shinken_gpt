@@ -57,4 +57,9 @@ etc/certs/*
 !etc/certs/README.md
 etc/ssh_keys/*
 !etc/ssh_keys/README.md
+etc/passive/*
+!etc/passive/README.md
+etc/resource.d/*.local.cfg
+etc/secrets/*
+!etc/secrets/README.md
 

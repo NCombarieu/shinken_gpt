@@ -122,6 +122,8 @@ jobs:
         run: podman build --tag shinken:test --file Containerfile .
       - name: Smoke test daemon executable
         run: podman run --rm shinken:test shinken-arbiter --version
+      - name: Every plugin referenced by etc/commands exists and loads
+        run: podman run --rm -v ./integration:/opt/integration:ro,z shinken:test shell /opt/integration/check_image_plugins.sh
 
   distributed-integration:
     runs-on: ubuntu-latest

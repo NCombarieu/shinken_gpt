@@ -5,11 +5,11 @@ type: "guide"
 level: "intermediaire"
 duration: "25 min"
 version: "1.0"
-updated: "2026-09-13"
+updated: "2026-10-31"
 owner: "Administration Supervision"
 status: "valid"
 order: 4
-keywords: [configuration, hosts, services, templates, commands, contacts, ssh, nrpe]
+keywords: [configuration, hosts, services, templates, commands, contacts, ssh, nrpe, snmp, api, passif]
 summary: "Structure des fichiers de configuration Shinken, ajout d'hôtes/services, et particularités du réseau depuis un container."
 ---
 
@@ -34,8 +34,10 @@ etc/
 ├── commands/    ← define command { ... }
 ├── templates/   ← generic-host, generic-service (heritage "use")
 ├── modules/     ← modules broker (livestatus, status-webui, logstore-null)
-├── certs/       ← certificats NRPE (gitignore, voir plus bas)
-└── ssh_keys/    ← clefs SSH pour check_by_ssh (gitignore, voir plus bas)
+├── certs/       ← certificats NRPE (gitignore)
+├── ssh_keys/    ← clés SSH pour check_by_ssh (gitignore)
+├── passive/     ← clés des clients passifs SSH (gitignore)
+└── secrets/     ← jetons d'API (gitignore)
 ```
 
 Un fichier `.cfg` n'importe où sous ces dossiers est automatiquement chargé
@@ -123,33 +125,32 @@ Trois conséquences concrètes :
    — vérifier les règles `nftables`/`firewalld` si un check échoue alors que
    le service cible tourne bien.
 
-## Commandes SSH (`check_by_ssh`) et NRPE (`check_nrpe_ssl`)
+## Types de checks (SSH, passif, NRPE, SNMP, API) {#types-de-checks}
 
-Deux briques distinctes, toutes deux nécessitant des secrets qui **ne vont
-jamais dans git** :
+Chaque méthode de supervision a sa fiche, avec la configuration côté
+cible, côté Shinken, la validation et le dépannage :
 
-- **NRPE/NSClient++** : déposer les certificats sous `etc/certs/` (voir
-  `etc/certs/README.md` dans le dépôt pour l'exemple de commande complet).
-- **SSH** : déposer une clef privée dédiée sous `etc/ssh_keys/` (voir
-  `etc/ssh_keys/README.md`), et **restreindre côté serveur cible** via
-  `authorized_keys` :
+| Méthode | Fiche |
+|---|---|
+| Choisir la bonne méthode | [Choisir un type de check](checks/README.md) |
+| Serveur Linux sans agent, par SSH | [SSH actif](checks/ssh-actif.md) |
+| La machine envoie ses résultats (cron, traitement, Windows) | [SSH passif](checks/ssh-passif.md) |
+| Agent NRPE : Linux, Windows NSClient++ (alias, PowerShell) | [NRPE et NSClient++](checks/nrpe.md) |
+| Switchs, routeurs, onduleurs, NAS | [SNMP](checks/snmp.md) |
+| Application web, endpoint `/health`, API REST, certificat | [API et HTTP](checks/api.md) |
 
-    ```
-    command="/chemin/vers/mon_script.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... shinken-monitoring
-    ```
+Les secrets (clés SSH, certificats NRPE, mots de passe SNMPv3, jetons
+d'API) vont dans `etc/ssh_keys/`, `etc/certs/`, `etc/resource.d/*.local.cfg`
+et `etc/secrets/`, tous **ignorés par git**.
 
-!!! attention "Ne jamais interpoler la commande du client dans le command= force"
-    `command="... $SSH_ORIGINAL_COMMAND"` réintroduit une injection shell et
-    annule toute la restriction : le client contrôle alors ce qui s'exécute.
-    Le `command=` doit être **entièrement figé**, arguments compris.
-
-!!! information "Permissions des clefs sous Podman rootless"
-    Les UID à l'intérieur d'un container Podman rootless sont **remappés**
-    par rapport à l'hôte. Un `chown`/`chmod` classique sur une clef montée
-    cible le mauvais UID réel. Utiliser `podman unshare chown/chmod`, et
-    relancer le container concerné juste après (le montage a parfois besoin
-    d'un restart pour reprendre le nouvel état). Détails dans [Configurer
-    l'accès SSH](livestatus-thruk.md) et [Dépanner Shinken](depannage.md).
+!!! information "Fichiers lisibles par les conteneurs (Podman rootless)"
+    Les UID des conteneurs Podman rootless sont **remappés** par rapport à
+    l'hôte. Une clé posée sur l'hôte avec `chmod 600` n'est pas lisible
+    par le poller (uid 10001). Une seule commande, une fois, la rend
+    lisible : `podman unshare chown 10001:10001 <fichier>`. La propriété
+    est écrite sur disque et reste valable après une recréation des
+    conteneurs. Pour les clés SSH, le poller en fait ensuite lui-même une
+    copie privée en `0600` : aucun `chmod` n'est nécessaire.
 
 ## Modules broker
 

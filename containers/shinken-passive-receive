@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Receive passive check results pushed over SSH and relay them to Shinken.
+
+Run as the sshd ForceCommand of the ``passive-ssh`` container (see
+doc/checks/ssh-passif.md). Each client key is bound to exactly one Shinken
+host by ``environment="SHINKEN_PASSIVE_HOST=<host>"`` in authorized_keys;
+results for any other host are refused.
+
+Accepted input, one result per line on stdin:
+
+* send_nsca format (tab separated)::
+
+      <host>\t<service>\t<rc>\t<output>     service result
+      <host>\t<rc>\t<output>                host result
+
+* Nagios external command format (only these two commands)::
+
+      [<ts>] PROCESS_SERVICE_CHECK_RESULT;<host>;<service>;<rc>;<output>
+      [<ts>] PROCESS_HOST_CHECK_RESULT;<host>;<rc>;<output>
+
+Every field is validated and the command is rebuilt from the validated
+fields: the client never chooses which external command is sent, and the
+client timestamp is replaced by the server time (Shinken silently drops a
+result older than the last check). Results are checked against Livestatus
+first so an unknown service or one refusing passive checks is reported
+back to the client instead of disappearing.
+
+"OK" means *forwarded to Shinken* (Livestatus gives no acknowledgement); the
+broker -> arbiter -> scheduler path applies it within a few seconds.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import socket
+import sys
+import time
+
+MAX_LINES = 1000
+MAX_OUTPUT = 8192
+# Shinken's default illegal_object_name_chars plus ';' (field separator of
+# external commands) and control characters.
+NAME_RE = re.compile(r"^[^`~!$%^&*\"|'<>?,()=;\x00-\x1f\x7f]{1,255}$")
+EXTCMD_RE = re.compile(
+    r"^\[\d+\] (PROCESS_SERVICE_CHECK_RESULT|PROCESS_HOST_CHECK_RESULT);(.*)$"
+)
+
+
+class Rejected(Exception):
+    pass
+
+
+def parse_line(line: str) -> tuple[str, str | None, int, str]:
+    """Return (host, service or None, rc, output) or raise Rejected."""
+    match = EXTCMD_RE.match(line)
+    if match:
+        command, args = match.groups()
+        if command == "PROCESS_SERVICE_CHECK_RESULT":
+            parts = args.split(";", 3)
+            if len(parts) != 4:
+                raise Rejected("expected host;service;rc;output")
+            host, service, rc, output = parts
+        else:
+            parts = args.split(";", 2)
+            if len(parts) != 3:
+                raise Rejected("expected host;rc;output")
+            host, rc, output = parts
+            service = None
+    elif line.startswith("["):
+        raise Rejected("only PROCESS_SERVICE_CHECK_RESULT and PROCESS_HOST_CHECK_RESULT are accepted")
+    else:
+        parts = line.split("\t")
+        if len(parts) >= 4:
+            host, service, rc = parts[:3]
+            output = "\t".join(parts[3:])
+        elif len(parts) == 3:
+            host, rc, output = parts
+            service = None
+        else:
+            raise Rejected("expected host<TAB>service<TAB>rc<TAB>output or host<TAB>rc<TAB>output")
+
+    if not NAME_RE.match(host):
+        raise Rejected("invalid host name")
+    if service is not None and not NAME_RE.match(service):
+        raise Rejected("invalid service name")
+    if rc.strip() not in ("0", "1", "2", "3"):
+        raise Rejected("return code must be 0, 1, 2 or 3")
+    output = "".join(ch for ch in output if ch == "\t" or ch >= " ").strip()
+    if not output:
+        raise Rejected("empty output")
+    return host, service, int(rc), output[:MAX_OUTPUT]
+
+
+class Livestatus:
+    def __init__(self, address: str, timeout: float = 10.0):
+        host, _, port = address.rpartition(":")
+        self.address = (host or "127.0.0.1", int(port))
+        self.timeout = timeout
+
+    def _exchange(self, request: str, expect_reply: bool) -> bytes:
+        with socket.create_connection(self.address, timeout=self.timeout) as conn:
+            conn.sendall(request.encode("utf-8"))
+            conn.shutdown(socket.SHUT_WR)
+            if not expect_reply:
+                return b""
+            chunks = []
+            while True:
+                chunk = conn.recv(65536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            return b"".join(chunks)
+
+    def query(self, request: str) -> list:
+        raw = self._exchange(request + "OutputFormat: json\n\n", expect_reply=True)
+        return json.loads(raw.decode("utf-8") or "[]")
+
+    def known_objects(self, host: str) -> tuple[bool | None, dict[str, bool]]:
+        """(host accepts passive checks or None if unknown, {service: accepts passive})."""
+        hosts = self.query(
+            f"GET hosts\nColumns: name accept_passive_checks\nFilter: name = {host}\n"
+        )
+        services = self.query(
+            "GET services\nColumns: description accept_passive_checks\n"
+            f"Filter: host_name = {host}\n"
+        )
+        host_passive = bool(hosts[0][1]) if hosts else None
+        return host_passive, {row[0]: bool(row[1]) for row in services}
+
+    def send_commands(self, commands: list[str]) -> None:
+        payload = "".join(f"COMMAND {cmd}\n" for cmd in commands) + "\n"
+        self._exchange(payload, expect_reply=False)
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    bound_host = os.environ.get("SHINKEN_PASSIVE_HOST", "")
+    if not NAME_RE.match(bound_host):
+        print("ERROR: this key is not bound to a host "
+              "(environment=\"SHINKEN_PASSIVE_HOST=...\" missing in authorized_keys)")
+        return 2
+    if os.environ.get("SSH_ORIGINAL_COMMAND"):
+        # The pushed file is read from stdin; a remote command is meaningless.
+        print("ERROR: send results on stdin, do not pass a remote command")
+        return 2
+
+    # sshd sessions do not inherit the daemon environment: the address comes
+    # from the ForceCommand line written by the entrypoint.
+    address = os.environ.get("SHINKEN_LIVESTATUS", "broker:50000")
+    if len(argv) == 2 and argv[0] == "--livestatus":
+        address = argv[1]
+    livestatus = Livestatus(address)
+    try:
+        host_passive, services = livestatus.known_objects(bound_host)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: Livestatus unreachable: {exc}")
+        return 2
+
+    accepted: list[str] = []
+    report: list[str] = []
+    rejected = 0
+    now = int(time.time())
+    for number, raw in enumerate(sys.stdin, start=1):
+        if number > MAX_LINES:
+            report.append(f"REJECTED line {number}+: more than {MAX_LINES} lines")
+            rejected += 1
+            break
+        line = raw.rstrip("\r\n")
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        try:
+            host, service, rc, output = parse_line(line)
+            if host != bound_host:
+                raise Rejected(f"this key may only send results for {bound_host}")
+            if service is None:
+                if host_passive is None:
+                    raise Rejected(f"host {host} is unknown to Shinken")
+                if not host_passive:
+                    raise Rejected(f"host {host} does not accept passive checks")
+                accepted.append(f"[{now}] PROCESS_HOST_CHECK_RESULT;{host};{rc};{output}")
+                report.append(f"OK line {number}: host {host} rc={rc}")
+            else:
+                if service not in services:
+                    raise Rejected(f"service {service!r} is not defined on {host}")
+                if not services[service]:
+                    raise Rejected(f"service {service!r} does not accept passive checks")
+                accepted.append(
+                    f"[{now}] PROCESS_SERVICE_CHECK_RESULT;{host};{service};{rc};{output}"
+                )
+                report.append(f"OK line {number}: {host};{service} rc={rc}")
+        except Rejected as exc:
+            report.append(f"REJECTED line {number}: {exc}")
+            rejected += 1
+
+    if accepted:
+        try:
+            livestatus.send_commands(accepted)
+        except OSError as exc:
+            print(f"ERROR: Livestatus unreachable, nothing forwarded: {exc}")
+            return 2
+    print("\n".join(report))
+    print(f"forwarded={len(accepted)} rejected={rejected}")
+    return 1 if rejected else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

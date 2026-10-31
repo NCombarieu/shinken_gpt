@@ -1,0 +1,4 @@
+# Copy to snmpv3.local.cfg (same directory, ignored by git), then set the real
+# SNMPv3 passwords used by the *_v3 commands (authPriv, SHA + AES).
+$SNMPV3AUTHPASS$=change-me-auth
+$SNMPV3PRIVPASS$=change-me-priv
