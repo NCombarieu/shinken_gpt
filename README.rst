@@ -1,66 +1,82 @@
-===================================
-Shinken (Python 3 / Podman fork)
-===================================
+=======
+Shinken
+=======
 
-This is a fork of `Shinken <https://github.com/naparuba/shinken>`_, a
-Nagios-compatible monitoring framework written in Python. The upstream
-project stayed on Python 2; this fork (branch ``modernize/podman-python3``)
-ports the core, its six daemons, and a real Livestatus module to
-**Python 3.11+**, and runs entirely as **Podman containers**.
+Moteur de supervision compatible Nagios, porté en **Python 3** et déployé
+par **conteneurs Podman**.
 
-Shinken stays backwards-compatible with the Nagios configuration format
-and plugins.
+Cette version reprend `Shinken <https://github.com/naparuba/shinken>`_ 2.4,
+dont le développement s'est arrêté en Python 2. Elle conserve le format de
+configuration (``define host { ... }``, modèles, macros, ``$USER1$``,
+business rules, realms), les plugins Nagios, les commandes externes et
+l'interface Livestatus utilisée par Thruk.
+
+Fonctionnalités
+===============
+
+- Six daemons spécialisés (arbiter, scheduler, poller, reactionner, broker,
+  receiver), distribuables sur plusieurs machines.
+- Plugins standard (monitoring-plugins, NRPE, SNMP) et scripts maison
+  déposés dans ``plugins-local/``.
+- Notifications par e-mail via un relais SMTP.
+- Livestatus avec historique SQLite, pour Thruk et les outils compatibles.
+- Rétention de l'état (acquittements, downtimes) entre les redémarrages,
+  y compris la reprise d'un fichier de Shinken 2.4.
+- Tube ``nagios.cmd`` pour les commandes externes.
+- Image conteneur versionnée, quadlets systemd, tests de santé.
+
+Démarrage rapide
+================
+
+Prérequis : Linux, Podman 4.7 ou plus, ``podman-compose``, ``git``.
+
+.. code-block:: bash
+
+  git clone <url-du-depot> shinken
+  cd shinken
+  cp .env.example .env                       # fuseau horaire, version, ports
+  # adapter etc/contacts/admin.cfg et etc/resource.d/notifications.cfg
+  podman-compose build
+  podman-compose run --rm --no-deps arbiter check
+  podman-compose up -d
+  podman-compose exec broker shinken-healthcheck
+
+La page d'état est servie sur ``http://127.0.0.1:8081/`` et Livestatus sur
+``127.0.0.1:50000``. Détails : `installation <doc/exploitation/01-installation.md>`_.
 
 Documentation
 =============
 
-Full documentation lives in `doc/ <doc/README.md>`_:
+Toute la documentation est en français dans `doc/ <doc/README.md>`_ :
 
-**Getting started:**
+- `administrateur de la supervision <doc/admin/README.md>`_ : configuration,
+  plugins, recettes, du niveau simple au niveau expert ;
+- `exploitant système <doc/exploitation/README.md>`_ : installation,
+  sauvegarde, mise à jour, sécurité, dépannage ;
+- `migration depuis Shinken 2.4 <doc/migration-depuis-shinken-master.md>`_ ;
+- `développeur <doc/dev/README.md>`_ et `DEVELOPMENT.md <DEVELOPMENT.md>`_.
 
-* `DEVELOPMENT.md <DEVELOPMENT.md>`_ — set up dev environment, run tests, contribute
-* `doc/installation.md <doc/installation.md>`_ — clone, build, run in containers
-* `doc/architecture.md <doc/ARCHITECTURE.md>`_ — system design, daemons, communication
+Statut du projet
+================
 
-**Operations & Configuration:**
+- Version 2.4.3, Python 3.11 à 3.13. Les changements sont listés dans le
+  `Changelog <Changelog>`_.
+- Le remplacement d'une installation Shinken 2.4 se fait en une seule
+  bascule (les daemons des deux versions ne communiquent pas) ; plusieurs
+  modules tiers de Shinken 2.4 (``webui``, ``graphite``, ``mongodb``…) ne
+  sont pas disponibles. Voir le `guide de migration
+  <doc/migration-depuis-shinken-master.md>`_.
+- Les échanges entre daemons ne sont pas authentifiés : ils doivent rester
+  sur un réseau privé (voir `sécurité <doc/exploitation/09-securite.md>`_).
 
-* `doc/configuration.md <doc/configuration.md>`_ — hosts, services, templates,
-  container-specific networking
-* `doc/exploitation.md <doc/exploitation.md>`_ — day-to-day operations
-  (reload, force check, acknowledge, downtime)
-* `doc/database.md <doc/DATABASE.md>`_ — monitoring logs storage (SQLite, MySQL, Oracle)
-* `doc/metrics.md <doc/METRICS.md>`_ — experimental metrics integration status (InfluxDB + Grafana)
-* `doc/logging.md <doc/LOGGING.md>`_ — structured JSON logging for aggregation
-* `doc/livestatus-thruk.md <doc/livestatus-thruk.md>`_ — integrating Thruk
-  web UI via Livestatus
-* `doc/quickstart-metrics.md <doc/QUICKSTART-METRICS.md>`_ — metrics availability and limitations
+Contribuer
+==========
 
-**Reference:**
+Voir `CONTRIBUTING.rst <CONTRIBUTING.rst>`_. Les anomalies propres à cette
+version (Python 3, conteneurs) sont à signaler sur ce dépôt et non sur le
+projet d'origine.
 
-* `doc/presentation.md <doc/presentation.md>`_ — what Shinken is, what this
-  fork changes
-* `doc/depannage.md <doc/depannage.md>`_ — real bugs found and fixed in this fork
-* `DEPLOYMENT.md <DEPLOYMENT.md>`_ — chronological deployment journal for a specific server
+Licence
+=======
 
-Quick start
-===========
-
-.. code-block:: bash
-
-  git clone git@github.com:NCombarieu/shinken_gpt.git
-  cd shinken_gpt
-  git checkout modernize/podman-python3
-  sudo pip install podman-compose   # if not already available
-  podman-compose build
-  podman-compose up -d
-
-See `doc/installation.md <doc/installation.md>`_ for prerequisites and
-verification steps.
-
-Upstream
-========
-
-The original project: https://github.com/naparuba/shinken
-
-Bugs specific to this fork's Python 3 / container port should be filed
-against ``NCombarieu/shinken_gpt``, not upstream.
+GNU Affero General Public License v3 ou ultérieure (voir ``COPYING``).

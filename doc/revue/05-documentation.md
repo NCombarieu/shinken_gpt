@@ -90,7 +90,7 @@ Périmètre lu : `README`, `README.rst`, les 12 fichiers de `doc/*.md`, `DEPLOYM
 
 #### Liens et rendu
 
-- **Lien faux** : `doc/configuration.md:152` contient « [Configurer l'accès SSH](livestatus-thruk.md) ». Cette page ne parle pas de SSH ; la cible logique est `depannage.md` ou une future page SSH.
+- **Lien faux** : `doc/configuration.md:152` contient « `[Configurer l'accès SSH](livestatus-thruk.md)` ». Cette page ne parle pas de SSH ; la cible logique est `depannage.md` ou une future page SSH.
 - **Ancres `{#id}` non rendues** (`configuration.md:88`, `depannage.md:44`, `exploitation.md:31, 55`). Sans `mkdocs.yml` ni l'extension `attr_list`, GitHub affiche `{#…}` dans le titre. Les liens qui les ciblent sont donc cassés sur GitHub : `presentation.md:92`, `installation.md:133, 139`, `depannage.md:32`.
 - **Admonitions `!!! information` et similaires** : elles s'affichent en texte brut sur GitHub.
 - **Libellés trompeurs dans `README.rst:23-36`** : ils citent `doc/architecture.md`, `doc/database.md`, etc. en minuscules, alors que les fichiers sont en majuscules. Les cibles sont correctes, mais une copie du libellé échoue sur un système de fichiers sensible à la casse.
