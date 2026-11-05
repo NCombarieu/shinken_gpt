@@ -1,0 +1,37 @@
+---
+- hosts: all
+  gather_facts: false
+  tasks:
+    - name: Configure an interface-only OMD site
+      ansible.builtin.command:
+        cmd: omd config demo change
+        stdin: |
+          CORE=none
+          APACHE_MODE=own
+          THRUK_COOKIE_AUTH=off
+          PNP4NAGIOS=off
+    - name: Set the isolated CI login
+      ansible.builtin.command: su - demo -c "set_admin_password rust-ui-ci"
+    - name: Remove the packaged local monitoring backend
+      ansible.builtin.replace:
+        path: /omd/sites/demo/etc/thruk/thruk.conf
+        regexp: '(?s)<Component Thruk::Backend>.*?</Component>'
+        replace: ''
+    - name: Connect the actual Thruk interface to the native Rust engine
+      ansible.builtin.copy:
+        dest: /omd/sites/demo/etc/thruk/thruk_local.conf
+        owner: demo
+        group: demo
+        mode: '0640'
+        content: |
+          use_lmd_core = 0
+          <Component Thruk::Backend>
+            <peer>
+              name = Native Rust
+              id = rust
+              type = livestatus
+              <options>
+                peer = engine:6557
+              </options>
+            </peer>
+          </Component>
