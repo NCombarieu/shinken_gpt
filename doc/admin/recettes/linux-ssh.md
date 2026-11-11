@@ -7,6 +7,9 @@ supervisé décide **lui-même** de ce que la clé a le droit d'exécuter.
 Commande fournie : `check_by_ssh` (`etc/commands/check_by_ssh.cfg`), avec le
 compte `$SSHUSER$` et la clé `$SSHKEY$` (`etc/resource.d/ssh.cfg`).
 
+Qui se connecte avec quel compte, où vivent la clé et `known_hosts`,
+rotation de la clé : voir [superviser à distance](../06-checks-a-distance.md#ssh-en-détail).
+
 ## 1. Créer la clé sur le serveur de supervision
 
 Depuis la racine du dépôt :
@@ -146,6 +149,7 @@ change ensuite fait échouer le check, ce qui est voulu.
 |---|---|
 | `Permission denied (publickey)` | clé publique absente ou mal copiée, droits de `~/.ssh` trop ouverts côté serveur supervisé |
 | `Load key ...: Permission denied` ou `bad permissions` | droits de la clé privée : refaire l'étape 1 avec `podman unshare`, puis `podman-compose restart poller` |
-| `Host key verification failed` | la clé d'hôte du serveur a changé : vérifier, puis retirer l'ancienne ligne de `known_hosts` |
+| `Host key verification failed` | la clé d'hôte du serveur a changé : vérifier, puis retirer l'ancienne ligne de `known_hosts`. **Dès le premier check** : la commande n'a pas `-o StrictHostKeyChecking=accept-new` (commande maison) et l'hôte n'est pas dans `known_hosts` |
+| `UNPROTECTED PRIVATE KEY FILE` puis `Permission denied (publickey)` | clé privée lisible par le groupe ou les autres (`0640`, `0750`…, souvent posé par un outil de déploiement) : mode `600` obligatoire |
 | `Connection refused` / délai dépassé | pare-feu, ou adresse non joignable **depuis le conteneur poller** |
 | Joindre le serveur Podman lui-même | utiliser l'adresse `host.containers.internal` (Podman 4.7 et plus) et autoriser le trafic des conteneurs dans le pare-feu de l'hôte |

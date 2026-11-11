@@ -14,6 +14,8 @@ installer et faire tourner les conteneurs, voir le
 | [Concepts essentiels](02-concepts.md) | états OK/WARNING/CRITICAL/UNKNOWN, SOFT/HARD, périodes, notifications |
 | [Lire l'interface web](03-interface-web.md) | brancher Thruk et lire une page de détail |
 | [Acquitter et planifier un downtime](04-acquitter-et-planifier-un-downtime.md) | gérer un incident et une maintenance |
+| [Comment un check est exécuté et récolté](05-execution-des-checks.md) | le trajet d'un check actif et d'un résultat passif, timeouts, codes retour |
+| [Superviser à distance](06-checks-a-distance.md) | qui se connecte où : SSH, NRPE, HTTPS, API, SNMP ; comptes, clés, certificats, secrets |
 
 ## Niveau avancé : structurer et étendre
 
@@ -28,7 +30,7 @@ installer et faire tourner les conteneurs, voir le
 | [**Écrire son propre plugin**](16-ecrire-un-plugin.md) | contrat des plugins, exemples shell et Python, `plugins-local/`, tests |
 | [Notifications par e-mail](17-notifications.md) | relais SMTP, modes de notification, tests |
 | [Périodes de temps](18-periodes-de-temps.md) | syntaxe, exclusions, jours fériés |
-| [Recettes](recettes/README.md) | Linux (SSH, NRPE), Windows, SNMP, HTTP/TLS, DNS, bases de données |
+| [Recettes](recettes/README.md) | Linux (SSH, NRPE), Windows, SNMP, HTTP/TLS, API REST, DNS, bases de données |
 
 ## Niveau expert : grandes installations et fonctions avancées
 

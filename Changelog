@@ -43,6 +43,13 @@ Shinken ChangeLog
              exploitation, migration, développeur).
         Del: DEPLOYMENT.md et pages de documentation inexactes (ARCHITECTURE,
              DATABASE, LOGGING, METRICS anglais).
+        Add: libexec/check_api_json.py (check d'API JSON : valeur attendue, seuils
+             maximums ou minimums, jeton lu dans un fichier) et ses commandes
+             etc/commands/check_api_json.cfg.
+        Add: documentation de l'exécution des checks (actifs, passifs), des checks
+             à distance (comptes, clés SSH, secrets), recette API REST, partie
+             Thruk (conteneur, connexion Livestatus, droits, dépannage), processus
+             et ressources, déploiement géré par Puppet.
 
         LIMITES CONNUES
         - Modules tiers de Shinken 2.4 non portés : webui, graphite, mongodb,

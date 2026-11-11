@@ -26,6 +26,10 @@ avec authentification (voir [exposition sécurisée](../exploitation/10-reverse-
 
 ## Brancher Thruk
 
+> **Note** — Cette section résume le branchement. L'installation complète
+> de Thruk en conteneur, les comptes, les droits et le dépannage sont dans
+> la partie [Thruk](../thruk/README.md).
+
 [Thruk](https://www.thruk.org) est une interface web compatible Nagios qui
 interroge Shinken par le protocole **Livestatus** (module `livestatus` du
 broker, port TCP 50000). Il s'installe à côté de Shinken : paquets officiels

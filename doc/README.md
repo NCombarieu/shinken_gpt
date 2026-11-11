@@ -11,7 +11,7 @@ nécessaire. → [Guide de l'administrateur](admin/README.md)
 
 | Niveau | Pages |
 |---|---|
-| **Simple** | [Présentation](admin/00-presentation.md) · [Démarrage rapide](admin/01-demarrage-rapide.md) · [Concepts](admin/02-concepts.md) · [Interface web](admin/03-interface-web.md) · [Acquitter, downtime](admin/04-acquitter-et-planifier-un-downtime.md) |
+| **Simple** | [Présentation](admin/00-presentation.md) · [Démarrage rapide](admin/01-demarrage-rapide.md) · [Concepts](admin/02-concepts.md) · [Interface web](admin/03-interface-web.md) · [Acquitter, downtime](admin/04-acquitter-et-planifier-un-downtime.md) · [**Exécution des checks**](admin/05-execution-des-checks.md) · [**Superviser à distance**](admin/06-checks-a-distance.md) |
 | **Avancé** | [Modèles](admin/10-templates-heritage.md) · [Macros](admin/11-macros.md) · [Groupes](admin/12-groupes.md) · [Dépendances, escalades](admin/13-dependances-escalades.md) · [Flapping, event handlers](admin/14-flapping-et-event-handlers.md) · [Checks passifs](admin/15-checks-passifs-commandes-externes.md) · [**Écrire un plugin**](admin/16-ecrire-un-plugin.md) · [Notifications](admin/17-notifications.md) · [Périodes](admin/18-periodes-de-temps.md) · [Recettes](admin/recettes/README.md) |
 | **Expert** | [Architecture distribuée](admin/20-architecture-distribuee.md) · [Business rules](admin/21-business-rules.md) · [duplicate_foreach](admin/22-duplicate-foreach.md) · [Découverte](admin/23-decouverte.md) · [Performances](admin/24-performances.md) · [Rétention](admin/25-retention.md) · [Livestatus](admin/26-livestatus.md) · [Métriques](admin/27-metriques.md) |
 | **Référence** | [Directives, macros, commandes externes](admin/reference/README.md) |
@@ -29,7 +29,17 @@ nécessaire. → [Guide de l'administrateur](admin/README.md)
 [journaux](exploitation/08-logs.md),
 [sécurité](exploitation/09-securite.md),
 [reverse proxy TLS](exploitation/10-reverse-proxy-tls.md),
-[dépannage](exploitation/11-depannage.md).
+[dépannage](exploitation/11-depannage.md),
+[processus et ressources](exploitation/12-processus-et-ressources.md),
+[déploiement par Puppet](exploitation/13-deploiement-puppet.md).
+
+## J'installe et j'administre l'interface web (Thruk)
+
+→ [Thruk](thruk/README.md) :
+[le conteneur](thruk/01-conteneur.md),
+[connexion à Shinken](thruk/02-connexion-livestatus.md),
+[comptes et droits](thruk/03-comptes-et-droits.md),
+[exposition et dépannage](thruk/04-exposition-et-depannage.md).
 
 ## Je migre depuis Shinken 2.4 (master)
 
