@@ -65,8 +65,15 @@ ENV PYTHONUNBUFFERED=1 \
 # - monitoring-plugins-basic/-standard : check_ping, check_icmp, check_http,
 #   check_tcp, check_disk, check_dig, check_snmp, check_ldap, ... ($NAGIOSPLUGINSDIR$)
 # - nagios-nrpe-plugin : check_nrpe ; openssh-client : check_by_ssh
-# - nagios-snmp-plugins + libnet-snmp-perl + perl : check_snmp_*.pl (manubulon)
+# - nagios-snmp-plugins + libnet-snmp-perl + perl : check_snmp_*.pl (manubulon) ;
+#   libcrypt-des-perl, libcrypt-rijndael-perl, libdigest-hmac-perl : SNMPv3
+#   (authentification et chiffrement) pour ces plugins
+# - openssh-server : récepteur des résultats passifs envoyés par SSH (rôle
+#   passive-ssh, doc/admin/recettes/passif-ssh.md) ; aucune clé d'hôte n'est
+#   gardée dans l'image, le rôle génère la sienne au premier démarrage
 # - snmp, bind9-dnsutils, iputils-ping : snmpget, dig, ping utilisés par les plugins
+# - libmariadb3, libpq5 : bibliothèques de check_mysql / check_pgsql (seulement
+#   « recommandées » par monitoring-plugins-standard, donc pas installées sinon)
 # - procps (pkill/ps), tzdata (variable TZ), ca-certificates (TLS SMTP/HTTP)
 # - libcurl4t64 : pycurl si la wheel a été compilée localement
 # - tini : PID 1, récupère les processus zombies
@@ -76,19 +83,26 @@ RUN apt-get update \
         bind9-dnsutils \
         ca-certificates \
         iputils-ping \
+        libcrypt-des-perl \
+        libcrypt-rijndael-perl \
         libcurl4t64 \
+        libdigest-hmac-perl \
+        libmariadb3 \
         libnet-snmp-perl \
+        libpq5 \
         monitoring-plugins-basic \
         monitoring-plugins-standard \
         nagios-nrpe-plugin \
         nagios-snmp-plugins \
         openssh-client \
+        openssh-server \
         perl \
         procps \
         snmp \
         tini \
         tzdata \
     && rm -rf /var/lib/apt/lists/* \
+    && rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub \
     && groupadd --gid 10001 shinken \
     && useradd --uid 10001 --gid shinken --home-dir /var/lib/shinken --no-create-home \
         --shell /usr/sbin/nologin shinken \
@@ -110,6 +124,7 @@ COPY modules/ /usr/local/lib/shinken/modules/
 COPY libexec/ /usr/local/lib/shinken/libexec/
 COPY cli/ /usr/local/lib/shinken/cli/
 COPY --chmod=0755 containers/entrypoint.sh /usr/local/bin/shinken-entrypoint
+COPY --chmod=0755 containers/shinken-passive-receive /usr/local/bin/shinken-passive-receive
 
 USER 10001:10001
 WORKDIR /var/lib/shinken

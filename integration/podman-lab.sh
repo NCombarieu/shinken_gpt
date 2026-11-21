@@ -6,7 +6,8 @@ IMAGE=${SHINKEN_LAB_IMAGE:-localhost/shinken:integration}
 NETWORK=${SHINKEN_LAB_NETWORK:-shinken-integration}
 CONFIG_DIR=$(mktemp -d)
 STATE_DIR=$(mktemp -d)
-CONTAINERS=(lab-arbiter lab-scheduler lab-poller lab-reactionner lab-broker lab-receiver lab-http)
+SSH_DIR=$(mktemp -d)
+CONTAINERS=(lab-arbiter lab-scheduler lab-poller lab-reactionner lab-broker lab-receiver lab-http lab-sshtarget lab-passive-ssh)
 
 cleanup() {
     local status=$?
@@ -29,7 +30,9 @@ cleanup() {
         podman rm -f "$container" >/dev/null 2>&1 || true
     done
     podman network rm "$NETWORK" >/dev/null 2>&1 || true
-    rm -rf "$CONFIG_DIR" "$STATE_DIR"
+    # Files chowned inside the user namespace are removed from inside it.
+    podman unshare rm -rf "$CONFIG_DIR" "$STATE_DIR" "$SSH_DIR" 2>/dev/null \
+        || rm -rf "$CONFIG_DIR" "$STATE_DIR" "$SSH_DIR"
     exit "$status"
 }
 trap cleanup EXIT
@@ -41,6 +44,25 @@ cp -a "$ROOT_DIR/etc/." "$CONFIG_DIR/"
 # as in compose.yaml: only test-specific settings are changed here.
 sed -i -E 's/^max_service_check_spread=.*/max_service_check_spread=0/' "$CONFIG_DIR/shinken.cfg"
 sed -i -E 's/^max_host_check_spread=.*/max_host_check_spread=0/' "$CONFIG_DIR/shinken.cfg"
+
+# --- SSH (doc/admin/recettes/linux-ssh.md, doc/admin/recettes/passif-ssh.md)
+# Active: the poller's key ($SSHKEY$), restricted on the target by a forced
+# command; made readable by the container user as documented.
+ssh-keygen -q -t ed25519 -N "" -f "$CONFIG_DIR/ssh_keys/id_ed25519" -C lab-supervision
+podman unshare chown 10001:10001 "$CONFIG_DIR/ssh_keys/id_ed25519" 2>/dev/null \
+    || chmod 644 "$CONFIG_DIR/ssh_keys/id_ed25519"
+sed -i -E 's/^\$SSHUSER\$=.*/$SSHUSER$=shinken/' "$CONFIG_DIR/resource.d/ssh.cfg"
+chmod 755 "$SSH_DIR"
+install -d -m 0755 "$SSH_DIR/target" "$SSH_DIR/client" "$CONFIG_DIR/passive"
+install -m 0755 "$ROOT_DIR/contrib/checks/ssh/shinken-checks" "$SSH_DIR/target/shinken-checks"
+install -m 0755 "$ROOT_DIR/integration/lab-sshtarget.sh" "$SSH_DIR/target/run-sshd.sh"
+echo "restrict,command=\"/opt/sshtarget/shinken-checks\" $(cat "$CONFIG_DIR/ssh_keys/id_ed25519.pub")" \
+    >"$SSH_DIR/target/authorized_keys"
+# Passive: a client key bound to one Shinken host.
+ssh-keygen -q -t ed25519 -N "" -f "$SSH_DIR/client/id_client" -C lab-client
+chmod 644 "$SSH_DIR/client/id_client"
+echo "environment=\"SHINKEN_PASSIVE_HOST=integration-passive\" $(cat "$SSH_DIR/client/id_client.pub")" \
+    >"$CONFIG_DIR/passive/authorized_keys"
 
 cat >"$CONFIG_DIR/commands/integration-lab.cfg" <<'EOF'
 define command {
@@ -60,6 +82,26 @@ define command {
 EOF
 
 cat >"$CONFIG_DIR/hosts/integration-lab.cfg" <<'EOF'
+define host {
+    use                 generic-host
+    host_name           integration-sshtarget
+    address             sshtarget
+    check_command       integration-host
+    check_interval      1
+    retry_interval      1
+    max_check_attempts  1
+}
+
+define host {
+    use                 generic-host
+    host_name           integration-passive
+    address             lab-http
+    check_command       integration-host
+    check_interval      1
+    retry_interval      1
+    max_check_attempts  1
+}
+
 define host {
     use                 generic-host
     host_name           integration-http
@@ -84,6 +126,32 @@ define host {
 EOF
 
 cat >"$CONFIG_DIR/services/integration-lab.cfg" <<'EOF'
+define service {
+    use                 generic-service
+    host_name           integration-sshtarget
+    service_description Load via SSH
+    check_command       check_by_ssh!load
+    check_interval      1
+    retry_interval      1
+    max_check_attempts  1
+}
+
+define service {
+    use                 generic-service
+    host_name           integration-sshtarget
+    service_description Forbidden via SSH
+    check_command       check_by_ssh!reboot
+    check_interval      1
+    retry_interval      1
+    max_check_attempts  1
+}
+
+define service {
+    use                 passive-service
+    host_name           integration-passive
+    service_description Backup
+}
+
 define service {
     use                 generic-service
     host_name           integration-http
@@ -153,6 +221,18 @@ run_daemon reactionner
 run_daemon broker -p 127.0.0.1:18080:8080 -p 127.0.0.1:15000:50000
 run_daemon receiver
 
+# A monitored Linux host: unprivileged sshd on port 22 + forced command.
+podman run -d --name lab-sshtarget --network "$NETWORK" --network-alias sshtarget \
+    --security-opt no-new-privileges --cap-drop ALL \
+    --sysctl net.ipv4.ip_unprivileged_port_start=22 -e SSH_PORT=22 \
+    -v "$SSH_DIR/target:/opt/sshtarget:ro" "$IMAGE" shell /opt/sshtarget/run-sshd.sh >/dev/null
+
+# Passive receiver: no -v for /var/lib/shinken, so the image's VOLUME gives it
+# a fresh anonymous volume (the lab's 0777 state dirs would make sshd's
+# StrictModes reject authorized_keys).
+podman run -d --name lab-passive-ssh --network-alias passive-ssh \
+    "${common_args[@]}" -e SHINKEN_LIVESTATUS=broker:50000 "$IMAGE" passive-ssh >/dev/null
+
 podman run --rm "${common_args[@]}" \
     -v "$STATE_DIR/arbiter/data:/var/lib/shinken:Z" \
     -v "$STATE_DIR/arbiter/log:/var/log/shinken:Z" \
@@ -162,12 +242,22 @@ run_daemon arbiter
 deadline=$((SECONDS + 120))
 while (( SECONDS < deadline )); do
     all_running=1
-    for container in lab-arbiter lab-scheduler lab-poller lab-reactionner lab-broker lab-receiver lab-http; do
+    for container in "${CONTAINERS[@]}"; do
         if [[ $(podman inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true) != true ]]; then
             all_running=0
             break
         fi
     done
+
+    # Push a passive result over SSH, as a client would. Re-pushed every round
+    # until the status shows it: "forwarded" only means accepted by Livestatus.
+    if ! grep -q 'lab passive result' <<<"${status_json:-}"; then
+        push_output=$(podman run --rm --network "$NETWORK" -v "$SSH_DIR/client:/opt/client:ro" "$IMAGE" \
+            shell -c 'cp /opt/client/id_client /tmp/k && chmod 600 /tmp/k &&
+                printf "integration-passive\tBackup\t1\tWARNING - lab passive result\n" |
+                ssh -T -p 2222 -i /tmp/k -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+                    -o UserKnownHostsFile=/tmp/kh shinken@passive-ssh' 2>&1 || true)
+    fi
 
     markers=$(cat "$STATE_DIR/poller/data/integration-checks.log" 2>/dev/null || true)
     status_json=$(curl -fsS http://127.0.0.1:18080/api/status 2>/dev/null || true)
@@ -195,9 +285,13 @@ while (( SECONDS < deadline )); do
         grep -q "$expected" <<<"$status_json" || pending+=" status:${expected// /_}"
     done
     grep -q '<title>Shinken Status</title>' <<<"$dashboard" || pending+=" dashboard-title"
+    ssh_status=$(python3 "$ROOT_DIR/integration/check_lab_status.py" <<<"${status_json:-{\}}" 2>&1) \
+        || pending+=" ssh-checks"
 
     if [[ -z $pending ]]; then
         echo "Distributed Shinken integration and broker web UI succeeded."
+        echo "$ssh_status"
+        echo "$push_output"
         echo "$markers"
         echo "$status_json"
         podman ps --filter "network=${NETWORK}"
@@ -208,6 +302,10 @@ done
 
 echo "Integration checks and web status did not complete within 120 seconds." >&2
 echo "Unmet conditions at the last round:${pending:- none recorded}" >&2
+echo "--- SSH active / passive checks ---" >&2
+echo "${ssh_status:-not evaluated}" >&2
+echo "--- last passive push ---" >&2
+echo "${push_output:-never attempted}" >&2
 echo "--- livestatus report ---" >&2
 echo "${livestatus:-empty}" >&2
 exit 1

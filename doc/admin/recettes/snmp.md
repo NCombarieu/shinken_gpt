@@ -84,7 +84,22 @@ $SNMPV3PRIVPASS$=changez-moi
 # etc/commands/check_snmp_v3.cfg
 define command {
     command_name    check_snmp_v3_oid
-    command_line    $NAGIOSPLUGINSDIR$/check_snmp -H $HOSTADDRESS$ -P 3 -L authPriv -U $SNMPV3USER$ -a SHA -A $SNMPV3AUTHPASS$ -x AES -X $SNMPV3PRIVPASS$ -o $ARG1$ -w $ARG2$ -c $ARG3$
+    command_line    $NAGIOSPLUGINSDIR$/check_snmp -H $HOSTADDRESS$ -P 3 -L authPriv -U $SNMPV3USER$ -a SHA -A '$SNMPV3AUTHPASS$' -x AES -X '$SNMPV3PRIVPASS$' -o $ARG1$ -w $ARG2$ -c $ARG3$
+}
+```
+
+Les mots de passe sont entre apostrophes : dans le fichier de ressource,
+évitez donc `'` et écrivez `$$` pour un `$`. Comme tout argument de plugin,
+ils sont visibles dans `ps` sur le poller.
+
+Les scripts `check_snmp_*.pl` (Manubulon) acceptent aussi SNMP v3, avec
+leurs propres options ; l'image contient les modules Perl nécessaires
+(`Crypt::DES`, `Crypt::Rijndael` pour AES, `Digest::HMAC`) :
+
+```
+define command {
+    command_name    check_snmp_storage_v3
+    command_line    $NAGIOSPLUGINSDIR$/check_snmp_storage.pl -H $HOSTADDRESS$ -l $SNMPV3USER$ -x '$SNMPV3AUTHPASS$' -X '$SNMPV3PRIVPASS$' -L sha,aes -m $ARG1$ -f -w $ARG2$ -c $ARG3$
 }
 ```
 

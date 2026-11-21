@@ -57,6 +57,53 @@ podman-compose exec poller /usr/lib/nagios/plugins/check_nrpe -H 192.0.2.50 -c c
 > version de NSClient++ : reportez-vous à sa documentation. Le principe
 > (commandes figées, `allowed hosts`) reste le même.
 
+### Fichier d'exemple complet
+
+`contrib/checks/nsclient/nsclient.ini` est un point de départ commenté :
+
+- modules et serveur NRPE en TLS, `allow arguments = false` et
+  `allow nasty characters = false` ;
+- TLS mutuel prêt à activer (`ca`, `verify mode = peer-cert`), avec la
+  commande `check_nrpe_tls` côté Shinken ([etc/certs/README.md](../../../etc/certs/README.md)) ;
+- des **alias** prêts à l'emploi : `alias_cpu`, `alias_mem`, `alias_disk`
+  (tous les disques fixes), `alias_disk_c`, `alias_services` (services
+  automatiques arrêtés), `alias_spooler`, `alias_uptime`, `alias_evt_sys`
+  (erreurs du journal Système sur la dernière heure) ;
+- `timeout = 8` pour les scripts, sous les 9 s de `check_nrpe` : le délai
+  de l'agent doit rester inférieur à celui de Shinken (à ajuster ensemble).
+
+> **Attention** — NSClient++ ne gère pas les commentaires en fin de ligne :
+> `CheckSystem = enabled ; …` désactive le module. Chaque commentaire va sur
+> sa propre ligne.
+
+### Scripts PowerShell maison
+
+Pour ce que les commandes intégrées ne couvrent pas (âge d'une sauvegarde,
+état d'une application), un script PowerShell suit le contrat de tout
+plugin : **une ligne** `ÉTAT - texte | perfdata` et un code de sortie
+0/1/2/3. Modèle : `contrib/checks/nsclient/check_example.ps1` (âge du
+dernier fichier d'un dossier de sauvegarde).
+
+1. Copier le script dans `C:\Program Files\NSClient++\scripts\`.
+2. Le déclarer avec ses arguments **figés** (autorisé même avec
+   `allow arguments = false`, puisqu'ils sont écrits sur l'agent) :
+   ```ini
+   [/settings/external scripts/wrapped scripts]
+   check_backup = check_example.ps1 -MaxAgeHours 26
+   ```
+3. Le « wrapping » `ps1` du fichier d'exemple lance PowerShell avec
+   `-ExecutionPolicy Bypass` : le script s'exécute quelle que soit la
+   politique d'exécution de la machine.
+4. Côté Shinken : `check_nrpe!check_backup`.
+
+> Ces fichiers suivent la documentation de NSClient++ (0.5/0.6) mais n'ont
+> pas pu être testés sur un Windows ; les commandes `check_nrpe` côté
+> Shinken, elles, ont été testées contre un agent NRPE 4.
+
+Une machine Windows injoignable depuis Shinken peut aussi **envoyer** ses
+résultats : [recette passif SSH](passif-ssh.md#5-client-windows)
+(OpenSSH est intégré à Windows).
+
 ## 2. SNMP
 
 Windows Server fournit un service SNMP (fonctionnalité « SNMP Service ») qui

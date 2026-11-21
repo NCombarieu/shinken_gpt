@@ -62,6 +62,8 @@ etc/certs/*
 !etc/certs/README.md
 etc/ssh_keys/*
 !etc/ssh_keys/README.md
+etc/passive/*
+!etc/passive/README.md
 
 
 # Local deployment settings (copy .env.example to .env)

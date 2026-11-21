@@ -13,6 +13,7 @@ poller, pour les cas les plus courants.
 | [API HTTP/REST (JSON)](api-rest.md) | `check_http`, `check_api_json.py` | non (jeton en lecture) |
 | [DNS, ping, ports TCP](dns.md) | `check_dns`, `check_icmp`, `check_tcp` | non |
 | [Bases de données](bases-de-donnees.md) | `check_mysql`, `check_pgsql` | non (compte en lecture) |
+| [Machines qui envoient leurs résultats (passif SSH)](passif-ssh.md) | client `shinken-passive-send` → récepteur `passive-ssh` | un script en cron / tâche planifiée |
 
 Pour choisir une méthode et comprendre quels comptes, clés et secrets
 entrent en jeu : [superviser à distance](../06-checks-a-distance.md).
