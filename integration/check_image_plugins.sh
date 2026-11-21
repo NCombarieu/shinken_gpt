@@ -38,5 +38,13 @@ done
 [ -x /usr/local/bin/shinken-passive-receive ] \
   || { echo "MISSING: /usr/local/bin/shinken-passive-receive"; status=1; }
 
+# sshd runs ForceCommand as "<login shell> -c <command>": nologin would reject
+# every passive push (passive-ssh) and every forced command (lab target).
+login_shell=$(getent passwd shinken | cut -d: -f7)
+case "$login_shell" in
+  */nologin|*/false|"") echo "BAD login shell for shinken: '$login_shell' (sshd ForceCommand needs a real shell)"; status=1 ;;
+  *) [ -x "$login_shell" ] || { echo "MISSING login shell: $login_shell"; status=1; } ;;
+esac
+
 [ "$status" -eq 0 ] && echo "All $(echo "$plugins" | wc -w) referenced plugins and check helpers are present."
 exit "$status"

@@ -105,7 +105,7 @@ RUN apt-get update \
     && rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub \
     && groupadd --gid 10001 shinken \
     && useradd --uid 10001 --gid shinken --home-dir /var/lib/shinken --no-create-home \
-        --shell /usr/sbin/nologin shinken \
+        --shell /bin/sh shinken \
     && install -d -o shinken -g shinken -m 0750 /etc/shinken /var/lib/shinken /var/log/shinken /run/shinken \
     && install -d -m 0755 /usr/local/lib/shinken /usr/local/lib/shinken/plugins-local
 
