@@ -134,6 +134,50 @@ def test_healthcheck_probe_reflects_daemon_state():
     assert proc.stdout.startswith("CRITICAL - scheduler")
 
 
+def test_healthcheck_probe_reaches_ipv6_only_daemon():
+    """An arbiter with address localhost can listen on ::1 only (CI containers)."""
+    import http.server
+    import socket
+    import threading
+
+    if not socket.has_ipv6:
+        pytest.skip("no IPv6")
+    try:
+        infos = socket.getaddrinfo("localhost", 0, socket.AF_INET6, socket.SOCK_STREAM)
+    except socket.gaierror:
+        infos = []
+    if not infos:
+        pytest.skip("localhost does not resolve to ::1 here")
+
+    class Pong(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            body = b'"pong"'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    class Server6(http.server.ThreadingHTTPServer):
+        address_family = socket.AF_INET6
+
+    try:
+        server = Server6(("::1", 0), Pong)
+    except OSError:
+        pytest.skip("cannot bind ::1")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        proc = _run(str(ROOT / "bin" / "shinken-healthcheck"), "--daemon", "arbiter",
+                    "--daemon-port", str(server.server_address[1]), "--timeout", "2")
+        assert proc.returncode == 0, proc.stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_modernization_audit_fails_on_syntax_error(tmp_path, capsys):
     import importlib.util
     import json

@@ -99,8 +99,14 @@ def ping_daemon(host, port, timeout, use_ssl=False):
     if use_ssl:
         # Daemons usually run with a private CA: only liveness matters here.
         context = ssl._create_unverified_context()  # noqa: S323
+    # Never through a proxy; "localhost" is tried on every address it resolves
+    # to (a daemon whose address is "localhost" may listen on ::1 only).
+    handlers = [urllib.request.ProxyHandler({})]
+    if context is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    opener = urllib.request.build_opener(*handlers)
     try:
-        with urllib.request.urlopen(url, timeout=timeout, context=context) as resp:
+        with opener.open(url, timeout=timeout) as resp:
             body = resp.read(256).decode("utf-8", "replace")
     except (OSError, urllib.error.URLError) as exp:
         return "%s unreachable: %s" % (url, getattr(exp, "reason", exp))
@@ -187,8 +193,8 @@ def main():
     probe_group = parser.add_argument_group("daemon probe (container healthcheck)")
     probe_group.add_argument("--daemon", choices=sorted(DAEMON_PORTS) + ["auto"],
                              help="Probe this daemon's /ping instead of printing the status")
-    probe_group.add_argument("--daemon-host", default="127.0.0.1",
-                             help="Daemon address (default: 127.0.0.1)")
+    probe_group.add_argument("--daemon-host", default="localhost",
+                             help="Daemon address (default: localhost, IPv4 and IPv6)")
     probe_group.add_argument("--daemon-port", type=int, default=0,
                              help="Daemon HTTP port (default: standard port of the role)")
     probe_group.add_argument("--ssl", action="store_true",
