@@ -163,6 +163,8 @@ jobs:
           podman run --rm shinken:test sh -c 'for p in check_ping check_icmp check_http check_tcp check_dig check_snmp check_nrpe check_by_ssh check_snmp_storage.pl; do test -x "/usr/lib/nagios/plugins/$p" || { echo "missing $p"; exit 1; }; done; command -v pkill'
           podman run --rm shinken:test sh -c 'test "$(id -u)" != 0'
           podman image inspect shinken:test --format '{{ index .Labels "org.opencontainers.image.version" }} {{ .Config.Healthcheck.Test }}'
+      - name: Every plugin referenced by etc/commands exists and loads
+        run: podman run --rm -v "$PWD/etc:/etc/shinken:ro" -v "$PWD/integration:/opt/integration:ro" shinken:test shell /opt/integration/check_image_plugins.sh
       - name: Configuration check through the entrypoint
         run: podman run --rm -v "$PWD/etc:/etc/shinken:ro" -e SHINKEN_CONTAINER_DNS=1 shinken:test check
 

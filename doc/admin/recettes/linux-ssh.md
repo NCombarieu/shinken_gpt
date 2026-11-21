@@ -105,6 +105,11 @@ esac
 command="/usr/local/lib/supervision/aiguilleur.sh",restrict ssh-ed25519 AAAA... supervision-shinken
 ```
 
+Un aiguilleur prêt à l'emploi est fourni : `contrib/checks/ssh/shinken-checks`
+(`load`, `disk`, `disk-root`, `swap`, `procs`, `zombies`, `users`, `uptime`,
+`ntp`, `service-sshd`, seuils figés sur la cible, `PATH` et locale fixés). Le
+lab d'intégration de la CI l'utilise tel quel derrière une clé `restrict`.
+
 > **Attention** — Ne passez **jamais** `$SSH_ORIGINAL_COMMAND` à un shell
 > (`sh -c "$SSH_ORIGINAL_COMMAND"`, `eval`, ou en argument non contrôlé) :
 > le poller, ou quiconque détient la clé, pourrait alors exécuter n'importe

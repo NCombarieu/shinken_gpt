@@ -104,10 +104,10 @@ est interprété comme celui d'un plugin de check d'hôte : 0 = UP, 2 ou 3 =
 DOWN (1 est traité comme UP).
 
 > **Attention** — Le port Livestatus n'est publié que sur `127.0.0.1`. Pour
-> recevoir des résultats d'autres machines, ne l'ouvrez pas tel quel :
-> faites transiter les résultats par SSH (`ssh supervision.example.com
-> 'printf ... | nc 127.0.0.1 50000'`, avec une clé restreinte), ou par un
-> relais qui authentifie les émetteurs.
+> recevoir des résultats d'autres machines, ne l'ouvrez pas : utilisez le
+> récepteur SSH fourni (une clé par machine, liée à un seul hôte, seuls les
+> résultats de checks acceptés), décrit dans la recette
+> [machines qui envoient leurs résultats par SSH](recettes/passif-ssh.md).
 
 ### Résultats pour des objets inconnus
 

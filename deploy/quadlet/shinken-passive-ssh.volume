@@ -1,0 +1,3 @@
+# Volume propre du récepteur passif SSH (clé d'hôte sshd, copie de authorized_keys)
+[Volume]
+VolumeName=shinken-passive-ssh-data

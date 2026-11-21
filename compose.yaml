@@ -111,6 +111,35 @@ services:
     <<: *shinken
     command: ["receiver"]
 
+  # Résultats passifs envoyés par les machines supervisées en SSH
+  # (doc/admin/recettes/passif-ssh.md). Optionnel :
+  #   podman-compose --profile passive up -d passive-ssh
+  # Nécessite etc/passive/authorized_keys (une clé par machine cliente).
+  passive-ssh:
+    <<: *shinken
+    profiles: ["passive"]
+    command: ["passive-ssh"]
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      SHINKEN_LIVESTATUS: broker:50000
+    ports:
+      - "${SHINKEN_PASSIVE_PORT:-2222}:2222"
+    # Volume propre : le HOME du compte sshd et la clé d'hôte ne doivent pas
+    # être accessibles aux autres daemons (shinken-data est partagé).
+    volumes:
+      - ./etc:/etc/shinken:ro,z
+      - passive-ssh-data:/var/lib/shinken:z
+      - shinken-logs:/var/log/shinken:z
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 2222), 3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      broker:
+        condition: service_healthy
+
   influxdb:
     profiles: ["experimental-metrics"]
     image: docker.io/library/influxdb:2.7-alpine
@@ -160,6 +189,7 @@ services:
 
 volumes:
   shinken-data:
+  passive-ssh-data:
   shinken-logs:
   influxdb-data:
   grafana-data:
