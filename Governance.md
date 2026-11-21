@@ -1,3 +1,7 @@
+> **Note** — Ce texte est la charte historique du projet Shinken d'origine,
+> conservée pour mémoire. Les règles de contribution de cette version sont
+> dans [CONTRIBUTING.rst](CONTRIBUTING.rst) et [DEVELOPMENT.md](DEVELOPMENT.md).
+
 # Project vision and Governance
 
 

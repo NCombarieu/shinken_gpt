@@ -15,9 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-"""
+r"""
 This program transforms a flat dependency file into a json one so it
 can be loaded in hot_dependencies_arbiter module
 
@@ -41,20 +39,14 @@ For example, you can use a script like this in your crontab::
 """
 
 
+import json
 import os
 import sys
-import optparse
 
-# Try to load json (2.5 and higer) or simplejson if failed (python2.4)
 try:
-    import json
-except ImportError:
-    # For old Python version, load simple json
-    try:
-        import simplejson as json
-    except ImportError:
-        raise SystemExit("Error: you need the json or simplejson module "
-                         "for this script")
+    from shinken.cli_compat import optparse
+except ImportError:  # running outside an installed Shinken
+    import optparse
 
 VERSION = '0.2'
 

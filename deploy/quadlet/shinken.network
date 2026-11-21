@@ -1,0 +1,3 @@
+# Réseau privé des daemons Shinken (résolution DNS par nom de daemon)
+[Network]
+NetworkName=shinken

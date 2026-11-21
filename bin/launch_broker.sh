@@ -22,9 +22,12 @@
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
 
-DIR="$(cd $(dirname "$0"); pwd)"
-BIN="$DIR"/../shinken/bin
+DIR="$(cd "$(dirname "$0")"; pwd)"
+# Run from the source checkout without installing the package.
+PYTHONPATH="$DIR/..${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+BIN="$DIR"
 ETC="$DIR"/../etc
 
 echo "Launching Broker (which exports all data)"
-"$BIN"/shinken_broker.py -d -c "$ETC"/daemons/brokerd.ini
+"$BIN"/shinken-broker.py -d -c "$ETC"/daemons/brokerd.ini

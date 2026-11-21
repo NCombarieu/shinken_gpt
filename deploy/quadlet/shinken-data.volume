@@ -1,0 +1,3 @@
+# Volume persistant des données (rétention, Livestatus, nagios.cmd)
+[Volume]
+VolumeName=shinken-data

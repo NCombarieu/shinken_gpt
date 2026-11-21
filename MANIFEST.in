@@ -1,17 +1,22 @@
-recursive-include shinken *.*
-recursive-include shinken/webui *.*
+# Source distribution content. The wheel only contains the "shinken" package
+# (see pyproject.toml); everything below is needed to build the container
+# image or to deploy from the sdist.
+include MANIFEST.in Changelog COPYING THANKS README README.rst
+include requirements.txt Containerfile compose.yaml .containerignore .env.example
+recursive-include bin *
+recursive-include libexec *
+recursive-include modules *
+recursive-include cli *
 recursive-include etc *
-recursive-include windows .bat .reg
-recursive-include bin *.* *-* shinken
-recursive-include libexec *.*
-recursive-include modules *.*
-recursive-include doc *.*
-recursive-include cli *.*
-recursive-include share *.*
-recursive-include inventory *.*
-include test *.py *.txt
-global-exclude .git *.pyc *.pyo
-global-exclude .debug .pid .exe *~
-include var/void_for_git
-include MANIFEST.in Changelog
-include COPYING THANKS README README.rst
+recursive-include containers *
+recursive-include deploy *
+recursive-include plugins-local *
+recursive-include integration *
+recursive-include doc *
+recursive-include share *
+recursive-include manpages *
+recursive-include test *.py *.cfg *.txt *.json *.ini *.sh
+prune etc/certs
+prune etc/ssh_keys
+include etc/certs/README.md etc/ssh_keys/README.md
+global-exclude *.py[cod] __pycache__ *~ *.pid *.key *.pem

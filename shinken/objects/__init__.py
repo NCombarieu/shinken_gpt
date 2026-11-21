@@ -29,7 +29,6 @@ The objects package contains definition classes of the different objects
 
  """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 from .item import Item, Items
 from .timeperiod import Timeperiod, Timeperiods

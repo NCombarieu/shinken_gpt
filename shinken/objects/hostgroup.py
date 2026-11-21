@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,10 +22,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-from shinken.objects.itemgroup import Itemgroup, Itemgroups
-
+from .itemgroup import Itemgroup, Itemgroups
 from shinken.util import get_obj_name
 from shinken.property import StringProp, IntegerProp
 from shinken.log import logger
@@ -100,6 +96,13 @@ class Hostgroup(Itemgroup):
 
         return self.get_hosts()
 
+
+    def is_correct(self):
+        r = super(Hostgroup, self).is_correct()
+        # Set display_name if need
+        if getattr(self, 'alias', '') == '':
+            self.alias = getattr(self, 'hostgroup_name', '')
+        return r
 
 class Hostgroups(Itemgroups):
     name_property = "hostgroup_name"  # is used for finding hostgroups

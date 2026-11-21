@@ -30,12 +30,11 @@
 # get the number of service in a host, you call a method to get the
 # len(host.services)
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import re
 import time
 
 from shinken.borg import Borg
+from .util import unicode
 
 
 class MacroResolver(Borg):
@@ -137,15 +136,15 @@ class MacroResolver(Borg):
         try:
             value = getattr(elt, prop)
             if callable(value):
-                return str(value())
+                return unicode(value())
             else:
-                return str(value)
+                return unicode(value)
         except AttributeError as exp:
             # Return no value
             return ''
         except UnicodeError as exp:
             if isinstance(value, str):
-                return str(value, 'utf8', errors='ignore')
+                return unicode(value, 'utf8', errors='ignore')
             else:
                 return ''
 
@@ -202,7 +201,7 @@ class MacroResolver(Borg):
 
             # We can get out if we do not have macros this loop
             still_got_macros = (len(macros) != 0)
-            # print("Still go macros:", still_got_macros)
+            # print "Still go macros:", still_got_macros
 
             # Put in the macros the type of macro for all macros
             self._get_type_of_macro(macros, clss)
@@ -261,7 +260,7 @@ class MacroResolver(Borg):
         # We now replace the big dirty token we made by only a simple $
         c_line = c_line.replace("DOUBLEDOLLAR", "$")
 
-        # print("Retuning c_line", c_line.strip())
+        # print "Retuning c_line", c_line.strip()
         return c_line.strip()
 
     # Resolve a command with macro by looking at data classes.macros
@@ -323,14 +322,14 @@ class MacroResolver(Borg):
 
     # Resolve on-demand macro, quite hard in fact
     def _resolve_ondemand(self, macro, data):
-        # print("\nResolving macro", macro)
+        # print "\nResolving macro", macro
         elts = macro.split(':')
         nb_parts = len(elts)
         macro_name = elts[0]
         # Len 3 == service, 2 = all others types...
         if nb_parts == 3:
             val = ''
-            # print("Got a Service on demand asking...", elts)
+            # print "Got a Service on demand asking...", elts
             (host_name, service_description) = (elts[1], elts[2])
             # host_name can be void, so it's the host in data
             # that is important. We use our self.host_class to
@@ -345,7 +344,7 @@ class MacroResolver(Borg):
                 cls = s.__class__
                 prop = cls.macros[macro_name]
                 val = self._get_value_from_element(s, prop)
-                # print("Got val:", val)
+                # print "Got val:", val
                 return val
         # Ok, service was easy, now hard part
         else:

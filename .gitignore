@@ -7,16 +7,21 @@ INSTALLED_FILES
 .project
 .pydevproject
 .settings
-.gitignore
-modules/*
 .ropeproject
+__pycache__/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
 .coverage
 
 # Logs and databases #
 ######################
 *.log*
 *.sqlite
-*.db*
+*.db
+*.db3
+*.db-journal
 
 
 # OS generated files #
@@ -51,3 +56,18 @@ test/tmp/.cov*
 # Pbr
 pbr-*.egg/
 
+# Secrets: real certs/keys dropped in etc/certs or etc/ssh_keys for
+# check_nrpe_ssl / check_by_ssh should never end up in this public repo.
+etc/certs/*
+!etc/certs/README.md
+etc/ssh_keys/*
+!etc/ssh_keys/README.md
+
+
+# Local deployment settings (copy .env.example to .env)
+.env
+
+# Administrator check scripts: only the README and the example are versioned.
+plugins-local/*
+!plugins-local/README.md
+!plugins-local/check_example.sh

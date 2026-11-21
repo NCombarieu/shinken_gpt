@@ -1,0 +1,28 @@
+<!-- Page générée par doc/tools/gen_reference.py depuis le code : ne pas modifier à la main. -->
+
+
+# Escalade de service (serviceescalation)
+
+Directives acceptées dans un bloc `define serviceescalation { ... }`. Une directive absente prend la valeur par défaut indiquée ; « obligatoire » signifie qu'aucune valeur par défaut n'est prévue : la définir (directement ou par un modèle), sauf si la description indique qu'elle est déduite.
+
+| Directive | Type | Défaut | Description |
+|---|---|---|---|
+| `contact_groups` | texte | **obligatoire** | Groupes de contacts notifiés et autorisés à voir l'objet. |
+| `contacts` | texte | **obligatoire** | Contacts notifiés et autorisés à voir l'objet. |
+| `definition_order` | entier | `100` |  |
+| `escalation_options` | liste | `d,u,r,w,c` | États concernés par l'escalade. |
+| `escalation_period` | texte |  | Période pendant laquelle l'escalade s'applique. |
+| `first_notification` | entier | **obligatoire** | Numéro de la première notification concernée. |
+| `first_notification_time` | entier | **obligatoire** | Minutes de problème à partir desquelles l'escalade s'applique. |
+| `host_name` | texte | **obligatoire** | Nom unique de l'hôte (pour un service : hôte(s) auquel il est rattaché). |
+| `hostgroup_name` | texte | **obligatoire** | Groupe(s) d'hôtes auxquels le service est appliqué. |
+| `imported_from` | texte | `unknown` | Renseigné automatiquement : fichier source de la définition. |
+| `last_notification` | entier | **obligatoire** | Numéro de la dernière notification concernée (0 = sans fin). |
+| `last_notification_time` | entier | **obligatoire** | Minutes de problème après lesquelles l'escalade cesse (0 = sans fin). |
+| `name` | texte |  | Nom du modèle, utilisé par « use » dans les autres objets. |
+| `notification_interval` | entier | `30` | Minutes entre deux rappels de notification (0 = une seule notification). |
+| `register` | booléen (0/1) | 1 | 0 = l'objet est un modèle et n'est pas instancié. |
+| `service_description` | texte | **obligatoire** | Nom du service, unique pour un hôte. Caractères interdits : voir illegal_object_name_chars. |
+| `use` | liste |  | Modèle(s) dont l'objet hérite, séparés par des virgules (le premier est prioritaire). |
+
+Retour à l'[index de la référence](README.md).

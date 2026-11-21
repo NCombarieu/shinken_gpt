@@ -23,8 +23,8 @@
 # This file is used to test host- and service-downtimes.
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
+from __future__ import print_function
+from __future__ import absolute_import
 import time
 
 from shinken_test import unittest, ShinkenTest
@@ -177,7 +177,7 @@ class TestNotif(ShinkenTest):
         print(svc.last_time_warning, svc.last_time_critical, svc.last_time_unknown, svc.last_time_ok)
         last_time_not_ok = svc.last_time_non_ok_or_up()
         deadline = svc.last_time_non_ok_or_up() + svc.first_notification_delay * svc.__class__.interval_length
-        print("deadline is in %s secs" % (deadline - now))
+        print(("deadline is in %s secs" % (deadline - now)))
         #-----------------------------------------------------------------
         # check fails again and enters hard state.
         # now there is a (scheduled for later) notification and an event handler

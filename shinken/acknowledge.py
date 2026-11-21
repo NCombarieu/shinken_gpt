@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python
 
 # -*- coding: utf-8 -*-
 
@@ -23,10 +23,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
-
-class Acknowledge(object):
+class Acknowledge:
     """
     Allows you to acknowledge the current problem for the specified service.
     By acknowledging the current problem, future notifications (for the same
@@ -34,7 +32,7 @@ class Acknowledge(object):
     """
     id = 1
 
-    # Just to list the properties we will send as serialized object
+    # Just to list the properties we will send as pickle
     # so to others daemons, all but NOT REF
     properties = {
         'id': None,
@@ -75,6 +73,8 @@ class Acknowledge(object):
         self.author = author
         self.comment = comment
 
+    # Call by pickle for dataify the ackn
+    # because we DO NOT WANT REF in this pickleisation!
     def __getstate__(self):
         cls = self.__class__
         # id is not in *_properties

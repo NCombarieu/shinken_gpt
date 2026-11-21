@@ -1,0 +1,3 @@
+# Volume persistant des logs des daemons
+[Volume]
+VolumeName=shinken-logs

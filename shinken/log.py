@@ -23,8 +23,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import logging
 import sys
 import os
@@ -32,14 +30,17 @@ import stat
 from logging import Handler, Formatter, StreamHandler, NOTSET, FileHandler
 from logging.handlers import TimedRotatingFileHandler
 
-from shinken.brok import Brok
+from .brok import Brok
 
 try:
-    from shinken.misc.termcolor import cprint
+    from shinken.misc.termcolor import cprint, colored
 except (SyntaxError, ImportError) as exp:
     # Outch can't import a cprint, do a simple print
     def cprint(s, color='', end=''):
         print(s)
+
+    def colored(text, color=None, on_color=None, attrs=None):
+        return text
 
 
 # obj = None
@@ -80,14 +81,37 @@ class BrokHandler(Handler):
 
 
 class ColorStreamHandler(StreamHandler):
+    """Console handler of the ``Shinken`` logger.
+
+    Each record is written once, as text, on the handler stream (stdout by
+    default). ANSI colors are only added when the stream is a terminal, so
+    that ``podman logs``, journald or a redirected output stay readable.
+    """
+
+    colors = {'DEBUG': 'cyan', 'INFO': 'magenta',
+              'WARNING': 'yellow', 'CRITICAL': 'magenta', 'ERROR': 'red'}
+
+    def _use_colors(self):
+        isatty = getattr(self.stream, 'isatty', None)
+        try:
+            return bool(isatty and isatty())
+        except (ValueError, OSError):  # closed stream
+            return False
+
     def emit(self, record):
         try:
             msg = self.format(record)
-            colors = {'DEBUG': 'cyan', 'INFO': 'magenta',
-                      'WARNING': 'yellow', 'CRITICAL': 'magenta', 'ERROR': 'red'}
-            cprint(msg, colors[record.levelname])
-        except UnicodeEncodeError:
-            print(msg.encode('ascii', 'ignore'))
+            if self._use_colors():
+                msg = colored(msg, self.colors.get(record.levelname))
+            try:
+                self.stream.write(msg + self.terminator)
+            except UnicodeEncodeError:
+                # Console that cannot render the message: degrade, never
+                # print a bytes representation
+                encoding = getattr(self.stream, 'encoding', None) or 'ascii'
+                self.stream.write(msg.encode(encoding, 'replace').decode(encoding) +
+                                  self.terminator)
+            self.flush()
         except Exception:
             self.handleError(record)
 
@@ -234,6 +258,8 @@ class Log(logging.Logger):
     def error(self, *args, **kwargs):
         self._stack('error', args, kwargs)
         logging.Logger.error(self, *args, **kwargs)
+
+
 
 
 # --- create the main logger ---

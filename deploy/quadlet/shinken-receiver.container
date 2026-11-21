@@ -1,0 +1,33 @@
+# Quadlet Podman du daemon receiver : voir deploy/README.md
+[Unit]
+Description=Shinken receiver (résultats passifs)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=shinken-receiver
+Image=localhost/shinken:2.4.3
+Pull=never
+Exec=receiver
+Network=shinken.network
+# Nom DNS attendu par la configuration réécrite par l'entrypoint
+NetworkAlias=receiver
+Environment=TZ=Europe/Paris
+Environment=SHINKEN_CONTAINER_DNS=1
+Environment=SHINKEN_STATUS_WEBUI=1
+Environment=SHINKEN_MODULES_DIR=/usr/local/lib/shinken/modules
+Volume=%h/shinken/etc:/etc/shinken:ro,z
+Volume=shinken-data.volume:/var/lib/shinken:z
+Volume=shinken-logs.volume:/var/log/shinken:z
+NoNewPrivileges=true
+DropCapability=ALL
+# HEALTHCHECK de l'image (le daemon répond sur son port) ; l'unité n'est
+# considérée démarrée qu'une fois le conteneur sain.
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

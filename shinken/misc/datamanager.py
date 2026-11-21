@@ -23,11 +23,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 from shinken.util import safe_print
 from shinken.misc.sorter import hst_srv_sort, last_state_change_earlier
 from shinken.misc.filter import only_related_to
+
+def _to_text(value):
+    """Return ``value`` as text: the UIs may still hand over UTF-8 bytes."""
+    if isinstance(value, bytes):
+        return value.decode('utf8', 'ignore')
+    return value
+
 
 class DataManager(object):
     def __init__(self):
@@ -39,9 +44,12 @@ class DataManager(object):
     # UI will launch us names in str, we got unicode
     # in our rg, so we must manage it here
     def get_host(self, hname):
+        hname = _to_text(hname)
         return self.rg.hosts.find_by_name(hname)
 
     def get_service(self, hname, sdesc):
+        hname = _to_text(hname)
+        sdesc = _to_text(sdesc)
         return self.rg.services.find_srv_by_name_and_hostname(hname, sdesc)
 
     def get_all_hosts_and_services(self):
@@ -51,9 +59,11 @@ class DataManager(object):
         return all
 
     def get_contact(self, name):
+        name = _to_text(name)
         return self.rg.contacts.find_by_name(name)
 
     def get_contactgroup(self, name):
+        name = _to_text(name)
         return self.rg.contactgroups.find_by_name(name)
 
     def get_contacts(self):

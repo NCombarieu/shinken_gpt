@@ -1,0 +1,16 @@
+[daemon]
+workdir=@WORK@/run
+logdir=@WORK@/log
+pidfile=%(workdir)s/@ROLE@d.pid
+host=127.0.0.1
+port=@PORT@
+idontcareaboutsecurity=0
+daemon_enabled=1
+use_ssl=0
+hard_ssl_name_check=0
+http_backend=auto
+daemon_thread_pool_size=8
+use_local_log=1
+local_log=%(logdir)s/@ROLE@d.log
+log_level=INFO
+modules_dir=@MODULES_DIR@

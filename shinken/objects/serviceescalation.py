@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2014:
@@ -23,10 +22,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Shinken.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-from shinken.objects.item import Item, Items
-from shinken.objects.escalation import Escalation
+from .item import Item, Items
+from .escalation import Escalation
 
 from shinken.property import IntegerProp, StringProp, ListProp
 
@@ -78,6 +75,6 @@ class Serviceescalations(Items):
             for prop in properties:
                 if hasattr(es, prop):
                     creation_dict[prop] = getattr(es, prop)
-            # print("Creation an escalation with:", creation_dict)
+            # print "Creation an escalation with:", creation_dict
             s = Escalation(creation_dict)
             escalations.add_escalation(s)

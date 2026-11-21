@@ -22,7 +22,13 @@
 # This file is used to test reading and processing of config files
 #
 
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import
+
+import pytest
+
+# Database support was removed from the core; keep this historical test file
+# discoverable without terminating the entire pytest collection process.
+pytest.skip("DBMysql is no longer part of Shinken core", allow_module_level=True)
 
 from shinken_test import *
 try:
