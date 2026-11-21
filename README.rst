@@ -36,7 +36,7 @@ Prérequis : Linux, Podman 4.7 ou plus, ``podman-compose``, ``git``.
   cd shinken
   cp .env.example .env                       # fuseau horaire, version, ports
   # adapter etc/contacts/admin.cfg et etc/resource.d/notifications.cfg
-  podman-compose build
+  BUILDAH_FORMAT=docker podman-compose build
   podman-compose run --rm --no-deps arbiter check
   podman-compose up -d
   podman-compose exec broker shinken-healthcheck

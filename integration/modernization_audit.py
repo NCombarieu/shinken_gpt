@@ -54,6 +54,9 @@ def parse(path: Path):
         return None, "%s: %s" % (type(exp).__name__, exp), []
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", SyntaxWarning)
+        # Python 3.11 reports an invalid escape sequence as a
+        # DeprecationWarning; 3.12+ as a SyntaxWarning. Report it on all.
+        warnings.simplefilter("always", DeprecationWarning)
         try:
             tree = ast.parse(source, filename=str(path))
         except SyntaxError as exp:
@@ -61,6 +64,8 @@ def parse(path: Path):
     syntax_warnings = sorted({
         "line %s: %s" % (w.lineno, w.message) for w in caught
         if issubclass(w.category, SyntaxWarning)
+        or (issubclass(w.category, DeprecationWarning)
+            and "invalid escape sequence" in str(w.message))
     })
     return tree, None, syntax_warnings
 

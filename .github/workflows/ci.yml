@@ -153,7 +153,7 @@ jobs:
       - uses: actions/checkout@v5
       - name: Build rootless container
         run: |
-          podman build --tag shinken:test --file Containerfile \
+          podman build --format docker --tag shinken:test --file Containerfile \
             --build-arg VCS_REF="${GITHUB_SHA::12}" .
       - name: Smoke test image content
         run: |

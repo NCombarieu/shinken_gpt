@@ -116,7 +116,7 @@ define service {
 EOF
 
 cd "$ROOT_DIR"
-podman build --tag "$IMAGE" --file Containerfile .
+podman build --format docker --tag "$IMAGE" --file Containerfile .
 podman network create "$NETWORK" >/dev/null
 
 for role in arbiter scheduler poller reactionner broker receiver; do
@@ -174,22 +174,29 @@ while (( SECONDS < deadline )); do
     dashboard=$(curl -fsS http://127.0.0.1:18080/ 2>/dev/null || true)
     livestatus=$(python3 "$ROOT_DIR/bin/shinken-healthcheck" --port 15000 --no-color 2>/dev/null || true)
     healthy=1
+    unhealthy=""
     for role in scheduler poller reactionner broker receiver arbiter; do
-        podman exec "lab-$role" shinken-healthcheck --daemon auto >/dev/null 2>&1 || healthy=0
+        if ! health_output=$(podman exec "lab-$role" shinken-healthcheck --daemon auto 2>&1); then
+            healthy=0
+            unhealthy+="${role}(${health_output//[$'\n']/ }) "
+        fi
     done
 
-    if (( all_running )) && (( healthy )) \
-        && grep -q 'integration-http' <<<"$livestatus" \
-        && grep -q '^host-ok lab-http ' <<<"$markers" \
-        && grep -q '^host-ok broker ' <<<"$markers" \
-        && grep -q '^http-ok lab-http 200$' <<<"$markers" \
-        && grep -q '^critical-seen lab-http$' <<<"$markers" \
-        && grep -q 'integration-http' <<<"$status_json" \
-        && grep -q 'integration-broker' <<<"$status_json" \
-        && grep -q 'HTTP endpoint' <<<"$status_json" \
-        && grep -q 'DNS resolution' <<<"$status_json" \
-        && grep -q 'Intentional critical' <<<"$status_json" \
-        && grep -q '<title>Shinken Status</title>' <<<"$dashboard"; then
+    # Record every unmet condition, so a timeout says which one blocked.
+    pending=""
+    (( all_running )) || pending+=" not-all-running"
+    (( healthy )) || pending+=" healthcheck:${unhealthy}"
+    grep -q 'integration-http' <<<"$livestatus" || pending+=" livestatus-report"
+    grep -q '^host-ok lab-http ' <<<"$markers" || pending+=" marker:host-ok-lab-http"
+    grep -q '^host-ok broker ' <<<"$markers" || pending+=" marker:host-ok-broker"
+    grep -q '^http-ok lab-http 200$' <<<"$markers" || pending+=" marker:http-ok"
+    grep -q '^critical-seen lab-http$' <<<"$markers" || pending+=" marker:critical-seen"
+    for expected in integration-http integration-broker 'HTTP endpoint' 'DNS resolution' 'Intentional critical'; do
+        grep -q "$expected" <<<"$status_json" || pending+=" status:${expected// /_}"
+    done
+    grep -q '<title>Shinken Status</title>' <<<"$dashboard" || pending+=" dashboard-title"
+
+    if [[ -z $pending ]]; then
         echo "Distributed Shinken integration and broker web UI succeeded."
         echo "$markers"
         echo "$status_json"
@@ -200,4 +207,7 @@ while (( SECONDS < deadline )); do
 done
 
 echo "Integration checks and web status did not complete within 120 seconds." >&2
+echo "Unmet conditions at the last round:${pending:- none recorded}" >&2
+echo "--- livestatus report ---" >&2
+echo "${livestatus:-empty}" >&2
 exit 1

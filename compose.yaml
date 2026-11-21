@@ -1,7 +1,8 @@
 # Pile Shinken complète : un conteneur par daemon, même image.
 #
 #   cp .env.example .env          # puis adaptez TZ, SHINKEN_VERSION, ports...
-#   podman-compose build          # construit localhost/shinken:${SHINKEN_VERSION}
+#   BUILDAH_FORMAT=docker podman-compose build   # construit localhost/shinken:${SHINKEN_VERSION}
+#   (format docker : le format OCI par défaut de Podman supprime le HEALTHCHECK)
 #   podman-compose up -d
 #
 # Pour un démarrage automatique au boot, préférez les quadlets de deploy/quadlet/

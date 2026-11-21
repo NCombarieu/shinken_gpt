@@ -1,13 +1,18 @@
 # Image Shinken (Python 3) : un seul image pour les six daemons, le rôle est
 # passé en argument (voir containers/entrypoint.sh).
 #
-#   podman build -t localhost/shinken:2.4.3 -t localhost/shinken:latest \
+#   podman build --format docker -t localhost/shinken:2.4.3 -t localhost/shinken:latest \
 #       --build-arg VCS_REF=$(git rev-parse --short HEAD) .
+#
+# --format docker est nécessaire : le format OCI par défaut de Podman ignore
+# HEALTHCHECK (avertissement « HEALTHCHECK is not supported for OCI image format »).
 #
 # Base Debian 13 (trixie). Pour une construction reproductible, épinglez le
 # digest : --build-arg PYTHON_IMAGE=docker.io/library/python:3.13-slim-trixie@sha256:...
 ARG PYTHON_IMAGE=docker.io/library/python:3.13-slim-trixie
 
+# The tag is set by ARG PYTHON_IMAGE above (hadolint cannot resolve it).
+# hadolint ignore=DL3006
 FROM ${PYTHON_IMAGE} AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -32,6 +37,8 @@ RUN python -m pip install "build>=1.2,<2" \
     && python -m pip wheel --wheel-dir /dist -r requirements.txt
 
 
+# The tag is set by ARG PYTHON_IMAGE above (hadolint cannot resolve it).
+# hadolint ignore=DL3006
 FROM ${PYTHON_IMAGE} AS runtime
 
 ARG SHINKEN_VERSION=2.4.3

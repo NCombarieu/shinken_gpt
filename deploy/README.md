@@ -12,7 +12,7 @@ mkdir -p ~/shinken
 cp -a etc plugins-local ~/shinken/
 
 # 2. Image versionnée
-podman build -t localhost/shinken:2.4.3 -t localhost/shinken:latest \
+podman build --format docker -t localhost/shinken:2.4.3 -t localhost/shinken:latest \
     --build-arg VCS_REF=$(git rev-parse --short HEAD) .
 
 # 3. Quadlets
