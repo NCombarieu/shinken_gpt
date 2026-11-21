@@ -308,4 +308,6 @@ echo "--- last passive push ---" >&2
 echo "${push_output:-never attempted}" >&2
 echo "--- livestatus report ---" >&2
 echo "${livestatus:-empty}" >&2
+echo "--- arbiter listening sockets (hex address:port, state 0A) ---" >&2
+podman exec lab-arbiter sh -c 'grep " 0A " /proc/net/tcp /proc/net/tcp6' >&2 || true
 exit 1
